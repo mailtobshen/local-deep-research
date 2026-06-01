@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% from "components/help_macros.html" import tooltip, help_panel, help_step, help_tip, help_card %}
 
-{% block title %}Research Library{% endblock %}
+{% block title %}{{ _("Research Library") }}{% endblock %}
 
 {% block extra_head %}
 <link rel="stylesheet" href="/static/css/library.css">
@@ -68,7 +68,7 @@
         </div>
 
         <div class="ldr-status-item">
-            <span class="ldr-status-label">{{ tooltip("PDF Storage:", "Database: Encrypted, most secure. Filesystem: Unencrypted files on disk - use only if you need external tool access. Text Only: Smallest footprint, no original PDFs kept.") }}</span>
+            <span class="ldr-status-label">{{ tooltip(_("PDF Storage:"), _("Database: Encrypted, most secure. Filesystem: Unencrypted files on disk - use only if you need external tool access. Text Only: Smallest footprint, no original PDFs kept.")) }}</span>
             {% if pdf_storage_mode == 'database' %}
                 <button class="btn btn-sm btn-success" onclick="showStorageModeModal()" title="{{ _("Click to change storage mode") }}">
                     <i class="fas fa-database"></i> {{ _("Database (Encrypted)") }}
@@ -464,8 +464,8 @@
             </div>
         </div>
         <div class="modal-footer">
-            <button class="btn btn-secondary" onclick="closeProgressModal()">Close</button>
-            <button class="btn btn-danger" onclick="cancelDownloads()">Cancel</button>
+            <button class="btn btn-secondary" onclick="closeProgressModal()">{{ _("Close") }}</button>
+            <button class="btn btn-danger" onclick="cancelDownloads()">{{ _("Cancel") }}</button>
         </div>
     </div>
 </div>
@@ -525,7 +525,7 @@
                     </div>
                 </div>
                 <div id="missing-files-action" class="ldr-alert ldr-alert-info" style="display: none; margin-top: 15px;">
-                    <p><strong>{{ _("Missing files detected!") }}</strong> These files have been marked in the database and can be re-downloaded.</p>
+                    <p><strong>{{ _("Missing files detected!") }}</strong> {{ _("These files have been marked in the database and can be re-downloaded.") }}</p>
                     <button class="btn btn-primary" onclick="goToDownloadManager()">{{ _("Go to Download Manager") }}</button>
                 </div>
             </div>
