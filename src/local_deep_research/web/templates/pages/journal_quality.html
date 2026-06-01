@@ -702,7 +702,7 @@ function renderSourcesBanner(sources) {
                 </div>
                 <div style="font-size: 0.72rem; color: var(--text-secondary); line-height: 1.35; margin-bottom: 0.3rem;">${escHtml(s.description || '')}</div>
                 <div style="display: flex; gap: 0.75rem; font-size: 0.7rem;">
-                    <a href="${safeHref(s.license_url)}" target="_blank" rel="noopener" style="color: var(--accent-primary); text-decoration: none;">License: ${escHtml(s.license)}</a>
+                    <a href="${safeHref(s.license_url)}" target="_blank" rel="noopener" style="color: var(--accent-primary); text-decoration: none;">${i18n.t('License:')} ${escHtml(s.license)}</a>
                     ${datasetLink}
                 </div>
             </div>

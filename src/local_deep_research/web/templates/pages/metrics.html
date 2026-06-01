@@ -839,7 +839,7 @@
                 </div>
                 <div class="ldr-model-stats">
                     <div class="ldr-token-count">${formatNumber(usageCount)} ' + i18n.t('calls') + '</div>
-                    ${engine.total_results ? `<div class="ldr-call-count">${formatNumber(engine.total_results)} results</div>` : ''}
+                    ${engine.total_results ? `<div class="ldr-call-count">${formatNumber(engine.total_results)} ` + i18n.t('results') + `</div>` : ''}
                 </div>
             `;
             searchContainer.appendChild(item);

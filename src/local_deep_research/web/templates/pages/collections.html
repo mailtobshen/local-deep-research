@@ -11,7 +11,7 @@
 <div class="ldr-rag-manager-container">
     <div class="ldr-rag-header">
         <h1><i aria-hidden="true" class="fas fa-folder-open"></i> {{ _("Document Collections") }}</h1>
-        <p class="ldr-subtitle">{{ _("Manage your document collections for") }} {{ tooltip("RAG-enabled searches", "Upload your documents, index them, then select a collection as 'search engine' when researching. AI will search YOUR files instead of the web.") }}</p>
+        <p class="ldr-subtitle">{{ _("Manage your document collections for") }} {{ tooltip(_("RAG-enabled searches"), _("Upload your documents, index them, then select a collection as 'search engine' when researching. AI will search YOUR files instead of the web.")) }}</p>
     </div>
 
     <!-- How Collections Work Help Panel -->
@@ -36,7 +36,7 @@
                            id="auto-index-toggle"
                            class="ldr-settings-checkbox"
                            style="width: 16px; height: 16px;">
-                    <span><i aria-hidden="true" class="fas fa-magic"></i> {{ tooltip("Auto-index new documents", "When enabled, documents uploaded or downloaded to any collection are automatically indexed for semantic search.") }}</span>
+                    <span><i aria-hidden="true" class="fas fa-magic"></i> {{ tooltip(_("Auto-index new documents"), _("When enabled, documents uploaded or downloaded to any collection are automatically indexed for semantic search.")) }}</span>
                 </label>
                 <a href="/library/collections/create" id="create-collection-btn" class="ldr-btn-collections ldr-btn-collections-primary">
                     <i aria-hidden="true" class="fas fa-plus"></i> {{ _("Create Collection") }}

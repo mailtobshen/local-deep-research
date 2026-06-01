@@ -527,7 +527,7 @@ function updateEnhancedDomainList(domains, domainMetrics) {
     container.innerHTML = '';
 
     if (domains.length === 0) {
-        container.innerHTML = '<div style="text-align: center; color: var(--text-secondary); padding: 1rem;">No domain data available</div>';
+        container.innerHTML = '<div style="text-align: center; color: var(--text-secondary); padding: 1rem;">' + i18n.t('No domain data available') + '</div>';
         return;
     }
 
@@ -545,7 +545,7 @@ function updateEnhancedDomainList(domains, domainMetrics) {
         if (domain.recent_researches && domain.recent_researches.length > 0) {
             researchLinksHtml = `
                 <div class="ldr-research-links">
-                    <div class="ldr-research-links-title">Recent Researches (${researchDiversity} total)</div>
+                    <div class="ldr-research-links-title">${i18n.tf('Recent Researches (%s total)', researchDiversity)}</div>
                     ${domain.recent_researches.map(r => `
                         <a href="/research/${encodeURIComponent(r.id)}" class="ldr-research-link" title="${window.escapeHtml(r.query)}">
                             ${window.escapeHtml(r.query.length > 30 ? r.query.substring(0, 30) + '...' : r.query)}

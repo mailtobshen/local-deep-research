@@ -75,7 +75,7 @@
                 {% if pdf_storage_mode == 'database' %}
                 <button class="ldr-storage-mode-btn ldr-info-message" onclick="showStorageModeModal()" title="{{ _("Click to change storage mode") }}">
                     <i aria-hidden="true" class="fas fa-database"></i>
-                    <strong>{{ _("PDF Storage: Encrypted Database") }}</strong> - PDFs encrypted in your personal database. Portable, isolated per-user.
+                    <strong>{{ _("PDF Storage: Encrypted Database") }}</strong> - {{ _("PDFs encrypted in your personal database. Portable, isolated per-user.") }}
                     <i aria-hidden="true" class="fas fa-pen" style="margin-left: 8px; opacity: 0.6; font-size: 0.85em;"></i>
                 </button>
                 {% elif pdf_storage_mode == 'filesystem' %}
