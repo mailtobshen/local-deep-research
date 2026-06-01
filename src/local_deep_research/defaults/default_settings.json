@@ -310,6 +310,29 @@
         "value": "dark",
         "visible": true
     },
+    "app.language": {
+        "category": "app_interface",
+        "description": "User interface language. Changes take effect after page reload.",
+        "editable": true,
+        "max_value": null,
+        "min_value": null,
+        "name": "Interface Language",
+        "options": [
+            {
+                "label": "简体中文",
+                "value": "zh"
+            },
+            {
+                "label": "English",
+                "value": "en"
+            }
+        ],
+        "step": null,
+        "type": "APP",
+        "ui_element": "select",
+        "value": "zh",
+        "visible": true
+    },
     "app.web_interface": {
         "category": "app_interface",
         "description": "Enable the web interface for the application. When disabled, only CLI and API access is available. Requires server restart to take effect.",
