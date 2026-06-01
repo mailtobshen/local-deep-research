@@ -36,7 +36,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const remaining = maxLength - currentLength;
             const counter = document.getElementById('name-counter');
             if (counter) {
-                counter.textContent = `${remaining} characters remaining`;
+                counter.textContent = i18n.tf('%s characters remaining', remaining);
             }
         });
     }
@@ -57,7 +57,7 @@ async function handleCreateCollection(e) {
     const description = formData.get('description');
 
     if (!name || name.trim().length === 0) {
-        showError('Collection name is required');
+        showError(i18n.t('Collection name is required'));
         return;
     }
 
@@ -66,9 +66,9 @@ async function handleCreateCollection(e) {
 
     try {
         submitBtn.disabled = true;
-        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Creating Collection...';
+        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> ' + i18n.t('Creating Collection...');
         createBtn.disabled = true;
-        createBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Creating Collection...';
+        createBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> ' + i18n.t('Creating Collection...');
 
         const csrfToken = window.api ? window.api.getCsrfToken() : '';
 
@@ -105,16 +105,16 @@ async function handleCreateCollection(e) {
                 }
             }, 1500);
         } else {
-            showError(data.error || 'Failed to create collection');
+            showError(data.error || i18n.t('Failed to create collection'));
         }
     } catch (error) {
         SafeLogger.error('Error creating collection:', error);
-        showError('Failed to create collection: ' + error.message);
+        showError(i18n.tf('Failed to create collection: %s', error.message));
     } finally {
         submitBtn.disabled = false;
-        submitBtn.innerHTML = '<i class="fas fa-folder-plus"></i> Create Collection';
+        submitBtn.innerHTML = '<i class="fas fa-folder-plus"></i> ' + i18n.t('Create Collection');
         createBtn.disabled = false;
-        createBtn.innerHTML = '<i class="fas fa-folder-plus"></i> Create Collection';
+        createBtn.innerHTML = '<i class="fas fa-folder-plus"></i> ' + i18n.t('Create Collection');
     }
 }
 
@@ -125,30 +125,30 @@ function showCreateResults(data) {
     const resultsDiv = document.getElementById('create-results');
 
     let html = '<div class="ldr-alert ldr-alert-success" style="padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">';
-    html += '<h4 style="margin: 0 0 0.5rem 0;"><i class="fas fa-check-circle"></i> Collection Created!</h4>';
+    html += '<h4 style="margin: 0 0 0.5rem 0;"><i class="fas fa-check-circle"></i> ' + i18n.t('Collection Created!') + '</h4>';
 
     if (data.collection && data.collection.id) {
         const escapeHtml = window.escapeHtml || escapeHtmlFallback;
-        html += `<p><strong>Collection created successfully!</strong></p>`;
-        html += '<p>Your collection ID is: <strong>' + escapeHtml(data.collection.id) + '</strong></p>';
+        html += '<p><strong>' + i18n.t('Collection created successfully!') + '</strong></p>';
+        html += '<p>' + i18n.t('Your collection ID is:') + ' <strong>' + escapeHtml(data.collection.id) + '</strong></p>';
         html += '<div style="margin-top: 1rem;">';
         html += `<a href="/library/collections/${encodeURIComponent(data.collection.id)}" class="ldr-btn-collections ldr-btn-collections-primary">`;
-        html += '<i class="fas fa-folder-open"></i> View Collection';
+        html += '<i class="fas fa-folder-open"></i> ' + i18n.t('View Collection');
         html += '</a>';
         html += `<a href="/library/collections/${encodeURIComponent(data.collection.id)}/upload" class="ldr-btn-collections ldr-btn-collections-secondary" style="margin-left: 1rem;">`;
-        html += '<i class="fas fa-plus"></i> Upload Files';
+        html += '<i class="fas fa-plus"></i> ' + i18n.t('Upload Files');
         html += '</a>';
         html += '</div>';
         html += '</div>';
     } else {
-        html += '<p><strong>Collection created!</strong></p>';
-        html += '<p>You can now start uploading files to organize your documents.</p>';
+        html += '<p><strong>' + i18n.t('Collection created!') + '</strong></p>';
+        html += '<p>' + i18n.t('You can now start uploading files to organize your documents.') + '</p>';
         html += '<div style="margin-top: 1rem;">';
         html += '<a href="/library/collections" class="ldr-btn-collections ldr-btn-collections-primary">';
-        html += '<i class="fas fa-folder-open"></i> View All Collections';
+        html += '<i class="fas fa-folder-open"></i> ' + i18n.t('View All Collections') + '';
         html += '</a>';
         html += '<button onclick="window.location.href=\'/library/collections/create\'" class="ldr-btn-collections ldr-btn-collections-secondary" style="margin-left: 1rem;">';
-        html += '<i class="fas fa-plus"></i> Create Another Collection';
+        html += '<i class="fas fa-plus"></i> ' + i18n.t('Create Another Collection') + '';
         html += '</button>';
         html += '</div>';
     }
@@ -169,10 +169,10 @@ function showError(message) {
     const escapeHtml = window.escapeHtml || escapeHtmlFallback;
     const html = `
         <div class="ldr-alert ldr-alert-danger" style="padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
-            <h4 style="margin: 0 0 0.5rem 0;"><i class="fas fa-exclamation-triangle"></i> Creation Error</h4>
+            <h4 style="margin: 0 0 0.5rem 0;"><i class="fas fa-exclamation-triangle"></i> ${i18n.t('Creation Error')}</h4>
             <p>${escapeHtml(message)}</p>
             <div style="margin-top: 1rem;">
-                <a href="/library/collections" class="ldr-btn-collections ldr-btn-collections-primary">Back to Collections</a>
+                <a href="/library/collections" class="ldr-btn-collections ldr-btn-collections-primary">${i18n.t('Back to Collections')}</a>
             </div>
         </div>
     `;

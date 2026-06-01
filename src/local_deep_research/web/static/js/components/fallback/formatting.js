@@ -17,7 +17,7 @@
      * @returns {string} Formatted date
      */
     function formatDate(dateStr) {
-        if (!dateStr) return 'N/A';
+        if (!dateStr) return i18n.t('N/A');
 
         try {
             const date = new Date(dateStr);
@@ -50,13 +50,13 @@
      * @returns {string} Formatted mode
      */
     function formatMode(mode) {
-        if (!mode) return 'Unknown';
+        if (!mode) return i18n.t('Unknown');
 
         const modeMap = {
-            'quick': 'Quick Summary',
-            'detailed': 'Detailed Report',
-            'standard': 'Standard Research',
-            'advanced': 'Advanced Research'
+            'quick': i18n.t('Quick Summary'),
+            'detailed': i18n.t('Detailed Report'),
+            'standard': i18n.t('Standard Research'),
+            'advanced': i18n.t('Advanced Research')
         };
 
         return modeMap[mode] || mode;
@@ -68,7 +68,7 @@
      * @returns {string} Formatted duration
      */
     function formatDuration(seconds) {
-        if (!seconds && seconds !== 0) return 'N/A';
+        if (!seconds && seconds !== 0) return i18n.t('N/A');
 
         const minutes = Math.floor(seconds / 60);
         const remainingSeconds = seconds % 60;
@@ -85,7 +85,7 @@
      * @returns {string} Formatted size
      */
     function formatFileSize(bytes) {
-        if (!bytes && bytes !== 0) return 'N/A';
+        if (!bytes && bytes !== 0) return i18n.t('N/A');
 
         const units = ['B', 'KB', 'MB', 'GB', 'TB'];
         let size = bytes;

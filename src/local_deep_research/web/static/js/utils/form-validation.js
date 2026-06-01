@@ -144,20 +144,20 @@
 
     // Common validators
     const validators = {
-        required: (message = 'This field is required') => (value) => {
+        required: (message = i18n.t('This field is required')) => (value) => {
             return value && value.trim() ? null : message;
         },
         minLength: (min, message) => (value) => {
             if (!value) return null; // Let required handle empty
-            return value.length >= min ? null : (message || `Must be at least ${min} characters`);
+            return value.length >= min ? null : (message || i18n.tf('Must be at least %s characters', min));
         },
         maxLength: (max, message) => (value) => {
             if (!value) return null;
-            return value.length <= max ? null : (message || `Must be no more than ${max} characters`);
+            return value.length <= max ? null : (message || i18n.tf('Must be no more than %s characters', max));
         },
         pattern: (regex, message) => (value) => {
             if (!value) return null;
-            return regex.test(value) ? null : (message || 'Invalid format');
+            return regex.test(value) ? null : (message || i18n.t('Invalid format'));
         }
     };
 

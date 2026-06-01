@@ -81,7 +81,7 @@ async function loadIndexingStatus() {
                 const allIndexed = data.indexed_documents >= data.total_documents;
                 indexBtn.disabled = allIndexed && data.total_documents > 0;
                 if (allIndexed && data.total_documents > 0) {
-                    indexBtn.innerHTML = '<i class="fas fa-check"></i> All Indexed';
+                    indexBtn.innerHTML = '<i class="fas fa-check"></i> ' + i18n.t('All Indexed');
                 }
             }
         }
@@ -107,7 +107,7 @@ async function triggerIndexing() {
     }
     if (!cachedCollectionId) {
         if (progressText) {
-            progressText.textContent = 'Collection not available. Please refresh the page.';
+            progressText.textContent = i18n.t('Collection not available. Please refresh the page.');
             progressText.style.color = 'var(--error-color)';
         }
         // Reset the in-progress flag we set synchronously at the top of this
@@ -121,12 +121,12 @@ async function triggerIndexing() {
     // Show progress UI
     if (indexBtn) {
         indexBtn.disabled = true;
-        indexBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Indexing...';
+        indexBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> ' + i18n.t('Indexing...');
     }
     if (progressDiv) progressDiv.style.display = 'block';
     if (progressBar) progressBar.style.width = '0%';
     if (progressText) {
-        progressText.textContent = 'Starting...';
+        progressText.textContent = i18n.t('Starting...');
         progressText.style.color = '';  // reset from any prior error styling
     }
 
@@ -136,7 +136,7 @@ async function triggerIndexing() {
 
     // Step 1: Convert any unconverted research entries to documents (fast, synchronous)
     try {
-        if (progressText) progressText.textContent = 'Converting research to documents...';
+        if (progressText) progressText.textContent = i18n.t('Converting research to documents...');
 
         const convertResp = await fetch(URLS.LIBRARY_API.RESEARCH_HISTORY_CONVERT_ALL, {
             method: 'POST',
@@ -161,7 +161,7 @@ async function triggerIndexing() {
     }
 
     // Step 2: Start background indexing via POST
-    if (progressText) progressText.textContent = 'Starting indexing...';
+    if (progressText) progressText.textContent = i18n.t('Starting indexing...');
 
     try {
         const startResp = await fetch(URLBuilder.build(URLS.LIBRARY_API.COLLECTION_INDEX_START, cachedCollectionId), {
@@ -197,12 +197,12 @@ async function triggerIndexing() {
         // eslint-disable-next-line require-atomic-updates
         isIndexing = false;
         if (progressText) {
-            progressText.textContent = `Error: ${startError.message}`;
+            progressText.textContent = i18n.t('Error:') + ' ' + startError.message;
             progressText.style.color = 'var(--error-color)';
         }
         if (indexBtn) {
             indexBtn.disabled = false;
-            indexBtn.innerHTML = '<i class="fas fa-sync"></i> Index All';
+            indexBtn.innerHTML = '<i class="fas fa-sync"></i> ' + i18n.t('Index All');
         }
         return;
     }
@@ -256,14 +256,14 @@ function startPolling() {
 
                 if (ResearchStates.isCompleted(data.status)) {
                     if (progressBar) progressBar.style.width = '100%';
-                    if (progressText) progressText.textContent = data.progress_message || 'Indexing complete!';
+                    if (progressText) progressText.textContent = data.progress_message || i18n.t('Indexing complete!');
                 } else if (ResearchStates.isFailed(data.status)) {
                     if (progressText) {
-                        progressText.textContent = `Indexing failed: ${data.error_message || 'Unknown error'}`;
+                        progressText.textContent = i18n.t('Indexing failed:') + ' ' + (data.error_message || i18n.t('Unknown error'));
                         progressText.style.color = 'var(--error-color)';
                     }
                 } else if (ResearchStates.isCancelled(data.status)) {
-                    if (progressText) progressText.textContent = 'Indexing was cancelled.';
+                    if (progressText) progressText.textContent = i18n.t('Indexing was cancelled.');
                 }
 
                 setTimeout(() => {
@@ -272,7 +272,7 @@ function startPolling() {
                     loadIndexingStatus();
                     if (indexBtn) {
                         indexBtn.disabled = false;
-                        indexBtn.innerHTML = '<i class="fas fa-sync"></i> Index All';
+                        indexBtn.innerHTML = '<i class="fas fa-sync"></i> ' + i18n.t('Index All');
                     }
                 }, 2000);
             }
@@ -284,12 +284,12 @@ function startPolling() {
                 indexingPollInterval = null;
                 isIndexing = false;
                 if (progressText) {
-                    progressText.textContent = 'Lost connection to server. Please try again.';
+                    progressText.textContent = i18n.t('Lost connection to server. Please try again.');
                     progressText.style.color = 'var(--error-color)';
                 }
                 if (indexBtn) {
                     indexBtn.disabled = false;
-                    indexBtn.innerHTML = '<i class="fas fa-sync"></i> Index All';
+                    indexBtn.innerHTML = '<i class="fas fa-sync"></i> ' + i18n.t('Index All');
                 }
             }
         }
@@ -320,7 +320,7 @@ async function checkAndResumeIndexing() {
             isIndexing = true;
             if (indexBtn) {
                 indexBtn.disabled = true;
-                indexBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Indexing...';
+                indexBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> ' + i18n.t('Indexing...');
             }
             if (progressDiv) progressDiv.style.display = 'block';
             if (progressBar) progressBar.style.width = '0%';
@@ -404,7 +404,8 @@ function renderSemanticResults(results, query) {
         container.innerHTML = `
             <div class="ldr-empty-state">
                 <i class="fas fa-search"></i>
-                <p>No matching results found. Try indexing more research or using different keywords.</p>
+                <p>${i18n.t('No matching results found. Try indexing more research or using different keywords.')}
+</p>
             </div>
         `;
         return;

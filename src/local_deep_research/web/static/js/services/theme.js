@@ -23,9 +23,9 @@
     // This avoids having to maintain duplicate theme lists
     const THEMES = window.LDR_THEME_METADATA || {
         // Fallback in case metadata wasn't injected (shouldn't happen)
-        'hashed': { label: 'Hashed', icon: 'fa-hashtag', group: 'core' },
-        'light': { label: 'Light', icon: 'fa-sun', group: 'core' },
-        'system': { label: 'System', icon: 'fa-desktop', group: 'system' }
+        'hashed': { label: i18n.t('Hashed'), icon: 'fa-hashtag', group: 'core' },
+        'light': { label: i18n.t('Light'), icon: 'fa-sun', group: 'core' },
+        'system': { label: i18n.t('System'), icon: 'fa-desktop', group: 'system' }
     };
 
     // Valid theme names for validation (auto-detected)
@@ -186,12 +186,12 @@
 
         // Group themes - dynamically determine groups from theme metadata
         const groups = {
-            'core': 'Core Themes',
-            'nature': 'Nature',
-            'dev': 'Developer Themes',
-            'research': 'Research & Reading',
-            'other': 'Other',
-            'system': 'System'
+            'core': i18n.t('Core Themes'),
+            'nature': i18n.t('Nature'),
+            'dev': i18n.t('Developer Themes'),
+            'research': i18n.t('Research & Reading'),
+            'other': i18n.t('Other'),
+            'system': i18n.t('System')
         };
 
         // Create optgroups

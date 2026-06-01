@@ -58,14 +58,14 @@ window.showEmptyState = function(container, message, icon = 'fas fa-newspaper') 
     container.innerHTML = `
         <div class="ldr-empty-state">
             <i class="${esc(icon)}"></i>
-            <h3>No items found</h3>
+            <h3>${i18n.t('No items found')}</h3>
             <p>${esc(message)}</p>
         </div>
     `;
 };
 
 // Loading state helper
-window.showLoadingState = function(container, message = 'Loading...') {
+window.showLoadingState = function(container, message = i18n.t('Loading...')) {
     // bearer:disable javascript_lang_dangerous_insert_html
     container.innerHTML = `
         <div class="ldr-loading-placeholder">
@@ -93,7 +93,7 @@ window.formatTimeAgo = function(timestamp) {
     const time = new Date(timestamp);
     const diff = Math.floor((now - time) / 1000); // seconds
 
-    if (diff < 60) return 'just now';
+    if (diff < 60) return i18n.t('just now');
     if (diff < 3600) return `${Math.floor(diff / 60)} minutes ago`;
     if (diff < 86400) return `${Math.floor(diff / 3600)} hours ago`;
     if (diff < 604800) return `${Math.floor(diff / 86400)} days ago`;

@@ -28,7 +28,7 @@ class FollowUpResearch {
             } else {
                 SafeLogger.warn('Follow-up Research: No research ID found, disabling button');
                 followUpBtn.disabled = true;
-                followUpBtn.title = 'No research ID available';
+                followUpBtn.title = i18n.t('No research ID available');
             }
         }
 
@@ -230,11 +230,11 @@ class FollowUpResearch {
         const followUpBtn = document.getElementById('ask-followup-btn');
         if (followUpBtn) {
             followUpBtn.disabled = true;
-            followUpBtn.title = 'Failed to load follow-up modal template';
+            followUpBtn.title = i18n.t('Failed to load follow-up modal template');
         }
 
         // Show user-friendly error
-        alert('Unable to load follow-up interface. Please refresh the page and try again.');
+        alert(i18n.t('Unable to load follow-up interface. Please refresh the page and try again.'));
     }
 
     /**
@@ -278,12 +278,12 @@ class FollowUpResearch {
 
         const question = document.getElementById('followUpQuestion').value.trim();
         if (!question) {
-            window.ui.showInlineError('followup-error-container', 'Please enter a follow-up question');
+            window.ui.showInlineError('followup-error-container', i18n.t('Please enter a follow-up question'));
             return;
         }
 
         if (!this.parentResearchId) {
-            window.ui.showInlineError('followup-error-container', 'No parent research ID available');
+            window.ui.showInlineError('followup-error-container', i18n.t('No parent research ID available'));
             return;
         }
 
@@ -330,11 +330,11 @@ class FollowUpResearch {
                 // eslint-disable-next-line require-atomic-updates
                 window.location.href = `/progress/${data.research_id}`;
             } else {
-                window.ui.showInlineError('followup-error-container', 'Error starting follow-up research: ' + (data.error || 'Unknown error'));
+                window.ui.showInlineError('followup-error-container', i18n.tf('Error starting follow-up research: %s', data.error || i18n.t('Unknown error')));
             }
         } catch (error) {
             SafeLogger.error('Error submitting follow-up:', error);
-            window.ui.showInlineError('followup-error-container', 'Failed to start follow-up research: ' + error.message);
+            window.ui.showInlineError('followup-error-container', i18n.tf('Failed to start follow-up research: %s', error.message));
         }
     }
 }

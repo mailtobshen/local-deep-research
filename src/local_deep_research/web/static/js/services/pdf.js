@@ -210,7 +210,7 @@ async function generatePdf(title, content, _metadata = {}) {
         const addFooterToCurrentPage = (pageNum) => {
             pdf.setFontSize(8);
             pdf.setTextColor(100, 100, 100);
-            pdf.text(`Page ${pageNum}`, margin, pdfHeight - 20);
+            pdf.text(i18n.tf('Page %s', pageNum), margin, pdfHeight - 20);
         };
 
         // Process each element with a more optimized approach
@@ -797,7 +797,7 @@ async function generatePdf(title, content, _metadata = {}) {
                         currentY += imgHeight + 10;
                     } catch (imgError) {
                         SafeLogger.error('Error adding image:', imgError);
-                        pdf.text("[Image could not be rendered]", margin, currentY + 12);
+                        pdf.text(i18n.t('[Image could not be rendered]'), margin, currentY + 12);
                         currentY += 20;
                     }
                 }
@@ -845,14 +845,14 @@ async function generatePdf(title, content, _metadata = {}) {
                             pdf.addImage(imgData, 'PNG', margin, currentY, imgWidth, imgHeight);
                             currentY += imgHeight + 10;
                         } catch {
-                            pdf.text("[Content could not be rendered]", margin, currentY + 12);
+                            pdf.text(i18n.t('[Content could not be rendered]'), margin, currentY + 12);
                             currentY += 20;
                         }
                     }
                 }
             } catch (elementError) {
                 SafeLogger.error('Error processing element:', elementError);
-                pdf.text("[Error rendering content]", margin, currentY + 12);
+                pdf.text(i18n.t("[Error rendering content]"), margin, currentY + 12);
                 currentY += 20;
             }
         }
@@ -891,7 +891,7 @@ async function downloadPdf(titleOrData, content, metadata = {}) {
 
 
             // Extract title from research data
-            title = researchData.query || researchData.title || researchData.prompt || `Research ${researchId}`;
+            title = researchData.query || researchData.title || researchData.prompt || i18n.t('Research') + ' ' + researchId;
 
             // Extract content - try all possible locations based on how data might be structured
             if (researchData.markdown) {
@@ -946,19 +946,19 @@ async function downloadPdf(titleOrData, content, metadata = {}) {
             };
         } else {
             // We were passed direct parameters
-            title = titleOrData || 'Research Report';
+            title = titleOrData || i18n.t('Research Report');
             pdfContent = content || '';
             pdfMetadata = metadata || {};
         }
 
         // Ensure title is a string
-        title = String(title || 'Research Report');
+        title = String(title || i18n.t('Research Report'));
 
 
         // Show loading indicator
         const loadingIndicator = document.createElement('div');
         loadingIndicator.className = 'ldr-loading-indicator';
-        loadingIndicator.innerHTML = '<div class="ldr-spinner"></div><div>Generating PDF...</div>';
+        loadingIndicator.innerHTML = '<div class="ldr-spinner"></div><div>' + i18n.t('Generating PDF...') + '</div>';
         loadingIndicator.style.position = 'fixed';
         loadingIndicator.style.top = '50%';
         loadingIndicator.style.left = '50%';
@@ -997,7 +997,7 @@ async function downloadPdf(titleOrData, content, metadata = {}) {
         return true;
     } catch (error) {
         SafeLogger.error('Error generating PDF:', error);
-        alert('Error generating PDF: ' + (error.message || 'Unknown error'));
+        alert(i18n.tf('Error generating PDF: %s', error.message || i18n.t('Unknown error')));
         throw error;
     } finally {
         // Remove loading indicator

@@ -252,7 +252,7 @@ function createSafeAlertElement(message, type = 'info') {
     // Create close button (use button element for accessibility)
     const closeBtn = document.createElement('button');
     closeBtn.className = 'ldr-alert-close';
-    closeBtn.setAttribute('aria-label', 'Dismiss alert');
+    closeBtn.setAttribute('aria-label', i18n.t('Dismiss alert'));
     closeBtn.type = 'button';
     closeBtn.textContent = '×';
     closeBtn.addEventListener('click', () => {
@@ -377,8 +377,8 @@ function sanitizeUserInput(input, options = {}) {
     function createSafeLoadingOverlay(options = {}) {
         const {
             iconClass = 'fa-spinner fa-spin fa-3x',
-            title = 'Loading...',
-            description = 'Please wait...',
+            title = i18n.t('Loading...'),
+            description = i18n.t('Please wait...'),
             iconMarginBottom = '20px',
             titleMargin = '10px 0',
             textOpacity = '0.8'

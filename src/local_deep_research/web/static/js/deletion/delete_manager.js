@@ -89,7 +89,7 @@ async function deleteDocument(documentId, options = {}) {
                 const result = await deleteRequest(DELETE_API.DOCUMENT + documentId);
 
                 if (result.success) {
-                    showNotification('success', 'Document deleted successfully');
+                    showNotification('success', i18n.t('Document deleted successfully'));
 
                     if (options.onSuccess) {
                         options.onSuccess(result);
@@ -115,13 +115,13 @@ async function deleteDocument(documentId, options = {}) {
         try {
             const preview = await getRequest(DELETE_API.DOCUMENT_PREVIEW.replace('{id}', documentId));
             if (preview.success) {
-                confirmOptions.title = `Delete "${preview.title}"?`;
+                confirmOptions.title = i18n.tf('Delete "%s"?', preview.title);
                 confirmOptions.details = [];
                 if (preview.has_blob) {
                     confirmOptions.details.push(`PDF file (${formatBytes(preview.blob_size)})`);
                 }
                 if (preview.has_text) {
-                    confirmOptions.details.push('Extracted text content');
+                    confirmOptions.details.push(i18n.t('Extracted text content'));
                 }
                 if (preview.chunks_count > 0) {
                     confirmOptions.details.push(`${preview.chunks_count} RAG index chunks`);
@@ -164,7 +164,7 @@ async function deleteDocumentBlob(documentId, options = {}) {
                 }
             } catch (error) {
                 SafeLogger.error('Error deleting blob:', error);
-                showNotification('error', 'Failed to remove PDF: ' + error.message);
+                showNotification('error', i18n.t('Failed to remove PDF:') + ' ' + error.message);
 
                 if (options.onError) {
                     options.onError(error);
@@ -190,7 +190,7 @@ async function deleteDocumentBlob(documentId, options = {}) {
 async function removeFromCollection(documentId, collectionId, options = {}) {
     const confirmOptions = {
         action: 'removeFromCollection',
-        message: 'Document will be removed from this collection. If it\'s not in any other collection, it will be permanently deleted.',
+        message: i18n.t('Document will be removed from this collection. If it\'s not in any other collection, it will be permanently deleted.'),
         onConfirm: async () => {
             try {
                 const url = DELETE_API.COLLECTION_DOCUMENT
@@ -277,7 +277,7 @@ async function deleteCollection(collectionId, options = {}) {
                 DELETE_API.COLLECTION_PREVIEW.replace('{id}', collectionId)
             );
             if (preview.success) {
-                confirmOptions.title = `Delete "${preview.name}"?`;
+                confirmOptions.title = i18n.tf('Delete "%s"?', preview.name);
                 confirmOptions.details = [];
                 if (preview.documents_count > 0) {
                     confirmOptions.details.push(`${preview.documents_count} document(s) will be unlinked`);

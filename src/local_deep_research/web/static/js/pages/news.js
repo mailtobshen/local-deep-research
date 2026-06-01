@@ -181,7 +181,7 @@ async function initializeNewsPage() {
         sessionStorage.removeItem('activeTestRunQuery');
 
         // Show a message that research is in progress
-        showAlert('Your test run is in progress. Results will appear below when ready.', 'info');
+        showAlert(i18n.t('Your test run is in progress. Results will appear below when ready.'), 'info');
 
         // Start monitoring this specific research with the query
         monitorResearch(activeTestRunResearchId, activeTestRunQuery);
@@ -273,7 +273,7 @@ function setupEventListeners() {
                 await performAdvancedNewsSearch(query);
             } else {
                 SafeLogger.error('No query found in news-subscription-query input');
-                showAlert('Please enter a query', 'warning');
+                showAlert(i18n.t('Please enter a query'), 'warning');
             }
         });
     }
@@ -444,7 +444,7 @@ function clearSearch() {
 // Advanced search using LDR search system
 async function performAdvancedNewsSearch(query, strategy = 'source-based', modelConfig = null) {
     SafeLogger.log('performAdvancedNewsSearch called with:', { query, strategy, modelConfig });
-    showAlert('Performing advanced news analysis...', 'info');
+    showAlert(i18n.t('Performing advanced news analysis...'), 'info');
 
     try {
         // Request will use settings from database if not provided
@@ -485,7 +485,7 @@ async function performAdvancedNewsSearch(query, strategy = 'source-based', model
         SafeLogger.log('Research API response status:', response.status);
 
         if (!response.ok) {
-            let errorMessage = 'Error starting research';
+            let errorMessage = i18n.t('Error starting research');
             try {
                 const errorData = await response.json();
                 errorMessage = errorData.error || errorData.message || errorMessage;
@@ -497,7 +497,7 @@ async function performAdvancedNewsSearch(query, strategy = 'source-based', model
             SafeLogger.error('Research API error:', response.status, errorMessage);
 
             if (response.status === 401) {
-                showAlert('Authentication required. Please log in to perform research.', 'error');
+                showAlert(i18n.t('Authentication required. Please log in to perform research.'), 'error');
                 // Redirect to login after a short delay
                 setTimeout(() => {
                     // bearer:disable javascript_lang_open_redirect — hardcoded /auth/login target, next param is current page URL
@@ -513,7 +513,7 @@ async function performAdvancedNewsSearch(query, strategy = 'source-based', model
         const data = await response.json();
         SafeLogger.log('Research API response:', data);
         if ((data.status === 'success' || data.status === window.RESEARCH_STATUS.QUEUED) && data.research_id) {
-            showAlert('Analyzing news... Results will appear below when ready.', 'info');
+            showAlert(i18n.t('Analyzing news... Results will appear below when ready.'), 'info');
 
             // Show loading state in news feed FIRST
             const container = document.getElementById('news-feed-content');
@@ -531,10 +531,10 @@ async function performAdvancedNewsSearch(query, strategy = 'source-based', model
                         <span><i class="bi bi-clock"></i> Started just now</span>
                     </div>
                     <div class="ldr-news-summary">
-                        <div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="10" aria-label="Research progress">
+                        <div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="10" aria-label="i18n.t('Research progress')">
                             <div class="progress-bar progress-bar-striped progress-bar-animated" style="width: 10%"></div>
                         </div>
-                        <p class="mt-2">Searching for breaking news and analyzing importance...</p>
+                        <p class="mt-2">${i18n.t('Searching for breaking news and analyzing importance...')}</p>
                     </div>
                 </div>
             `;
@@ -548,11 +548,11 @@ async function performAdvancedNewsSearch(query, strategy = 'source-based', model
             });
         } else {
             SafeLogger.error('Unexpected response format:', data);
-            showAlert('Failed to start research - unexpected response', 'error');
+            showAlert(i18n.t('Failed to start research - unexpected response'), 'error');
         }
     } catch (error) {
         SafeLogger.error('Error in advanced search:', error);
-        showAlert('Error performing search', 'error');
+        showAlert(i18n.t('Error performing search'), 'error');
     }
 }
 
@@ -578,7 +578,7 @@ async function createSubscriptionFromSearch(query, researchId) {
 
         if (response.ok) {
             await loadSubscriptions();
-            showAlert('Advanced news subscription created!', 'success');
+            showAlert(i18n.t('Advanced news subscription created!'), 'success');
         }
     } catch (error) {
         SafeLogger.error('Error creating subscription:', error);
@@ -589,7 +589,7 @@ async function createSubscriptionFromSearch(query, researchId) {
 function createSubscriptionFromItem(newsId) {
     const item = newsItems.find(n => n.id === newsId);
     if (!item) {
-        showAlert('News item not found', 'error');
+        showAlert(i18n.t('News item not found'), 'error');
         return;
     }
 
@@ -614,7 +614,7 @@ function displayAdvancedResults(data) {
         toggleTableView(true);
         parseAndDisplayTable(content);
     } else {
-        showAlert('Results loaded. Check your feed!', 'success');
+        showAlert(i18n.t('Results loaded. Check your feed!'), 'success');
         loadNewsFeed();
     }
 }
@@ -677,7 +677,7 @@ function parseAndDisplayTable(content) {
 
 // Simple subscription
 async function createSimpleSubscription(query) {
-    showAlert(`Creating subscription for: ${query}`, 'info');
+    showAlert(i18n.tf('Creating subscription for: %s', query), 'info');
 
     try {
         const response = await fetch('/news/api/subscribe', {
@@ -696,14 +696,14 @@ async function createSimpleSubscription(query) {
         if (response.ok) {
             await loadSubscriptions();
             await loadNewsFeed();
-            showAlert('Subscription created!', 'success');
+            showAlert(i18n.t('Subscription created!'), 'success');
             document.getElementById('news-query').value = '';
         } else {
-            showAlert('Failed to create subscription', 'error');
+            showAlert(i18n.t('Failed to create subscription'), 'error');
         }
     } catch (error) {
         SafeLogger.error('Error creating subscription:', error);
-        showAlert('Error creating subscription', 'error');
+        showAlert(i18n.t('Error creating subscription'), 'error');
     }
 }
 
@@ -731,23 +731,23 @@ async function loadSubscriptions() {
     let html = `
         <div class="ldr-subscription-item ${activeSubscription === 'all' ? 'active' : ''}"
              onclick="selectSubscription('all')">
-            <div class="ldr-subscription-type">ALL FEEDS</div>
-            <div class="ldr-subscription-query">Combined News Feed</div>
-            <div class="ldr-subscription-meta">All your subscriptions</div>
+            <div class="ldr-subscription-type">${i18n.t('ALL FEEDS')}</div>
+            <div class="ldr-subscription-query">${i18n.t('Combined News Feed')}</div>
+            <div class="ldr-subscription-meta">${i18n.t('All your subscriptions')}</div>
         </div>
         <div class="ldr-subscription-item ${activeSubscription === 'saved' ? 'active' : ''}"
              onclick="selectSubscription('saved')">
-            <div class="ldr-subscription-type">SAVED</div>
-            <div class="ldr-subscription-query">Bookmarked Items</div>
+            <div class="ldr-subscription-type">${i18n.t('SAVED')}</div>
+            <div class="ldr-subscription-query">${i18n.t('Bookmarked Items')}</div>
             <div class="ldr-subscription-meta">${savedNewsIds.size} saved items</div>
         </div>
     `;
 
     // Add user subscriptions
     subscriptions.forEach(sub => {
-        const typeLabel = sub.type === 'search' ? 'SEARCH' : 'TOPIC';
-        const query = sub.query || sub.topic || 'Unknown';
-        const nextRefresh = sub.next_refresh ? new Date(sub.next_refresh).toLocaleString() : 'Soon';
+        const typeLabel = sub.type === 'search' ? i18n.t('SEARCH') : i18n.t('TOPIC');
+        const query = sub.query || sub.topic || i18n.t('Unknown');
+        const nextRefresh = sub.next_refresh ? new Date(sub.next_refresh).toLocaleString() : i18n.t('Soon');
 
         html += `
             <div class="ldr-subscription-item ${activeSubscription === sub.id ? 'active' : ''}"
@@ -758,7 +758,7 @@ async function loadSubscriptions() {
                         <div class="ldr-subscription-query">${query}</div>
                         <div class="ldr-subscription-meta">Next: ${nextRefresh}</div>
                     </div>
-                    <button class="btn btn-sm ldr-btn-ghost" onclick="showSubscriptionHistory('${sub.id}'); event.stopPropagation();" title="View history">
+                    <button class="btn btn-sm ldr-btn-ghost" onclick="showSubscriptionHistory('${sub.id}'); event.stopPropagation();" title="${i18n.t('View history')}">
                         <i class="bi bi-clock-history"></i>
                     </button>
                 </div>
@@ -787,7 +787,7 @@ async function loadNewsFeed(focus = null) {
         SafeLogger.error('News container not found!');
         return;
     }
-    safeRenderHTML(container, '<div class="ldr-loading-placeholder"><div class="ldr-loading-spinner"></div><p>Loading news...</p></div>');
+    safeRenderHTML(container, `<div class="ldr-loading-placeholder"><div class="ldr-loading-spinner"></div><p>${i18n.t('Loading news...')}</p></div>`);
 
     // Update feed header if subscription is selected
     updateFeedHeader();
@@ -854,7 +854,7 @@ async function loadNewsFeed(focus = null) {
         }
     } catch (error) {
         SafeLogger.error('Error loading news:', error);
-        safeRenderHTML(container, '<p class="ldr-error-message">Error loading news feed</p>');
+        safeRenderHTML(container, `<p class="ldr-error-message">${i18n.t('Error loading news feed')}</p>`);
     }
 }
 
@@ -910,11 +910,11 @@ function renderNewsItems(searchQuery = null) {
         container.innerHTML = `
             <div class="ldr-empty-state">
                 <i class="fas fa-newspaper"></i>
-                <h3>No news items${filterText}</h3>
-                <p>${hasFilters ? 'Try adjusting your filters or' : 'Start by searching for topics or creating subscriptions'}</p>
+                <h3>${i18n.t('No news items')}${filterText}</h3>
+                <p>${hasFilters ? i18n.t('Try adjusting your filters or') : i18n.t('Start by searching for topics or creating subscriptions')}</p>
                 ${hasFilters ? `
                     <button class="btn btn-sm btn-outline-secondary mt-2" onclick="clearAllFilters()">
-                        <i class="bi bi-x-circle"></i> Clear all filters
+                        <i class="bi bi-x-circle"></i> ${i18n.t('Clear all filters')}
                     </button>
                 ` : ''}
             </div>
@@ -995,7 +995,7 @@ function renderNewsItems(searchQuery = null) {
         let topicsHtml = '';
         if (item.topics && item.topics.length > 0) {
             const topicTags = item.topics.map(topic =>
-                `<span class="ldr-topic-tag" data-topic="${escapeHtml(topic)}" title="Click to filter by ${escapeHtml(topic)}">${escapeHtml(topic)}</span>`
+                `<span class="ldr-topic-tag" data-topic="${escapeHtml(topic)}" title="${i18n.tf('Click to filter by %s', escapeHtml(topic))}">${escapeHtml(topic)}</span>`
             ).join('');
             topicsHtml = `<div class="ldr-news-topics">${topicTags}</div>`;
         }
@@ -1012,11 +1012,11 @@ function renderNewsItems(searchQuery = null) {
                             : ''}
                     </div>
                     <div class="ldr-news-actions-menu">
-                        <button class="btn btn-sm ldr-btn-ghost" onclick="toggleReadStatus('${escapeAttr(item.id)}')" title="${isRead ? 'Mark as unread' : 'Mark as read'}">
+                        <button class="btn btn-sm ldr-btn-ghost" onclick="toggleReadStatus('${escapeAttr(item.id)}')" title="${isRead ? i18n.t('Mark as unread') : i18n.t('Mark as read')}">
                             <i class="bi ${isRead ? 'bi-envelope-open' : 'bi-envelope'}"></i>
                         </button>
                         <div class="dropdown">
-                            <button class="btn btn-sm ldr-btn-ghost" data-bs-toggle="dropdown" title="More actions">
+                            <button class="btn btn-sm ldr-btn-ghost" data-bs-toggle="dropdown" title="${i18n.t('More actions')}">
                                 <i class="bi bi-three-dots-vertical"></i>
                             </button>
                             <ul class="dropdown-menu dropdown-menu-end">
@@ -1038,7 +1038,7 @@ function renderNewsItems(searchQuery = null) {
                     </div>
                 </div>
                 <div class="ldr-news-meta">
-                    <span class="ldr-news-category">${escapeHtml(item.category || 'General')}</span>
+                    <span class="ldr-news-category">${escapeHtml(item.category || i18n.t('General'))}</span>
                     <span class="ldr-impact-indicator">
                         Impact:
                         <div class="ldr-impact-bar">
@@ -1046,7 +1046,7 @@ function renderNewsItems(searchQuery = null) {
                         </div>
                         ${item.impact_score}/10
                     </span>
-                    <span><i class="fas fa-calendar"></i> ${formatNewsDate(item.created_at) || item.time_ago || 'Recently'}</span>
+                    <span><i class="fas fa-calendar"></i> ${formatNewsDate(item.created_at) || item.time_ago || i18n.t('Recently')}</span>
                 </div>
                 ${findingsHtml}
                 ${topicsHtml}
@@ -1062,13 +1062,13 @@ function renderNewsItems(searchQuery = null) {
                     </div>
                     <div class="ldr-action-buttons">
                         <a href="${safeHref(item.source_url || `/results/${item.research_id}`)}" class="btn btn-primary btn-sm" onclick="markAsReadOnClick('${escapeAttr(item.id)}')">
-                            <i class="fas fa-file-alt"></i> View Full Report
+                            <i class="fas fa-file-alt"></i> ${i18n.t('View Full Report')}
                         </a>
-                        <button class="btn btn-secondary btn-sm ldr-save-btn" onclick="toggleSaveItem('${escapeAttr(item.id)}')" title="${savedNewsIds.has(item.id) ? 'Remove from saved' : 'Save for later'}">
+                        <button class="btn btn-secondary btn-sm ldr-save-btn" onclick="toggleSaveItem('${escapeAttr(item.id)}')" title="${savedNewsIds.has(item.id) ? i18n.t('Remove from saved') : i18n.t('Save for later')}">
                             <i class="${savedNewsIds.has(item.id) ? 'bi bi-bookmark-fill' : 'bi bi-bookmark'}"></i>
                         </button>
-                        ${item.query ? `<button class="btn btn-outline-primary btn-sm" onclick="createSubscriptionFromItem('${escapeAttr(item.id)}')" title="Create subscription from this search">
-                            <i class="bi bi-bell-plus"></i> Subscribe
+                        ${item.query ? `<button class="btn btn-outline-primary btn-sm" onclick="createSubscriptionFromItem('${escapeAttr(item.id)}')" title="${i18n.t('Create subscription from this search')}">
+                            <i class="bi bi-bell-plus"></i> ${i18n.t('Subscribe')}
                         </button>` : ''}
                     </div>
                 </div>
@@ -1096,7 +1096,7 @@ function populateNewsTable() {
     }
 
     if (newsItems.length === 0) {
-        safeRenderHTML(tableBody, '<tr><td colspan="7" style="text-align: center;">No news items to display</td></tr>');
+        safeRenderHTML(tableBody, '<tr><td colspan="7" style="text-align: center;">' + i18n.t('No news items to display') + '</td></tr>');
         return;
     }
 
@@ -1126,9 +1126,9 @@ function populateNewsTable() {
                 <td>${sourceLinks}</td>
                 <td class="text-nowrap">${escapeHtml(dateTime)}</td>
                 <td><strong>${escapeHtml(item.headline)}</strong></td>
-                <td>${escapeHtml(item.category || 'General')}</td>
-                <td>${escapeHtml(whatHappened || 'Details pending...')}</td>
-                <td>${escapeHtml(analysis || 'Analysis in progress...')}</td>
+                <td>${escapeHtml(item.category || i18n.t('General'))}</td>
+                <td>${escapeHtml(whatHappened || i18n.t('Details pending...'))}</td>
+                <td>${escapeHtml(analysis || i18n.t('Analysis in progress...'))}</td>
                 <td>
                     <span class="ldr-impact-badge ${impactClass}">
                         ${item.impact_score}/10
@@ -1341,7 +1341,7 @@ function saveItem(newsId) {
 
         // Update UI
         updateSaveButton(newsId, true);
-        showAlert('Item saved for later', 'success');
+        showAlert(i18n.t('Item saved for later'), 'success');
     }
 }
 
@@ -1356,7 +1356,7 @@ function unsaveItem(newsId) {
 
     // Update UI
     updateSaveButton(newsId, false);
-    showAlert('Item removed from saved', 'info');
+    showAlert(i18n.t('Item removed from saved'), 'info');
 }
 
 function toggleSaveItem(newsId) {
@@ -1398,8 +1398,8 @@ function loadSavedNewsFeed() {
         container.innerHTML = `
             <div class="ldr-empty-state">
                 <i class="bi bi-bookmark"></i>
-                <h3>No saved items</h3>
-                <p>Save news items to read them later</p>
+                <h3>${i18n.t('No saved items')}</h3>
+                <p>${i18n.t('Save news items to read them later')}</p>
             </div>
         `;
     }
@@ -1425,9 +1425,9 @@ function toggleExpanded(newsId) {
             // eslint-disable-next-line no-unsanitized/property -- audited 2026-03-28: all interpolations use escapeHtml/esc, numeric coercion, or hardcoded strings
             toggleBtn.innerHTML = `
                 <i class="bi bi-chevron-${isExpanded ? 'up' : 'down'}"></i>
-                ${isExpanded ? 'Show less' : 'Show more'}
+                ${isExpanded ? i18n.t('Show less') : i18n.t('Show more')}
             `;
-            toggleBtn.title = isExpanded ? 'Show less' : 'Show more';
+            toggleBtn.title = isExpanded ? i18n.t(i18n.t('Show less')) : i18n.t(i18n.t('Show more'));
         }
 
         // Update findings display
@@ -1476,13 +1476,13 @@ function createTableViewHTML() {
         <table class="ldr-news-table">
             <thead>
                 <tr>
-                    <th>SOURCES</th>
+                    <th>${i18n.t('SOURCES')}</th>
                     <th>DATE/TIME</th>
-                    <th>HEADLINE</th>
-                    <th>CATEGORY</th>
-                    <th>WHAT HAPPENED</th>
-                    <th>ANALYSIS</th>
-                    <th>IMPACT</th>
+                    <th>${i18n.t('HEADLINE')}</th>
+                    <th>${i18n.t('CATEGORY')}</th>
+                    <th>${i18n.t('WHAT HAPPENED')}</th>
+                    <th>${i18n.t('ANALYSIS')}</th>
+                    <th>${i18n.t('IMPACT')}</th>
                 </tr>
             </thead>
             <tbody id="news-table-body">
@@ -1557,11 +1557,11 @@ function extractTrendingTopics() {
     const container = document.getElementById('trending-topics');
 
     if (topTopics.length === 0) {
-        container.innerHTML = '<div class="text-muted small">No trending topics available</div>';
+        container.innerHTML = '<div class="text-muted small">' + i18n.t('No trending topics available') + '</div>';
     } else {
         // eslint-disable-next-line no-unsanitized/property -- audited 2026-03-28: all interpolations use escapeHtml/esc, numeric coercion, or hardcoded strings
         container.innerHTML = topTopics.map(([topic, count]) =>
-            `<span class="ldr-topic-tag" data-topic="${escapeHtml(topic)}" title="Click to filter by ${escapeHtml(topic)} (${count} occurrences)">
+            `<span class="ldr-topic-tag" data-topic="${escapeHtml(topic)}" title="${i18n.tf('Click to filter by %s (%s occurrences)', [escapeHtml(topic), count])}">
                 ${escapeHtml(topic)} <span class="ldr-topic-count">${count}</span>
             </span>`
         ).join('');
@@ -1585,10 +1585,10 @@ function filterByTopic(topic) {
     // Toggle filter if clicking the same topic
     if (activeTopicFilter === topic) {
         activeTopicFilter = null;
-        showAlert('Showing all news', 'info');
+        showAlert(i18n.t('Showing all news'), 'info');
     } else {
         activeTopicFilter = topic;
-        showAlert(`Filtering by topic: ${topic}`, 'info');
+        showAlert(i18n.tf('Filtering by topic: %s', topic), 'info');
     }
 
     // Update the UI to show active filter
@@ -1643,7 +1643,7 @@ function clearTopicFilter() {
     activeTopicFilter = null;
     updateActiveTopicUI();
     renderNewsItems();
-    showAlert('Filter cleared', 'info');
+    showAlert(i18n.t('Filter cleared'), 'info');
 }
 
 // Update bulk actions bar
@@ -1730,10 +1730,10 @@ function updateFilterStatusBar() {
             const filterBar = document.createElement('div');
             filterBar.className = 'ldr-filter-status-bar';
 
-            let filterHtml = '<div class="ldr-active-filters"><span>Active filters:</span>';
+            let filterHtml = `<div class="ldr-active-filters"><span>${i18n.t('Active filters:')}</span>`;
             filterHtml += filterBadges.join('');
             filterHtml += `<button class="btn btn-sm btn-link" onclick="clearAllFilters()">
-                <i class="bi bi-x-circle"></i> Clear all
+                <i class="bi bi-x-circle"></i> ${i18n.t('Clear all')}
             </button></div>`;
 
             // bearer:disable javascript_lang_dangerous_insert_html
@@ -1750,16 +1750,16 @@ function updateFeedHeader() {
     if (!feedTitle) return;
 
     if (activeSubscription === 'all') {
-        feedTitle.textContent = 'All News';
+        feedTitle.textContent = i18n.t('All News');
     } else if (activeSubscription === 'saved') {
-        feedTitle.textContent = 'Saved Items';
+        feedTitle.textContent = i18n.t('Saved Items');
     } else {
         // Find the subscription name
         const sub = subscriptions.find(s => s.id === activeSubscription);
         if (sub) {
-            const query = sub.query || sub.topic || sub.query_or_topic || 'Unknown';
+            const query = sub.query || sub.topic || sub.query_or_topic || i18n.t('Unknown');
             // bearer:disable javascript_lang_dangerous_insert_html
-            feedTitle.innerHTML = `News for: <span class="text-muted">${escapeHtml(query)}</span>`;
+            feedTitle.innerHTML = `${i18n.t('News for:')} <span class="text-muted">${escapeHtml(query)}</span>`;
         }
     }
 }
@@ -1792,7 +1792,7 @@ function clearAllFilters() {
 
     // Re-render
     renderNewsItems();
-    showAlert('All filters cleared', 'info');
+    showAlert(i18n.t('All filters cleared'), 'info');
 }
 
 // Render source links
@@ -1835,7 +1835,7 @@ function renderSourceLinks(links) {
 async function showSubscriptionHistory(subscriptionId) {
     try {
         const response = await fetch(`/news/api/subscriptions/${subscriptionId}/history`);
-        if (!response.ok) throw new Error('Failed to load history');
+        if (!response.ok) throw new Error(i18n.t('Failed to load history'));
 
         const data = await response.json();
 
@@ -1851,13 +1851,13 @@ async function showSubscriptionHistory(subscriptionId) {
                     </div>
                     <div class="ldr-history-query">${escapeHtml(item.query)}</div>
                     <div class="ldr-history-actions">
-                        <a href="${safeHref(item.url)}" class="btn btn-sm btn-primary">View Results</a>
+                        <a href="${safeHref(item.url)}" class="btn btn-sm btn-primary">${i18n.t('View Results')}</a>
                         ${item.duration_seconds ? `<span class="ldr-duration">${Number(item.duration_seconds) || 0}s</span>` : ''}
                     </div>
                 </div>
             `).join('');
         } else {
-            historyHtml = '<p class="text-muted">No history available yet.</p>';
+            historyHtml = `<p class="text-muted">${i18n.t('No history available yet.')}</p>`;
         }
 
         // Create modal
@@ -1916,7 +1916,7 @@ async function showSubscriptionHistory(subscriptionId) {
 
     } catch (error) {
         SafeLogger.error('Error loading subscription history:', error);
-        showAlert('Failed to load subscription history', 'error');
+        showAlert(i18n.t('Failed to load subscription history'), 'error');
     }
 }
 
@@ -1935,16 +1935,16 @@ function useQueryTemplate() {
     document.getElementById('news-query').value = getNewsTableQuery();
     hideQueryTemplate();
     document.getElementById('table-view-toggle').checked = true;
-    showAlert('Query template loaded. Click Search to execute!', 'info');
+    showAlert(i18n.t('Query template loaded. Click Search to execute!'), 'info');
 }
 
 async function copyQueryTemplate() {
     try {
         await navigator.clipboard.writeText(getNewsTableQuery());
-        showAlert('Query copied to clipboard!', 'success');
+        showAlert(i18n.t('Query copied to clipboard!'), 'success');
     } catch (err) {
         SafeLogger.error('Failed to copy:', err);
-        showAlert('Failed to copy query', 'error');
+        showAlert(i18n.t('Failed to copy query'), 'error');
     }
 }
 
@@ -1956,41 +1956,41 @@ function showCreateSubscriptionModal() {
             <div class="modal-dialog">
                 <div class="modal-content">
                     <div class="modal-header">
-                        <h5 class="modal-title">Create New Subscription</h5>
+                        <h5 class="modal-title">${i18n.t('Create New Subscription')}</h5>
                         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                     </div>
                     <div class="modal-body">
                         <div class="mb-3">
-                            <label class="form-label">Subscription Type</label>
+                            <label class="form-label">${i18n.t('Subscription Type')}</label>
                             <div>
                                 <div class="form-check form-check-inline">
                                     <input class="form-check-input" type="radio" name="sub-type" id="sub-type-search" value="search" checked>
-                                    <label class="form-check-label" for="sub-type-search">Search Query</label>
+                                    <label class="form-check-label" for="sub-type-search">${i18n.t('Search Query')}</label>
                                 </div>
                                 <div class="form-check form-check-inline">
                                     <input class="form-check-input" type="radio" name="sub-type" id="sub-type-topic" value="topic">
-                                    <label class="form-check-label" for="sub-type-topic">Topic</label>
+                                    <label class="form-check-label" for="sub-type-topic">${i18n.t('Topic')}</label>
                                 </div>
                             </div>
                         </div>
                         <div class="mb-3">
-                            <label for="sub-query" class="form-label">Query or Topic</label>
-                            <input type="text" class="ldr-form-control" id="sub-query" placeholder="e.g., AI safety news, Ukraine conflict updates">
+                            <label for="sub-query" class="form-label">${i18n.t('Query or Topic')}</label>
+                            <input type="text" class="ldr-form-control" id="sub-query" placeholder="' + i18n.t('e.g., AI safety news, Ukraine conflict updates') + '">
                         </div>
                         <div class="mb-3">
-                            <label for="sub-refresh" class="form-label">Refresh Interval (hours)</label>
+                            <label for="sub-refresh" class="form-label">${i18n.t('Refresh Interval (hours)')}</label>
                             <select class="ldr-form-control" id="sub-refresh">
-                                <option value="1">Every hour</option>
-                                <option value="4" selected>Every 4 hours</option>
-                                <option value="6">Every 6 hours</option>
-                                <option value="12">Every 12 hours</option>
-                                <option value="24">Daily</option>
+                                <option value="1">${i18n.t('Every hour')}</option>
+                                <option value="4" selected>${i18n.t('Every 4 hours')}</option>
+                                <option value="6">${i18n.t('Every 6 hours')}</option>
+                                <option value="12">${i18n.t('Every 12 hours')}</option>
+                                <option value="24">${i18n.t('Daily')}</option>
                             </select>
                         </div>
                     </div>
                     <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                        <button type="button" class="btn btn-primary" onclick="createSubscription()">Create Subscription</button>
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">${i18n.t('Cancel')}</button>
+                        <button type="button" class="btn btn-primary" onclick="createSubscription()">${i18n.t('Create Subscription')}</button>
                     </div>
                 </div>
             </div>
@@ -2025,7 +2025,7 @@ async function createSubscription() {
     const refreshMinutes = document.getElementById('sub-refresh').value;
 
     if (!query) {
-        showAlert('Please enter a query or topic', 'warning');
+        showAlert(i18n.t('Please enter a query or topic'), 'warning');
         return;
     }
 
@@ -2046,13 +2046,13 @@ async function createSubscription() {
         if (response.ok) {
             hideSubscriptionModal();
             await loadSubscriptions();
-            showAlert('Subscription created successfully!', 'success');
+            showAlert(i18n.t('Subscription created successfully!'), 'success');
         } else {
-            showAlert('Failed to create subscription', 'error');
+            showAlert(i18n.t('Failed to create subscription'), 'error');
         }
     } catch (error) {
         SafeLogger.error('Error creating subscription:', error);
-        showAlert('Error creating subscription', 'error');
+        showAlert(i18n.t('Error creating subscription'), 'error');
     }
 }
 
@@ -2078,10 +2078,10 @@ function getCSRFToken() {
 
 const NEWS_CARD_CONFIG = {
     getId: (r) => r.research_id || '',
-    getTitle: (r) => r.research_title || r.title || 'Untitled',
+    getTitle: (r) => r.research_title || r.title || i18n.t('Untitled'),
     getUrl: (r) => ((typeof URLBuilder !== 'undefined' && r.research_id)
         ? URLBuilder.resultsPage(r.research_id) : '#'),
-    getBadges: () => [{ icon: 'newspaper', label: 'News' }],
+    getBadges: () => [{ icon: 'newspaper', label: i18n.t('News') }],
     getDate: (r) => r.research_created_at,
     getSubtitle: () => null,
 };
@@ -2120,7 +2120,7 @@ function setupSearchModeToggle() {
         // Update button label
         const btn = document.getElementById('news-search-mode-btn');
         if (btn) {
-            const labels = { hybrid: 'AI Hybrid', text: 'Text Only', semantic: 'AI Only' };
+            const labels = { hybrid: i18n.t('AI Hybrid'), text: i18n.t('Text Only'), semantic: i18n.t('AI Only') };
             const icons = { hybrid: 'fa-brain', text: 'fa-font', semantic: 'fa-brain' };
             if (labels[mode]) {
                 window.safeUpdateButton(btn, icons[mode], ' ' + labels[mode]);
@@ -2132,7 +2132,7 @@ function setupSearchModeToggle() {
         if (input) {
             const placeholders = {
                 hybrid: 'AI Hybrid: searches headlines & content with AI...',
-                text: 'Text: filters by headline, topic, or keyword...',
+                text: i18n.t('Text: filters by headline, topic, or keyword...'),
                 semantic: 'AI: searches inside research content using semantic similarity...'
             };
             input.placeholder = placeholders[mode];
@@ -2167,7 +2167,7 @@ async function runNewsSemanticSearch(query) {
     const currentId = ++newsSearchId;
 
     if (!newsCollectionId) {
-        showAlert('Semantic search not available — research history may not be indexed yet.', 'warning');
+        showAlert(i18n.t('Semantic search not available — research history may not be indexed yet.'), 'warning');
         return;
     }
 
@@ -2178,7 +2178,7 @@ async function runNewsSemanticSearch(query) {
     // Show loading
     if (feedContent) feedContent.style.display = 'none';
     semanticContainer.style.display = '';
-    semanticContainer.innerHTML = '<div class="ldr-loading-placeholder"><div class="ldr-loading-spinner"></div><p>Searching content with AI...</p></div>';
+    semanticContainer.innerHTML = '<div class="ldr-loading-placeholder"><div class="ldr-loading-spinner"></div><p>' + i18n.t('Searching content with AI...') + '</p></div>';
 
     try {
         const searchUrl = typeof URLBuilder !== 'undefined'
@@ -2198,7 +2198,7 @@ async function runNewsSemanticSearch(query) {
         if (currentId !== newsSearchId || newsSearchMode !== NEWS_SM.SEMANTIC) return;
 
         if (!resp.ok) {
-            semanticContainer.innerHTML = '<div class="ldr-empty-state"><p>Semantic search failed. Try again later.</p></div>';
+            semanticContainer.innerHTML = '<div class="ldr-empty-state"><p>' + i18n.t('Semantic search failed. Try again later.') + '</p></div>';
             return;
         }
 
@@ -2212,14 +2212,14 @@ async function runNewsSemanticSearch(query) {
         results = results.filter(r => r.research_id && newsIds.has(String(r.research_id)));
 
         if (results.length === 0) {
-            semanticContainer.innerHTML = '<div class="ldr-empty-state"><i class="fas fa-brain fa-2x" style="opacity:0.5"></i><p>No semantic matches found in news items.</p></div>';
+            semanticContainer.innerHTML = '<div class="ldr-empty-state"><i class="fas fa-brain fa-2x" style="opacity:0.5"></i><p>' + i18n.t('No semantic matches found in news items.') + '</p></div>';
             return;
         }
 
         // Render semantic result cards
         const createCard = window.SemanticSearch && window.SemanticSearch.createSemanticResultCard;
         if (!createCard) {
-            semanticContainer.innerHTML = '<div class="ldr-empty-state"><i class="fas fa-exclamation-triangle fa-2x"></i><p>Search module not loaded. Please refresh the page.</p></div>';
+            semanticContainer.innerHTML = '<div class="ldr-empty-state"><i class="fas fa-exclamation-triangle fa-2x"></i><p>' + i18n.t('Search module not loaded. Please refresh the page.') + '</p></div>';
             return;
         }
 
@@ -2229,7 +2229,7 @@ async function runNewsSemanticSearch(query) {
         }
     } catch (error) {
         SafeLogger.error('Semantic search error:', error);
-        semanticContainer.innerHTML = '<div class="ldr-empty-state"><p>Error performing semantic search.</p></div>';
+        semanticContainer.innerHTML = '<div class="ldr-empty-state"><p>' + i18n.t('Error performing semantic search.') + '</p></div>';
     }
 }
 
@@ -2245,7 +2245,7 @@ async function runNewsHybridSearch(query) {
         const loadingDiv = document.createElement('div');
         loadingDiv.className = 'ldr-hybrid-loading';
         loadingDiv.id = 'news-hybrid-loading';
-        loadingDiv.innerHTML = '<div class="ldr-spinner" style="width: 16px; height: 16px; border-width: 2px;"></div> Searching content...';
+        loadingDiv.innerHTML = '<div class="ldr-spinner" style="width: 16px; height: 16px; border-width: 2px;"></div> ' + i18n.t('Searching content...');
         feedContent.appendChild(loadingDiv);
     }
 
@@ -2332,7 +2332,7 @@ async function runNewsHybridSearch(query) {
             if (createCard) {
                 const divider = document.createElement('div');
                 divider.className = 'ldr-hybrid-divider';
-                divider.textContent = 'Also found in research content';
+                divider.textContent = i18n.t('Also found in research content');
                 feedContent.appendChild(divider);
 
                 for (const entry of tiered.tier3) {
@@ -2358,7 +2358,7 @@ function refreshFeed() {
     } else {
         loadNewsFeed();
     }
-    showAlert('Feed refreshed', 'info');
+    showAlert(i18n.t('Feed refreshed'), 'info');
 }
 
 // Auto-refresh functions
@@ -2381,7 +2381,7 @@ function startAutoRefresh() {
     }
     refreshIndicatorInterval = setInterval(updateRefreshIndicator, 1000);
 
-    showAlert('Auto-refresh enabled (every 5 minutes)', 'success');
+    showAlert(i18n.t('Auto-refresh enabled (every 5 minutes)'), 'success');
 }
 
 function stopAutoRefresh() {
@@ -2393,7 +2393,7 @@ function stopAutoRefresh() {
         clearInterval(refreshIndicatorInterval);
         refreshIndicatorInterval = null;
     }
-    showAlert('Auto-refresh disabled', 'info');
+    showAlert(i18n.t('Auto-refresh disabled'), 'info');
 }
 
 function updateRefreshIndicator() {
@@ -2428,7 +2428,7 @@ function updateRefreshIndicator() {
             if (autoRefreshLabel) {
                 // bearer:disable javascript_lang_dangerous_insert_html
                 // eslint-disable-next-line no-unsanitized/property -- audited 2026-03-28: all interpolations use escapeHtml/esc, numeric coercion, or hardcoded strings
-                autoRefreshLabel.innerHTML = `<i class="bi bi-arrow-clockwise"></i> Auto-refresh (${countdownText})`;
+                autoRefreshLabel.innerHTML = `<i class="bi bi-arrow-clockwise"></i> ${i18n.tf('Auto-refresh (%s)', countdownText)}`;
             }
         }
     }
@@ -2450,7 +2450,7 @@ async function monitorResearch(researchId, query = null) {
         const statusResponse = await fetch(URLBuilder.researchStatus(researchId));
         if (statusResponse.ok) {
             const statusData = await statusResponse.json();
-            query ||= statusData.query || 'News Analysis';
+            query ||= statusData.query || i18n.t('News Analysis');
 
             // Show the progress card immediately
             const container = document.getElementById('news-feed-content');
@@ -2472,10 +2472,10 @@ async function monitorResearch(researchId, query = null) {
                     </div>
                     <div class="ldr-news-meta">
                         <span><i class="bi bi-info-circle"></i> Research ID: ${escapeHtml(researchId)}</span>
-                        <span><i class="bi bi-clock"></i> ${ResearchStates.isInProgress(statusData.status) ? 'In progress' : 'Started just now'}</span>
+                        <span><i class="bi bi-clock"></i> ${ResearchStates.isInProgress(statusData.status) ? i18n.t('In progress') : i18n.t('Started just now')}</span>
                     </div>
                     <div class="ldr-news-summary">
-                        <div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Number(statusData.progress) || 10}" aria-label="Research progress">
+                        <div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Number(statusData.progress) || 10}" aria-label="i18n.t('Research progress')">
                             <div class="progress-bar progress-bar-striped progress-bar-animated" style="width: ${Number(statusData.progress) || 10}%"></div>
                         </div>
                         <p class="mt-2">${escapeHtml(statusData.message || 'Searching for breaking news and analyzing importance...')}</p>
@@ -2533,7 +2533,7 @@ async function monitorResearch(researchId, query = null) {
                     }
 
                     // Show success message
-                    showAlert('Test run completed! Loading results...', 'success');
+                    showAlert(i18n.t('Test run completed! Loading results...'), 'success');
 
                     // Reload the news feed to show the completed research
                     // The backend should now include it because it has is_news_search metadata
@@ -2548,7 +2548,7 @@ async function monitorResearch(researchId, query = null) {
                     if (card) {
                         card.remove();
                     }
-                    showAlert('Test run failed. Please check your configuration and try again.', 'error');
+                    showAlert(i18n.t('Test run failed. Please check your configuration and try again.'), 'error');
                 }
             }
         } catch (error) {
@@ -2593,7 +2593,7 @@ async function checkActiveNewsResearch() {
         } else if (ResearchStates.isCompleted(status.status)) {
             // Research completed while user was away
             localStorage.removeItem('active_news_research');
-            showAlert('Your news analysis has completed! Loading results...', 'success');
+            showAlert(i18n.t('Your news analysis has completed! Loading results...'), 'success');
 
             // Reload the feed to show the results
             await loadNewsFeed();
@@ -2627,7 +2627,7 @@ async function pollForNewsResearchResults(researchId, originalQuery, isResume = 
             const statusResponse = await fetch(URLBuilder.researchStatus(researchId));
             if (!statusResponse.ok) {
                 clearInterval(pollInterval);
-                showAlert('Failed to check research status', 'error');
+                showAlert(i18n.t('Failed to check research status'), 'error');
                 return;
             }
 
@@ -2657,7 +2657,7 @@ async function pollForNewsResearchResults(researchId, originalQuery, isResume = 
                 progressCards.forEach(card => card.remove());
 
                 // Show success and reload feed
-                showAlert('News analysis completed! Loading results...', 'success');
+                showAlert(i18n.t('News analysis completed! Loading results...'), 'success');
 
                 // Reload the news feed after a short delay
                 // The backend should now include the completed research
@@ -2667,7 +2667,7 @@ async function pollForNewsResearchResults(researchId, originalQuery, isResume = 
             } else if (ResearchStates.isTerminal(status.status) && !ResearchStates.isCompleted(status.status)) {
                 clearInterval(pollInterval);
                 localStorage.removeItem('active_news_research');
-                showAlert(`Research ${status.status}: ${status.metadata?.error || 'Unknown error'}`, 'error');
+                showAlert(i18n.tf('Research %s: %s', [status.status, status.metadata?.error || i18n.t('Unknown error')]), 'error');
                 loadNewsFeed(); // Reload normal feed
             }
 
@@ -2675,13 +2675,13 @@ async function pollForNewsResearchResults(researchId, originalQuery, isResume = 
             if (pollCount >= maxPolls) {
                 clearInterval(pollInterval);
                 localStorage.removeItem('active_news_research');
-                showAlert('Research taking too long. Check the progress page.', 'warning');
+                showAlert(i18n.t('Research taking too long. Check the progress page.'), 'warning');
             }
         } catch (error) {
             SafeLogger.error('Error polling for results:', error);
             clearInterval(pollInterval);
             localStorage.removeItem('active_news_research');
-            showAlert('Error checking research status', 'error');
+            showAlert(i18n.t('Error checking research status'), 'error');
         }
     }, 5000); // Poll every 5 seconds
 }
@@ -2764,7 +2764,7 @@ function displayRecentSearches() {
     if (!container) return;
 
     if (searchHistory.length === 0) {
-        container.innerHTML = '<div class="text-muted small">Your recent news searches will appear here</div>';
+        container.innerHTML = '<div class="text-muted small">' + i18n.t('Your recent news searches will appear here') + '</div>';
         return;
     }
 
@@ -2797,7 +2797,7 @@ function rerunSearch(query, _type = 'quick') {
     handleSearchSubmit();
 }
 async function clearSearchHistory() {
-    if (!confirm('Clear all search history?')) return;
+    if (!confirm(i18n.t('Clear all search history?'))) return;
 
     try {
         const response = await fetch('/news/api/search-history', {
@@ -2811,20 +2811,20 @@ async function clearSearchHistory() {
         if (response.ok) {
             searchHistory = [];
             displayRecentSearches();
-            showAlert('Search history cleared', 'success');
+            showAlert(i18n.t('Search history cleared'), 'success');
         } else {
-            showAlert('Failed to clear search history', 'danger');
+            showAlert(i18n.t('Failed to clear search history'), 'danger');
         }
     } catch (e) {
         SafeLogger.error('Failed to clear search history:', e);
-        showAlert('Failed to clear search history', 'danger');
+        showAlert(i18n.t('Failed to clear search history'), 'danger');
     }
 }
 
 function getTimeAgo(date) {
     const seconds = Math.floor((new Date() - date) / 1000);
 
-    if (seconds < 60) return 'just now';
+    if (seconds < 60) return i18n.t('just now');
     if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
     if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
     if (seconds < 604800) return `${Math.floor(seconds / 86400)}d ago`;
@@ -2918,7 +2918,7 @@ function markAllAsRead() {
     });
     saveReadStatus();
     renderNewsItems();
-    showAlert('All items marked as read', 'success');
+    showAlert(i18n.t('All items marked as read'), 'success');
 }
 
 // Expand all items
@@ -2932,7 +2932,7 @@ function expandAll() {
             if (icon) icon.style.transform = 'rotate(180deg)';
         }
     });
-    showAlert('All items expanded', 'info');
+    showAlert(i18n.t('All items expanded'), 'info');
 }
 
 // Collapse all items
@@ -2943,7 +2943,7 @@ function collapseAll() {
         const icon = item.querySelector('.ldr-expand-icon');
         if (icon) icon.style.transform = 'rotate(0)';
     });
-    showAlert('All items collapsed', 'info');
+    showAlert(i18n.t('All items collapsed'), 'info');
 }
 
 // Share and export functions
@@ -2961,7 +2961,7 @@ function shareNews(newsId) {
             text: item.summary || item.findings?.substring(0, 200) + '...',
             url: shareUrl
         }).then(() => {
-            showAlert('Shared successfully', 'success');
+            showAlert(i18n.t('Shared successfully'), 'success');
         }).catch(err => {
             if (err.name !== 'AbortError') {
                 copyToClipboard(shareText);
@@ -2986,7 +2986,7 @@ function exportToMarkdown(newsId) {
     if (!item) return;
 
     let markdown = `# ${item.headline}\n\n`;
-    markdown += `**Category:** ${item.category || 'General'}\n`;
+    markdown += `**Category:** ${item.category || i18n.t('General')}\n`;
     markdown += `**Impact Score:** ${item.impact_score}/10\n`;
     markdown += `**Date:** ${new Date(item.created_at || Date.now()).toLocaleDateString()}\n\n`;
 
@@ -3014,7 +3014,7 @@ function exportToMarkdown(newsId) {
     a.download = `${item.headline.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.md`;
     a.click();
 
-    showAlert('Exported to Markdown', 'success');
+    showAlert(i18n.t('Exported to Markdown'), 'success');
 }
 
 function hideNewsItem(newsId) {
@@ -3030,14 +3030,14 @@ function hideNewsItem(newsId) {
             updateBulkActionsBar();
         }, 300);
     }
-    showAlert('Item hidden', 'info');
+    showAlert(i18n.t('Item hidden'), 'info');
 }
 
 
 function copyToClipboard(text) {
     if (navigator.clipboard) {
         navigator.clipboard.writeText(text).then(() => {
-            showAlert('Copied to clipboard', 'success');
+            showAlert(i18n.t('Copied to clipboard'), 'success');
         }).catch(_err => {
             // Fallback
             const textarea = document.createElement('textarea');
@@ -3048,7 +3048,7 @@ function copyToClipboard(text) {
             textarea.select();
             document.execCommand('copy');
             document.body.removeChild(textarea);
-            showAlert('Copied to clipboard', 'success');
+            showAlert(i18n.t('Copied to clipboard'), 'success');
         });
     }
 }
@@ -3119,7 +3119,7 @@ function isNewsNew(item) {
 // News Templates
 const newsTemplates = {
     'breaking-news': {
-        name: 'Breaking News Table',
+        name: i18n.t('Breaking News Table'),
         query: `Find UP TO 10 IMPORTANT breaking news stories from TODAY YYYY-MM-DD ONLY.
 
 START YOUR RESPONSE DIRECTLY WITH THE TABLE. NO INTRODUCTION OR PREAMBLE.
@@ -3170,7 +3170,7 @@ After the table, add:
 - **WATCH FOR**: 3 bullet points on what to monitor in next 24 hours`
     },
     'market-analysis': {
-        name: 'Market Analysis',
+        name: i18n.t('Market Analysis'),
         query: `Analyze today's financial markets and economic news from YYYY-MM-DD.
 
 Find UP TO 10 SIGNIFICANT market movements, economic events, or financial news items from today.
@@ -3204,7 +3204,7 @@ REQUIREMENTS:
 - If data is unavailable, state so rather than fabricating`
     },
     'tech-updates': {
-        name: 'Technology Updates',
+        name: i18n.t('Technology Updates'),
         query: `Find UP TO 10 IMPORTANT technology news stories and updates from today YYYY-MM-DD.
 
 CRITICAL: All information MUST be from real, verifiable sources. DO NOT invent or fabricate any tech news, announcements, or details. Only report what you find from actual technology news sources.
@@ -3238,7 +3238,7 @@ REQUIREMENTS:
 - If insufficient news is found, include fewer rows rather than inventing content`
     },
     'local-news': {
-        name: 'Local News',
+        name: i18n.t('Local News'),
         query: `LOCATION: [ENTER YOUR CITY/REGION HERE]
 
 Find UP TO 10 LOCAL NEWS ITEMS for the specified location from today YYYY-MM-DD.
@@ -3276,7 +3276,7 @@ REQUIREMENTS:
 - If insufficient local news is found, include fewer rows rather than fabricating content`
     },
     'topic-news': {
-        name: 'Topic News',
+        name: i18n.t('Topic News'),
         query: `TOPIC: [ENTER YOUR TOPIC HERE - e.g., anime, space exploration, renewable energy, etc.]
 
 Find UP TO 10 DISTINCT, SEPARATE news stories about the specified topic from today YYYY-MM-DD.
@@ -3340,7 +3340,7 @@ After the table, add:
 - **UPCOMING**: 3 bullet points about what to watch for in this topic area`
     },
     'product-prices': {
-        name: 'Product Price Search',
+        name: i18n.t('Product Price Search'),
         query: `PRODUCT PRICE SEARCH:
 - Product: [PRODUCT]
 - Location: [LOCATION]
@@ -3415,7 +3415,7 @@ function useNewsTemplate(templateId) {
 
         // For topic news template, prompt for topic
         if (templateId === 'topic-news') {
-            const topic = prompt('Enter the topic you want to track (e.g., anime, space exploration, renewable energy):');
+            const topic = prompt(i18n.t('Enter the topic you want to track (e.g., anime, space exploration, renewable energy):'));
             if (!topic) {
                 return; // User cancelled
             }
@@ -3426,7 +3426,7 @@ function useNewsTemplate(templateId) {
 
         // For local news template, prompt for location
         if (templateId === 'local-news') {
-            const location = prompt('Enter your city or region:');
+            const location = prompt(i18n.t('Enter your city or region:'));
             if (!location) {
                 return; // User cancelled
             }
@@ -3434,21 +3434,21 @@ function useNewsTemplate(templateId) {
         }
         // For product price search template, prompt for multiple inputs
         if (templateId === 'product-prices') {
-            const product = prompt('Enter the product you want to search for:');
+            const product = prompt(i18n.t('Enter the product you want to search for:'));
             if (!product) {
                 return; // User cancelled
             }
 
-            const location = prompt('Enter your city or region (e.g., "New York, NY" or "Los Angeles area"):');
+            const location = prompt(i18n.t('Enter your city or region (e.g., "New York, NY" or "Los Angeles area"):'));
             if (!location) {
                 return; // User cancelled
             }
 
-            const marketplace = prompt('Enter marketplace (optional - e.g., eBay, Facebook Marketplace, Amazon, or leave empty for all):') || 'all marketplaces';
+            const marketplace = prompt(i18n.t('Enter marketplace (optional - e.g., eBay, Facebook Marketplace, Amazon, or leave empty for all):')) || i18n.t('all marketplaces');
 
-            const priceRange = prompt('Enter price range (optional - e.g., "$100-$500" or leave empty for any price):') || 'any price';
+            const priceRange = prompt(i18n.t('Enter price range (optional - e.g., "$100-$500" or leave empty for any price):')) || i18n.t('any price');
 
-            const condition = prompt('Enter condition (optional - e.g., New, Used, Refurbished, or leave empty for any):') || 'any condition';
+            const condition = prompt(i18n.t('Enter condition (optional - e.g., New, Used, Refurbished, or leave empty for any):')) || i18n.t('any condition');
 
             // Replace all placeholders
             updatedQuery = updatedQuery.replace(/\[PRODUCT\]/g, product);
@@ -3484,38 +3484,38 @@ function showNewsSubscriptionModal(query = '', templateName = '') {
                 <div class="modal-dialog">
                     <div class="modal-content">
                         <div class="modal-header">
-                            <h5 class="modal-title">Create News Subscription</h5>
+                            <h5 class="modal-title">${i18n.t('Create News Subscription')}</h5>
                             <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                         </div>
                         <form id="news-subscription-form">
                             <div class="modal-body">
                                 <div class="mb-3">
-                                    <label for="news-subscription-query" class="form-label">Topic or Search Query</label>
+                                    <label for="news-subscription-query" class="form-label">${i18n.t('Topic or Search Query')}</label>
                                     <textarea class="ldr-form-control" id="news-subscription-query" rows="4"
-                                           placeholder="e.g., artificial intelligence, climate change, tech news" required></textarea>
+                                           placeholder="' + i18n.t('e.g., artificial intelligence, climate change, tech news') + '" required></textarea>
                                     <div class="form-text">Enter keywords, topics, or search queries you want to track</div>
                                 </div>
 
                                 <div class="mb-3">
                                     <label for="news-subscription-name" class="form-label">Subscription Name (Optional)</label>
                                     <input type="text" class="ldr-form-control" id="news-subscription-name"
-                                           placeholder="e.g., AI Research Updates">
+                                           placeholder="' + i18n.t('e.g., AI Research Updates') + '">
                                 </div>
 
                                 <div class="row">
                                     <div class="col-md-6 mb-3">
-                                        <label for="news-subscription-frequency" class="form-label">Update Frequency</label>
+                                        <label for="news-subscription-frequency" class="form-label">${i18n.t('Update Frequency')}</label>
                                         <select class="form-select" id="news-subscription-frequency">
-                                            <option value="hourly">Every Hour</option>
-                                            <option value="daily" selected>Daily</option>
-                                            <option value="weekly">Weekly</option>
+                                            <option value="hourly">${i18n.t('Every Hour')}</option>
+                                            <option value="daily" selected>${i18n.t('Daily')}</option>
+                                            <option value="weekly">${i18n.t('Weekly')}</option>
                                         </select>
                                     </div>
 
                                     <div class="col-md-6 mb-3">
-                                        <label for="news-subscription-folder" class="form-label">Folder</label>
+                                        <label for="news-subscription-folder" class="form-label">${i18n.t('Folder')}</label>
                                         <select class="form-select" id="news-subscription-folder">
-                                            <option value="">Uncategorized</option>
+                                            <option value="">${i18n.t('Uncategorized')}</option>
                                             <!-- Dynamic folders will be added here -->
                                         </select>
                                     </div>
@@ -3540,9 +3540,9 @@ function showNewsSubscriptionModal(query = '', templateName = '') {
                                 </div>
                             </div>
                             <div class="modal-footer">
-                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                                <button type="button" class="btn btn-primary" id="run-template-btn">Run Once</button>
-                                <button type="submit" class="btn btn-primary">Create Subscription</button>
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">${i18n.t('Cancel')}</button>
+                                <button type="button" class="btn btn-primary" id="run-template-btn">${i18n.t('Run Once')}</button>
+                                <button type="submit" class="btn btn-primary">${i18n.t('Create Subscription')}</button>
                             </div>
                         </form>
                     </div>
@@ -3568,7 +3568,7 @@ function showNewsSubscriptionModal(query = '', templateName = '') {
                 await performAdvancedNewsSearch(currentQuery);
             } else {
                 SafeLogger.error('No query found in news-subscription-query input');
-                showAlert('Please enter a query', 'warning');
+                showAlert(i18n.t('Please enter a query'), 'warning');
             }
         });
     }
@@ -3596,7 +3596,7 @@ function showNewsSubscriptionModal(query = '', templateName = '') {
         SafeLogger.log('Attempting to show modal');
         if (typeof bootstrap === 'undefined') {
             SafeLogger.error('Bootstrap is not loaded!');
-            alert('Bootstrap is not loaded. Please refresh the page.');
+            alert(i18n.t('Bootstrap is not loaded. Please refresh the page.'));
             return;
         }
         const modalElement = document.getElementById('newsSubscriptionModal');
@@ -3609,7 +3609,7 @@ function showNewsSubscriptionModal(query = '', templateName = '') {
         SafeLogger.log('Modal should be visible now');
     } catch (error) {
         SafeLogger.error('Error showing modal:', error);
-        alert('Error showing subscription modal: ' + error.message);
+        alert(i18n.tf('Error showing subscription modal: %s', error.message));
     }
 }
 
@@ -3657,7 +3657,7 @@ async function handleNewsSubscriptionSubmit(e) {
 
         if (response.ok) {
             const data = await response.json();
-            showAlert('Subscription created successfully!', 'success');
+            showAlert(i18n.t('Subscription created successfully!'), 'success');
 
             // Close modal
             bootstrap.Modal.getInstance(document.getElementById('newsSubscriptionModal')).hide();
@@ -3678,7 +3678,7 @@ async function handleNewsSubscriptionSubmit(e) {
                         const runData = await runResponse.json();
 
                         if (runData.research_id) {
-                            showAlert('Subscription research started...', 'info');
+                            showAlert(i18n.t('Subscription research started...'), 'info');
 
                             // Show loading state in news feed with progress visualization
                             const container = document.getElementById('news-feed-content');
@@ -3697,10 +3697,10 @@ async function handleNewsSubscriptionSubmit(e) {
                                     <span><i class="bi bi-clock"></i> Started just now</span>
                                 </div>
                                 <div class="ldr-news-summary">
-                                    <div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="10" aria-label="Subscription progress">
+                                    <div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="10" aria-label="${i18n.t('Subscription progress')}">
                                         <div class="progress-bar progress-bar-striped progress-bar-animated" style="width: 10%"></div>
                                     </div>
-                                    <p class="mt-2">Searching for breaking news and analyzing importance...</p>
+                                    <p class="mt-2">${i18n.t('Searching for breaking news and analyzing importance...')}</p>
                                 </div>
                             `;
 
@@ -3722,11 +3722,11 @@ async function handleNewsSubscriptionSubmit(e) {
             loadSubscriptions();
         } else {
             const error = await response.json();
-            showAlert(error.error || 'Failed to create subscription', 'danger');
+            showAlert(error.error || i18n.t('Failed to create subscription'), 'danger');
         }
     } catch (error) {
         SafeLogger.error('Error creating subscription:', error);
-        showAlert('Failed to create subscription', 'danger');
+        showAlert(i18n.t('Failed to create subscription'), 'danger');
     }
 }
 
@@ -3739,7 +3739,7 @@ async function loadSubscriptionFolders() {
             const select = document.getElementById('news-subscription-folder');
 
             // Clear existing options except the first one
-            select.innerHTML = '<option value="">Uncategorized</option>';
+            select.innerHTML = '<option value="">' + i18n.t('Uncategorized') + '</option>';
 
             // Add folder options
             folders.forEach(folder => {
@@ -3761,31 +3761,31 @@ function showCustomTemplateModal() {
             <div class="modal-dialog modal-lg">
                 <div class="modal-content">
                     <div class="modal-header">
-                        <h5 class="modal-title">Create Custom News Template</h5>
+                        <h5 class="modal-title">${i18n.t('Create Custom News Template')}</h5>
                         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                     </div>
                     <div class="modal-body">
                         <div class="mb-3">
-                            <label class="form-label">Template Name</label>
-                            <input type="text" class="ldr-form-control" id="template-name" placeholder="e.g., Industry Analysis">
+                            <label class="form-label">' + i18n.t('Template Name') + '</label>
+                            <input type="text" class="ldr-form-control" id="template-name" placeholder="' + i18n.t('e.g., Industry Analysis') + '">
                         </div>
                         <div class="mb-3">
-                            <label class="form-label">Search Query Template</label>
-                            <textarea class="ldr-form-control" id="template-query" rows="10" placeholder="Enter your custom news search query..."></textarea>
+                            <label class="form-label">' + i18n.t('Search Query Template') + '</label>
+                            <textarea class="ldr-form-control" id="template-query" rows="10" placeholder="' + i18n.t('Enter your custom news search query...') + '"></textarea>
                         </div>
                         <div class="alert alert-info">
-                            <i class="bi bi-info-circle"></i> Tips:
+                            <i class="bi bi-info-circle"></i> ' + i18n.t('Tips:') + '
                             <ul class="mb-0 mt-2">
-                                <li>Use markdown tables for structured output</li>
-                                <li>Include specific search instructions</li>
-                                <li>Define clear column headers</li>
-                                <li>Specify date ranges and sources</li>
+                                <li>' + i18n.t('Use markdown tables for structured output') + '</li>
+                                <li>' + i18n.t('Include specific search instructions') + '</li>
+                                <li>' + i18n.t('Define clear column headers') + '</li>
+                                <li>' + i18n.t('Specify date ranges and sources') + '</li>
                             </ul>
                         </div>
                     </div>
                     <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                        <button type="button" class="btn btn-primary" onclick="applyCustomTemplate()">Use Template</button>
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">${i18n.t('Cancel')}</button>
+                        <button type="button" class="btn btn-primary" onclick="applyCustomTemplate()">${i18n.t('Use Template')}</button>
                     </div>
                 </div>
             </div>
@@ -3812,7 +3812,7 @@ function applyCustomTemplate() {
     const templateQuery = document.getElementById('template-query').value;
 
     if (!templateQuery.trim()) {
-        showAlert('Please enter a template query', 'warning');
+        showAlert(i18n.t('Please enter a template query'), 'warning');
         return;
     }
 
@@ -3825,7 +3825,7 @@ function applyCustomTemplate() {
     modal.hide();
 
     // Show message
-    showAlert(`Custom template "${templateName || 'Untitled'}" loaded. Click "Search News" to run.`, 'success');
+    showAlert(`Custom template "${templateName || i18n.t('Untitled')}" loaded. Click "Search News" to run.`, 'success');
 }
 
 // Expose functions to global scope for onclick handlers

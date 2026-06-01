@@ -287,8 +287,8 @@ class TestAccessibilityConfiguration:
         assert html_tag is not None, "Should have html tag"
         lang = html_tag.get("lang")
         assert lang is not None, "HTML tag should have lang attribute"
-        assert lang in ["en", "en-US", "en-GB"], (
-            f"Lang should be English variant, got: {lang}"
+        assert lang in ["en", "en-US", "en-GB", "zh", "zh-CN"], (
+            f"Lang should be a supported language, got: {lang}"
         )
 
     def test_skip_navigation_link(self, authenticated_client):

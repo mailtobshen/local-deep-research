@@ -51,7 +51,7 @@
 
     // Helper function to format model names for better display
     function formatModelName(model) {
-        if (!model) return 'N/A';
+        if (!model) return i18n.t('N/A');
         // Shorten long model names for display
         if (model.includes('/')) {
             const parts = model.split('/');
@@ -71,7 +71,7 @@
 
     // Helper function to format provider names
     function formatProviderName(provider) {
-        if (!provider) return 'N/A';
+        if (!provider) return i18n.t('N/A');
         const providerMap = {
             'openai_endpoint': 'OpenAI Endpoint',
             'ollama': 'Ollama',
@@ -269,7 +269,7 @@
                     </div>
                     <div class="ldr-card-content">
                         <div class="ldr-chart-container">
-                            <canvas id="context-chart" aria-label="Scatter plot of LLM request prompt tokens versus configured context window over time. Each point represents a single request, colour and shape coded by utilisation: green circle for safe (under 50%), amber triangle for caution (50 to 80% or unknown tokens), red diamond for critical (over 80%), grey triangle for requests where the provider did not report a context limit. Lower opacity marks local providers."></canvas>
+                            <canvas id="context-chart" aria-label="${i18n.t('Scatter plot of LLM request prompt tokens versus configured context window over time. Each point represents a single request, colour and shape coded by utilisation: green circle for safe (under 50%), amber triangle for caution (50 to 80% or unknown tokens), red diamond for critical (over 80%), grey triangle for requests where the provider did not report a context limit. Lower opacity marks local providers.')}"></canvas>
                         </div>
                         <div style="margin-top: 1rem; padding: 1rem; background: var(--bg-tertiary); border-radius: 0.375rem;">
                             <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">
@@ -290,7 +290,7 @@
                     <div class="ldr-card-content">
                         <div id="phase-breakdown-container">
                             <div class="ldr-chart-container" style="height: 300px;">
-                                <canvas id="phase-chart" aria-label="Box plot showing prompt token distribution grouped by research phase"></canvas>
+                                <canvas id="phase-chart" aria-label="${i18n.t('Box plot showing prompt token distribution grouped by research phase')}"></canvas>
                             </div>
                         </div>
                         <div id="phase-summary-table" style="margin-top: 1rem;"></div>
@@ -324,7 +324,7 @@
                     </div>
                     <div class="ldr-card-content">
                         <div class="ldr-chart-container">
-                            <canvas id="latency-chart" aria-label="Scatter plot of response time vs prompt tokens, grouped by model"></canvas>
+                            <canvas id="latency-chart" aria-label="${i18n.t('Scatter plot of response time vs prompt tokens, grouped by model')}"></canvas>
                         </div>
                         <div style="margin-top: 1rem; padding: 1rem; background: var(--bg-tertiary); border-radius: 0.375rem;">
                             <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">
@@ -409,7 +409,7 @@
             tbody.innerHTML = `
                 <tr>
                     <td colspan="12" style="text-align: center; padding: 2rem;">
-                        ${searchTerm ? 'No matching requests found' : 'No request data available'}
+                        ${searchTerm ? i18n.t('No matching requests found') : i18n.t('No request data available')}
                     </td>
                 </tr>
             `;
@@ -462,7 +462,7 @@
 
         prevBtn.disabled = currentPage <= 1;
         nextBtn.disabled = currentPage >= totalPages;
-        info.textContent = `Page ${currentPage} of ${totalPages}`;
+        info.textContent = i18n.tf('Page %s of %s', currentPage, totalPages);
     }
 
     // Display model-specific stats (context overflow section)
@@ -641,11 +641,11 @@
         if (!chartData || chartData.length === 0) {
             contextChart = new Chart(ctx, {
                 type: 'scatter',
-                data: { datasets: [{ label: 'No data', data: [] }] },
+                data: { datasets: [{ label: i18n.t('No data'), data: [] }] },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
-                    plugins: { title: { display: true, text: 'No context data available yet' } }
+                    plugins: { title: { display: true, text: i18n.t('No context data available yet') } }
                 }
             });
             return;
@@ -721,7 +721,7 @@
 
         const datasets = [
             {
-                label: 'Safe (< 50% of limit)',
+                label: i18n.t('Safe (< 50% of limit)'),
                 data: safeData,
                 backgroundColor: opacityFor('10, 207, 151', safeData),
                 borderColor: 'rgba(10, 207, 151, 1)',
@@ -731,7 +731,7 @@
                 pointBorderWidth: safeData.map(p => (p.isLocal ? 2.5 : 1)),
             },
             {
-                label: 'Caution (50–80% / unknown)',
+                label: i18n.t('Caution (50–80% / unknown)'),
                 data: cautionData,
                 backgroundColor: opacityFor('249, 188, 11', cautionData),
                 borderColor: 'rgba(249, 188, 11, 1)',
@@ -741,7 +741,7 @@
                 pointBorderWidth: cautionData.map(p => (p.isLocal ? 2.5 : 1)),
             },
             {
-                label: 'Critical (> 80%)',
+                label: i18n.t('Critical (> 80%)'),
                 data: criticalData,
                 backgroundColor: opacityFor('250, 92, 124', criticalData),
                 borderColor: 'rgba(250, 92, 124, 1)',
@@ -751,7 +751,7 @@
                 pointBorderWidth: criticalData.map(p => (p.isLocal ? 2.5 : 1)),
             },
             {
-                label: 'No context limit reported',
+                label: i18n.t('No context limit reported'),
                 data: noLimitData,
                 backgroundColor: opacityFor('160, 160, 180', noLimitData),
                 borderColor: 'rgba(160, 160, 180, 1)',
@@ -824,10 +824,10 @@
                 scales: {
                     x: {
                         type: 'time',
-                        title: { display: true, text: 'Time' }
+                        title: { display: true, text: i18n.t('Time') }
                     },
                     y: {
-                        title: { display: true, text: 'Token Count' },
+                        title: { display: true, text: i18n.t('Token Count') },
                         beginAtZero: true
                     }
                 },
@@ -1041,7 +1041,7 @@
                         barPercentage: 0.6,
                     },
                     {
-                        label: 'Requests',
+                        label: i18n.t('Requests'),
                         type: 'scatter',
                         data: scatterPoints,
                         backgroundColor: 'rgba(120, 120, 140, 0.35)',
@@ -1059,10 +1059,10 @@
                 scales: {
                     y: {
                         beginAtZero: true,
-                        title: { display: true, text: 'Prompt Tokens' },
+                        title: { display: true, text: i18n.t('Prompt Tokens') },
                     },
                     x: {
-                        title: { display: true, text: 'Research Phase' },
+                        title: { display: true, text: i18n.t('Research Phase') },
                     },
                     x2: { display: false },
                 },
@@ -1125,7 +1125,7 @@
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
-                    plugins: { title: { display: true, text: 'No latency data available yet' } }
+                    plugins: { title: { display: true, text: i18n.t('No latency data available yet') } }
                 }
             });
             return;
@@ -1140,7 +1140,7 @@
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
-                    plugins: { title: { display: true, text: 'No response time data recorded yet' } }
+                    plugins: { title: { display: true, text: i18n.t('No response time data recorded yet') } }
                 }
             });
             return;
@@ -1207,11 +1207,11 @@
                 maintainAspectRatio: false,
                 scales: {
                     x: {
-                        title: { display: true, text: 'Prompt Tokens (input size)' },
+                        title: { display: true, text: i18n.t('Prompt Tokens (input size)') },
                         beginAtZero: true,
                     },
                     y: {
-                        title: { display: true, text: 'Response Time (ms)' },
+                        title: { display: true, text: i18n.t('Response Time (ms)') },
                         beginAtZero: true,
                         ticks: {
                             callback(value) {

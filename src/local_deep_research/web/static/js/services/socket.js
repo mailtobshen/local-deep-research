@@ -227,25 +227,25 @@ window.socket = (function() {
             // Format user-friendly error messages based on error type
             switch(errorType) {
                 case 'timeout':
-                    errorMessage = 'LLM Timeout Error';
-                    detailedMessage = 'The AI model took too long to respond. This may be due to server load or the complexity of your query.';
+                    errorMessage = i18n.t('LLM Timeout Error');
+                    detailedMessage = i18n.t('The AI model took too long to respond. This may be due to server load or the complexity of your query.');
                     break;
                 case 'token_limit':
-                    errorMessage = 'Token Limit Exceeded';
-                    detailedMessage = 'Your research query generated too much data for the AI model to process. Try a more specific query.';
+                    errorMessage = i18n.t('Token Limit Exceeded');
+                    detailedMessage = i18n.t('Your research query generated too much data for the AI model to process. Try a more specific query.');
                     break;
                 case 'connection':
-                    errorMessage = 'LLM Connection Error';
-                    detailedMessage = 'Could not connect to the AI service. Please check that your LLM service is running.';
+                    errorMessage = i18n.t('LLM Connection Error');
+                    detailedMessage = i18n.t('Could not connect to the AI service. Please check that your LLM service is running.');
                     break;
                 case 'rate_limit':
-                    errorMessage = 'API Rate Limit Reached';
-                    detailedMessage = 'The AI service API rate limit was reached. Please wait a few minutes and try again.';
+                    errorMessage = i18n.t('API Rate Limit Reached');
+                    detailedMessage = i18n.t('The AI service API rate limit was reached. Please wait a few minutes and try again.');
                     break;
                 case 'llm_error':
                 default:
                     errorMessage = 'LLM Synthesis Error';
-                    detailedMessage = 'The AI model encountered an error during final answer synthesis. A fallback response will be provided.';
+                    detailedMessage = i18n.t('The AI model encountered an error during final answer synthesis. A fallback response will be provided.');
             }
 
             // Add prominent error notification
@@ -775,7 +775,7 @@ window.socket = (function() {
                 const typeText = type === 'all' ? '' : escapeHtml(type) + ' ';
                 // bearer:disable javascript_lang_dangerous_insert_html
                 // eslint-disable-next-line no-unsanitized/property -- audited 2026-03-28: all interpolations use escapeHtml/esc, numeric coercion, or hardcoded strings
-                logContainer.innerHTML = `<div class="ldr-empty-log-message">No ${typeText}logs available.</div>` + logContainer.innerHTML;
+                logContainer.innerHTML = '<div class="ldr-empty-log-message">' + i18n.t('No') + ' ' + typeText + i18n.t('logs available.') + '</div>' + logContainer.innerHTML;
             } else if (visibleEntries.length > 0 && emptyMessage) {
                 emptyMessage.remove();
             }

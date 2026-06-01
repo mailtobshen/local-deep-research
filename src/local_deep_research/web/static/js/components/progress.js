@@ -39,7 +39,7 @@
 
         if (!currentResearchId) {
             SafeLogger.error('No research ID found');
-            if (window.ui) window.ui.showError('No active research found. Please start a new research.');
+            if (window.ui) window.ui.showError(i18n.t('No active research found. Please start a new research.'));
             setTimeout(() => {
                 URLValidator.safeAssign(window.location, 'href', '/');
             }, 3000);
@@ -166,7 +166,7 @@
             progressBarContainer.setAttribute('aria-valuemin', '0');
             progressBarContainer.setAttribute('aria-valuemax', '100');
             progressBarContainer.setAttribute('aria-valuenow', '0');
-            progressBarContainer.setAttribute('aria-label', 'Research progress');
+            progressBarContainer.setAttribute('aria-label', i18n.t('Research progress'));
             progressBarContainer.innerHTML = '<div id="progress-bar" class="ldr-progress-fill" style="width: 0%"></div>';
             progressContainer.prepend(progressBarContainer);
             progressBar = document.getElementById('progress-bar');
@@ -187,7 +187,7 @@
             const statusEl = document.createElement('div');
             statusEl.id = 'status-text';
             statusEl.className = 'ldr-status-indicator';
-            statusEl.textContent = 'Initializing';
+            statusEl.textContent = i18n.t('Initializing');
             statusContainer.appendChild(statusEl);
             statusText = statusEl;
         }
@@ -197,7 +197,7 @@
             const taskEl = document.createElement('div');
             taskEl.id = 'current-task';
             taskEl.className = 'ldr-task-text';
-            taskEl.textContent = 'Starting research...';
+            taskEl.textContent = i18n.t('Starting research...');
             taskContainer.appendChild(taskEl);
             currentTaskText = taskEl;
         }
@@ -401,7 +401,7 @@
         } catch (error) {
             SafeLogger.error('Error checking research progress:', error);
             if (statusText) {
-                statusText.textContent = 'Error checking research status';
+                statusText.textContent = i18n.t('Error checking research status');
             }
         }
     }
@@ -521,7 +521,7 @@
             // Update the task text if we found a message AND it's not just "In Progress"
             if (taskMessage && taskMessage.trim() !== 'In Progress' && taskMessage.trim() !== 'in progress') {
                 SafeLogger.log('Updating current task text to:', taskMessage);
-                currentTaskText.textContent = taskMessage;
+                currentTaskText.textContent = i18n.t(taskMessage) || taskMessage;
                 // Remember this message to avoid overwriting with generic messages
                 currentTaskText.dataset.lastMessage = taskMessage;
             }
@@ -529,11 +529,11 @@
             // If no message but we have a status, generate a more descriptive message
             // BUT ONLY if we don't already have a meaningful message displayed
             if (!specificProgressMessage && data.status &&
-                (!currentTaskText.dataset.lastMessage || currentTaskText.textContent === 'In Progress')) {
+                (!currentTaskText.dataset.lastMessage || currentTaskText.textContent === i18n.t('In Progress')) {
                 let statusMsg;
                 switch (data.status) {
                     case 'starting':
-                        statusMsg = 'Starting research process...';
+                        statusMsg = i18n.t('Starting research process...');
                         break;
                     case 'searching':
                         statusMsg = 'Searching for information...';
@@ -581,7 +581,7 @@
         if (data.progress !== undefined) {
             // Ensure progress is capped at 100% for page title
             const cappedProgress = Math.max(0, Math.min(100, Math.floor(data.progress)));
-            document.title = `Research (${cappedProgress}%) - Local Deep Research`;
+            document.title = i18n.t('Research') + ' (' + cappedProgress + '%) - ' + i18n.t('Local Deep Research');
         }
 
         // Update favicon based on status
@@ -591,7 +591,7 @@
 
         // Show notification if enabled
         if (ResearchStates.isCompleted(data.status) && notificationsEnabled) {
-            showNotification('Research Completed', 'Your research has been completed successfully.');
+            showNotification(i18n.t('Research Completed'), i18n.t('Your research has been completed successfully.'));
         }
 
         // Ensure log entry is added if message exists but no specific log_entry
@@ -634,13 +634,13 @@
             // For failed research, try to show the error report if available
             if (ResearchStates.isFailed(data.status)) {
                 if (viewResultsButton) {
-                    viewResultsButton.textContent = 'View Error Report';
+                    viewResultsButton.textContent = i18n.t('View Error Report');
                     URLValidator.safeAssign(viewResultsButton, 'href', URLBuilder.resultsPage(currentResearchId));
                     viewResultsButton.style.display = 'inline-block';
                 }
             } else if (viewResultsButton) {
                 // For cancelled research, go back to home
-                viewResultsButton.textContent = 'Start New Research';
+                viewResultsButton.textContent = i18n.t('Start New Research');
                 URLValidator.safeAssign(viewResultsButton, 'href', '/');
                 viewResultsButton.style.display = 'inline-block';
             }
@@ -676,12 +676,12 @@
                 message += ' Consider increasing context window.';
 
                 showNotification(
-                    'Context Overflow Warning',
+                    i18n.t('Context Overflow Warning'),
                     message,
                     'warning',
                     12000,
                     {
-                        label: 'View overflow details',
+                        label: i18n.t('View overflow details'),
                         url: `/details/${currentResearchId}#context-overflow-section`
                     }
                 );
@@ -696,14 +696,14 @@
      * Handle research cancellation
      */
     async function handleCancelResearch() {
-        if (!confirm('Are you sure you want to cancel this research?')) {
+        if (!confirm(i18n.t('Are you sure you want to cancel this research?'))) {
             return;
         }
 
         // Disable cancel button
         if (cancelButton) {
             cancelButton.disabled = true;
-            cancelButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Cancelling...';
+            cancelButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> ' + i18n.t('Cancelling...');
         }
 
         try {
@@ -715,7 +715,7 @@
 
             // Update status manually (in case socket fails)
             if (statusText) {
-                statusText.textContent = 'Cancelled';
+                statusText.textContent = i18n.t('Cancelled');
                 document.querySelectorAll('.ldr-status-indicator').forEach(el => {
                     el.className = 'ldr-status-indicator ldr-status-cancelled';
                 });
@@ -723,7 +723,7 @@
 
             // Show message
             if (window.ui) {
-                window.ui.showMessage('Research has been cancelled.');
+                window.ui.showMessage(i18n.t('Research has been cancelled.'));
             }
 
             // Update cancel button
@@ -733,7 +733,7 @@
 
             // Show go home button
             if (viewResultsButton) {
-                viewResultsButton.textContent = 'Start New Research';
+                viewResultsButton.textContent = i18n.t('Start New Research');
                 viewResultsButton.href = '/';
                 viewResultsButton.style.display = 'inline-block';
             }
@@ -744,12 +744,12 @@
             // Re-enable cancel button
             if (cancelButton) {
                 cancelButton.disabled = false;
-                cancelButton.innerHTML = '<i class="fas fa-stop-circle"></i> Cancel Research';
+                cancelButton.innerHTML = '<i class="fas fa-stop-circle"></i> ' + i18n.t('Cancel Research');
             }
 
             // Show error message
             if (window.ui) {
-                window.ui.showError('Failed to cancel research. Please try again.');
+                window.ui.showError(i18n.t('Failed to cancel research. Please try again.'));
             }
         }
     }
@@ -858,7 +858,7 @@
                 actionBtn.type = 'button';
                 actionBtn.className = 'btn btn-primary btn-sm';
                 actionBtn.style.marginTop = '8px';
-                actionBtn.textContent = action.label || 'View details';
+                actionBtn.textContent = action.label || i18n.t('View details');
                 actionBtn.addEventListener('click', (e) => {
                     e.preventDefault();
                     URLValidator.safeAssign(window.location, 'href', action.url);
@@ -952,7 +952,7 @@
         // Update UI
         setProgressValue(100);
         setStatus(window.RESEARCH_STATUS.COMPLETED);
-        setCurrentTask('Research completed successfully');
+        setCurrentTask(i18n.t('Research completed successfully'));
 
         // Hide cancel button
         if (cancelButton) {
@@ -963,7 +963,7 @@
         showResultsButton();
 
         // Show notification if enabled
-        showNotification('Research Complete', 'Your research has been completed successfully.');
+        showNotification(i18n.t('Research Complete'), i18n.t('Your research has been completed successfully.'));
 
         // Update favicon
         updateFavicon(100);
@@ -987,7 +987,7 @@
         // Update UI to error state
         setProgressValue(100);
         setStatus(window.RESEARCH_STATUS.ERROR);
-        setCurrentTask(`Error: ${data.error || 'Unknown error'}`);
+        setCurrentTask(i18n.tf('Error: %s', data.error || i18n.t('Unknown error')));
 
         // Add error class to progress bar
         if (progressBar) {
@@ -1002,13 +1002,13 @@
 
         // Show error report button
         if (viewResultsButton) {
-            viewResultsButton.textContent = 'View Error Report';
+            viewResultsButton.textContent = i18n.t('View Error Report');
             viewResultsButton.href = URLBuilder.resultsPage(currentResearchId);
             viewResultsButton.style.display = 'inline-block';
         }
 
         // Show notification if enabled
-        showNotification('Research Error', `There was an error with your research: ${data.error}`);
+        showNotification(i18n.t('Research Error'), i18n.tf('There was an error with your research: %s', data.error));
 
         // Update favicon
         updateFavicon(100, true);
@@ -1066,7 +1066,7 @@
      */
     function setCurrentTask(task) {
         if (!currentTaskText) return;
-        currentTaskText.textContent = task || 'No active task';
+        currentTaskText.textContent = task || i18n.t('No active task');
     }
 
     /**
@@ -1236,7 +1236,7 @@
             case 'error':
                 stepType = 'error';
                 label = '❌ ERROR';
-                stepContent = data.message || data.error || 'An error occurred';
+                stepContent = data.message || data.error || i18n.t('An error occurred');
                 break;
             case 'synthesis':
                 stepType = 'info';

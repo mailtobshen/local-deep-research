@@ -40,7 +40,7 @@
         researchId = getResearchIdFromUrl();
 
         if (!researchId) {
-            showError('Research ID not found in URL');
+            showError(i18n.t('Research ID not found in URL'));
             return;
         }
 
@@ -145,7 +145,7 @@
     async function loadResearchResults() {
         try {
             // Show loading state
-            resultsContainer.innerHTML = '<div class="text-center my-5"><i class="fas fa-spinner fa-pulse"></i><p class="mt-3">Loading research results...</p></div>';
+            resultsContainer.innerHTML = '<div class="text-center my-5"><i class="fas fa-spinner fa-pulse"></i><p class="mt-3">' + i18n.t('Loading research results...') + '</p></div>';
 
             // Fetch result from report API (reports are stored in database now)
             const response = await fetch(`/api/report/${researchId}`);
@@ -162,7 +162,7 @@
 
             // Check if we have data to display
             if (!responseData) {
-                throw new Error('No data received from server');
+                throw new Error(i18n.t('No data received from server'));
             }
 
             // Use the API metadata directly
@@ -193,7 +193,7 @@
 
         } catch (error) {
             SafeLogger.error('Error loading research results:', error.message || error);
-            showError(`Error loading research results: ${error.message}`);
+            showError(i18n.tf('Error loading research results: %s', error.message));
 
             // Disable export buttons
             if (exportBtn) exportBtn.disabled = true;
@@ -213,7 +213,7 @@
         const queryElement = document.getElementById('result-query');
         if (queryElement) {
             // Prefer processed query over original query for news subscriptions
-            const query = metadata.processed_query || metadata.query || metadata.title || data.query || 'Untitled Research';
+            const query = metadata.processed_query || metadata.query || metadata.title || data.query || i18n.t('Untitled Research');
             SafeLogger.log('Setting query to:', query);
             queryElement.textContent = query;
         }
@@ -221,7 +221,7 @@
         // Generated date field
         const dateElement = document.getElementById('result-date');
         if (dateElement) {
-            let dateStr = 'Unknown date';
+            let dateStr = i18n.t('Unknown date');
 
             // Try multiple sources for the timestamp - first from the API response directly, then from metadata
             const timestamp = data.created_at || data.timestamp || data.date ||
@@ -289,7 +289,7 @@
             }
 
             SafeLogger.log('Setting mode to:', mode || 'Quick');
-            modeElement.textContent = mode || 'Quick';
+            modeElement.textContent = mode || i18n.t('Quick');
         }
     }
 
@@ -428,7 +428,7 @@
                         SafeLogger.log('Mode formatted using formatter:', formattedMode);
                     }
 
-                    modeElement.textContent = formattedMode || 'Standard';
+                    modeElement.textContent = formattedMode || i18n.t('Standard');
                 }
             } else {
                 // Detect mode based on content structure and keywords
@@ -437,12 +437,12 @@
                     if (data.content.toLowerCase().includes('table of contents') ||
                         data.content.toLowerCase().includes('detailed report') ||
                         data.content.match(/^#.*\n+##.*\n+###/m)) { // Has H1, H2, H3 structure
-                        modeElement.textContent = 'Detailed';
+                        modeElement.textContent = i18n.t('Detailed');
                     } else if (data.content.toLowerCase().includes('quick research') ||
                               data.content.toLowerCase().includes('summary')) {
-                        modeElement.textContent = 'Quick';
+                        modeElement.textContent = i18n.t('Quick');
                     } else {
-                        modeElement.textContent = 'Standard'; // Better default
+                        modeElement.textContent = i18n.t('Standard'); // Better default
                     }
                 }
             }
@@ -470,7 +470,7 @@
         const queryElement = document.getElementById('result-query');
         if (queryElement) {
             // Try different possible locations for query data
-            let query = 'Unknown query';
+            let query = i18n.t('Unknown query');
 
             if (metadata.query) {
                 query = metadata.query;
@@ -495,7 +495,7 @@
         // Generated date field
         const dateElement = document.getElementById('result-date');
         if (dateElement) {
-            let dateStr = 'Unknown date';
+            let dateStr = i18n.t('Unknown date');
             let timestampField = null;
 
             // Try different possible date fields
@@ -547,7 +547,7 @@
         // Mode field
         const modeElement = document.getElementById('result-mode');
         if (modeElement) {
-            let mode = 'Quick'; // Default to Quick
+            let mode = i18n.t('Quick'); // Default to Quick
 
             if (metadata.mode) {
                 mode = metadata.mode;
@@ -652,7 +652,7 @@
 
         } catch (error) {
             SafeLogger.error('Error rendering results:', error);
-            showError(`Error rendering results: ${error.message}`);
+            showError(i18n.tf('Error rendering results: %s', error.message));
         }
     }
 
@@ -683,7 +683,7 @@
     function handleExport() {
         try {
             if (!researchData) {
-                throw new Error('No research data available');
+                throw new Error(i18n.t('No research data available'));
             }
 
             // Get metadata from DOM (which should be populated by now)
@@ -779,7 +779,7 @@
 
         } catch (error) {
             SafeLogger.error('Error exporting markdown:', error);
-            alert(`Error exporting markdown: ${error.message}`);
+            alert(i18n.tf('Error exporting markdown: %s', error.message));
         }
     }
 
@@ -790,11 +790,11 @@
     async function handleFormatExport(format) {
         try {
             if (!researchId) {
-                throw new Error('No research ID available');
+                throw new Error(i18n.t('No research ID available'));
             }
 
             const formatName = format === 'latex' ? 'LaTeX' :
-                               format === 'quarto' ? 'Quarto' :
+                               format === 'quarto' ? i18n.t('Quarto') :
                                format === 'odt' ? 'ODT' : 'RIS';
             SafeLogger.log(`Exporting to ${formatName}...`);
 
@@ -836,7 +836,7 @@
 
         } catch (error) {
             SafeLogger.error(`Error exporting to ${format}:`, error);
-            alert(`Failed to export to ${format}: ${error.message}`);
+            alert(i18n.tf('Failed to export to %s: %s', format, error.message));
         }
     }
 
@@ -847,14 +847,14 @@
     function handlePdfExport() {
         try {
             if (!researchId) {
-                throw new Error('No research ID available');
+                throw new Error(i18n.t('No research ID available'));
             }
 
             SafeLogger.log('PDF export initiated for research ID:', researchId);
 
             // Show loading indicator
             pdfBtn.disabled = true;
-            pdfBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generating PDF...';
+            pdfBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> ' + i18n.t('Generating PDF...');
 
             // Get CSRF token
             const csrfToken = window.api ? window.api.getCsrfToken() : '';
@@ -888,25 +888,25 @@
                 SafeLogger.log('PDF downloaded successfully');
                 // Reset button
                 pdfBtn.disabled = false;
-                pdfBtn.innerHTML = '<i class="fas fa-file-pdf"></i> Download PDF';
+                pdfBtn.innerHTML = '<i class="fas fa-file-pdf"></i> ' + i18n.t('Download PDF');
             })
             .catch(error => {
                 SafeLogger.error('Error generating PDF:', error);
-                alert(`Error generating PDF: ${error.message || 'Unknown error'}`);
+                alert(i18n.tf('Error generating PDF: %s', error.message || i18n.t('Unknown error')));
 
                 // Reset button
                 pdfBtn.disabled = false;
-                pdfBtn.innerHTML = '<i class="fas fa-file-pdf"></i> Download PDF';
+                pdfBtn.innerHTML = '<i class="fas fa-file-pdf"></i> ' + i18n.t('Download PDF');
             });
 
         } catch (error) {
             SafeLogger.error('Error exporting PDF:', error);
-            alert(`Error exporting PDF: ${error.message || 'Unknown error'}`);
+            alert(i18n.tf('Error exporting PDF: %s', error.message || i18n.t('Unknown error')));
 
             // Reset button
             if (pdfBtn) {
                 pdfBtn.disabled = false;
-                pdfBtn.innerHTML = '<i class="fas fa-file-pdf"></i> Download PDF';
+                pdfBtn.innerHTML = '<i class="fas fa-file-pdf"></i> ' + i18n.t('Download PDF');
             }
         }
     }
@@ -966,7 +966,7 @@
                         if (!metricsBtn.querySelector('.ldr-badge-overflow')) {
                             const badge = document.createElement('span');
                             badge.className = 'ldr-badge-overflow';
-                            badge.textContent = 'OVERFLOW';
+                            badge.textContent = i18n.t('OVERFLOW');
                             metricsBtn.appendChild(badge);
                         }
                     }

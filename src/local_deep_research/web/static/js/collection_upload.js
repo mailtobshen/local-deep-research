@@ -47,7 +47,7 @@ async function fetchSupportedFormats() {
         // Update help text with format details
         const formatDetails = document.getElementById('format-details');
         if (formatDetails && data.count) {
-            formatDetails.textContent = `(${data.count} formats supported)`;
+            formatDetails.textContent = i18n.tf('(%s formats supported)', data.count);
         }
 
         // Update the full format list in the instructions
@@ -57,7 +57,7 @@ async function fetchSupportedFormats() {
             const formatList = data.extensions
                 .map(ext => ext.replace('.', '').toUpperCase())
                 .join(', ');
-            fullFormatList.textContent = `All supported: ${formatList}`;
+            fullFormatList.textContent = i18n.t('All supported:') + ' ' + formatList;
         }
 
         SafeLogger.log(`📄 Loaded ${data.count} supported formats`);
@@ -70,7 +70,7 @@ async function fetchSupportedFormats() {
         }
         const fullFormatList = document.getElementById('full-format-list');
         if (fullFormatList) {
-            fullFormatList.textContent = 'Could not load format list';
+            fullFormatList.textContent = i18n.t('Could not load format list');
         }
     }
 }
@@ -296,7 +296,7 @@ async function handleUploadFiles(e) {
     e.preventDefault();
 
     if (selectedFiles.length === 0) {
-        showError('Please select at least one file to upload.');
+        showError(i18n.t('Please select at least one file to upload.'));
         return;
     }
 
@@ -310,7 +310,7 @@ async function handleUploadFiles(e) {
 
     try {
         submitBtn.disabled = true;
-        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Uploading...';
+        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> ' + i18n.t('Uploading...');
 
         if (useBatchedUpload) {
             // Batched upload for large file sets
@@ -321,10 +321,10 @@ async function handleUploadFiles(e) {
         }
     } catch (error) {
         SafeLogger.error('Error uploading files:', error);
-        showError('Upload failed: ' + error.message);
+        showError(i18n.tf('Upload failed: %s', error.message));
     } finally {
         submitBtn.disabled = false;
-        submitBtn.innerHTML = '<i class="fas fa-upload"></i> 🚀 Upload Files';
+        submitBtn.innerHTML = '<i class="fas fa-upload"></i> 🚀 ' + i18n.t('Upload Files');
     }
 }
 
@@ -499,7 +499,7 @@ async function handleSingleUpload(files, pdfStorageMode, csrfToken, uploadUrl) {
             hideSelectedFiles();
         }, 500);
     } else {
-        showError(data.error || 'Upload failed');
+        showError(data.error || i18n.t('Upload failed'));
     }
 }
 
@@ -519,7 +519,7 @@ function showBatchedProgress(files, totalBatches) {
             <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;">
                 <h3 style="margin: 0; font-size: 1.1rem; color: var(--text-primary);">
                     <i class="fas fa-cloud-upload-alt" style="color: var(--accent-primary);"></i>
-                    Uploading ${totalFiles} Files
+                    ${i18n.tf('Uploading %s Files', totalFiles)}
                 </h3>
                 <span id="progress-summary" style="font-weight: 600; color: var(--accent-primary);">
                     0% (0 / ${totalSizeMB} MB)
@@ -531,11 +531,11 @@ function showBatchedProgress(files, totalBatches) {
             </div>
 
             <div id="progress-details" style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 0.5rem; text-align: center;">
-                Preparing batched upload (${totalBatches} batches)...
+                ${i18n.tf('Preparing batched upload (%s batches)...', totalBatches)}
             </div>
 
             <div id="batch-info" style="font-size: 0.85rem; color: var(--accent-primary); text-align: center;">
-                Batch 1 of ${totalBatches}
+                ${i18n.tf('Batch %s of %s', 1, totalBatches)}
             </div>
         </div>
     `;
@@ -550,10 +550,10 @@ function updateBatchProgress(currentBatch, totalBatches) {
     const progressDetails = document.getElementById('progress-details');
 
     if (batchInfo) {
-        batchInfo.textContent = `Batch ${currentBatch} of ${totalBatches}`;
+        batchInfo.textContent = i18n.t('Batch') + ' ' + currentBatch + ' ' + i18n.t('of') + ' ' + totalBatches;
     }
     if (progressDetails) {
-        progressDetails.textContent = `Uploading batch ${currentBatch}...`;
+        progressDetails.textContent = i18n.t('Uploading batch') + ' ' + currentBatch + '...';
     }
 }
 
@@ -589,7 +589,7 @@ function showCleanProgress(files) {
             <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;">
                 <h3 style="margin: 0; font-size: 1.1rem; color: var(--text-primary);">
                     <i class="fas fa-cloud-upload-alt" style="color: var(--accent-primary);"></i>
-                    Uploading ${totalFiles} Files
+                    ${i18n.tf('Uploading %s Files', totalFiles)}
                 </h3>
                 <span id="progress-summary" style="font-weight: 600; color: var(--accent-primary);">
                     0% (0 / ${totalSizeMB} MB)
@@ -650,9 +650,9 @@ function updateUploadProgress(percent, loadedMB, totalMB) {
 
     if (progressDetails) {
         if (percent < 100) {
-            progressDetails.textContent = `Uploading... ${loadedMB} MB of ${totalMB} MB transferred`;
+            progressDetails.textContent = i18n.t('Uploading...') + ' ' + loadedMB + ' MB ' + i18n.t('of') + ' ' + totalMB + ' MB ' + i18n.t('transferred');
         } else {
-            progressDetails.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing files on server...';
+            progressDetails.innerHTML = '<i class="fas fa-spinner fa-spin"></i> ' + i18n.t('Processing files on server...');
         }
     }
 }
@@ -675,12 +675,12 @@ function updateProgressComplete(data) {
     const failedCount = data.errors ? data.errors.length : (data.summary?.failed || 0);
 
     if (progressSummary) {
-        progressSummary.textContent = `✓ ${successCount} uploaded${failedCount > 0 ? `, ${failedCount} failed` : ''}`;
+        progressSummary.textContent = '✓ ' + successCount + ' ' + i18n.t('uploaded') + (failedCount > 0 ? ', ' + failedCount + ' ' + i18n.t('failed') : '');
         progressSummary.style.color = failedCount > 0 ? 'var(--warning-color)' : 'var(--success-color)';
     }
 
     if (progressDetails) {
-        progressDetails.innerHTML = `<i class="fas fa-check-circle" style="color: var(--success-color);"></i> Upload complete!`;
+        progressDetails.innerHTML = '<i class="fas fa-check-circle" style="color: var(--success-color);"></i> ' + i18n.t('Upload complete!');
     }
 }
 
@@ -785,10 +785,10 @@ function showUploadResults(data) {
     // Action buttons
     html += '<div style="margin-top: 1.5rem; display: flex; gap: 1rem; flex-wrap: wrap;">';
     html += `<a href="/library/collections/${COLLECTION_ID}" class="ldr-btn-collections ldr-btn-collections-primary">
-        <i class="fas fa-folder-open"></i> View Collection
+        <i class="fas fa-folder-open"></i> ' + i18n.t('View Collection') + '
     </a>`;
     html += `<button onclick="location.reload()" class="ldr-btn-collections ldr-btn-collections-secondary">
-        <i class="fas fa-plus"></i> Upload More Files
+        <i class="fas fa-plus"></i> ${i18n.t('Upload More Files')}
     </button>`;
     html += '</div>';
 
@@ -819,7 +819,7 @@ function showError(message) {
     const escapedMessage = escapeHtml(message);
     const html = `
         <div class="ldr-alert ldr-alert-danger" style="padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
-            <h4 style="margin: 0 0 0.5rem 0;"><i class="fas fa-exclamation-triangle"></i> Upload Error</h4>
+            <h4 style="margin: 0 0 0.5rem 0;"><i class="fas fa-exclamation-triangle"></i> ' + i18n.t('Upload Error') + '</h4>
             <p>${escapedMessage}</p>
         </div>
     `;

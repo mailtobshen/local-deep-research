@@ -59,14 +59,14 @@
         if (isFavorite) {
             starSpan.classList.add('ldr-is-favorite');
             starSpan.innerHTML = '&#9733;'; // Filled star
-            starSpan.title = 'Remove from favorites';
-            starSpan.setAttribute('aria-label', 'Remove from favorites');
+            starSpan.title = i18n.t('Remove from favorites');
+            starSpan.setAttribute('aria-label', i18n.t('Remove from favorites'));
             starSpan.setAttribute('aria-pressed', 'true');
         } else {
             starSpan.classList.remove('ldr-is-favorite');
             starSpan.innerHTML = '&#9734;'; // Empty star
-            starSpan.title = 'Add to favorites';
-            starSpan.setAttribute('aria-label', 'Add to favorites');
+            starSpan.title = i18n.t('Add to favorites');
+            starSpan.setAttribute('aria-label', i18n.t('Add to favorites'));
             starSpan.setAttribute('aria-pressed', 'false');
         }
     }
@@ -182,7 +182,7 @@
      * @param {string} noResultsText - Text to show when no results are found
      * @param {Function|null} onFavoriteToggle - Optional callback when favorite star is clicked (value, item, isFavorite) => {}
      */
-    function setupCustomDropdown(input, dropdownList, getOptions, onSelect, allowCustomValues = false, noResultsText = 'No results found.', onFavoriteToggle = null) {
+    function setupCustomDropdown(input, dropdownList, getOptions, onSelect, allowCustomValues = false, noResultsText = i18n.t('No results found.'), onFavoriteToggle = null) {
         // Clean up previous instance if re-initializing the same dropdown
         if (input && input.id && dropdownRegistry[input.id]) {
             const existing = dropdownRegistry[input.id];
@@ -346,7 +346,7 @@
                 if (allowCustomValues && searchText.trim()) {
                     const customOption = document.createElement('div');
                     customOption.className = 'ldr-custom-dropdown-footer';
-                    customOption.textContent = `Press Enter to use "${searchText}"`;
+                    customOption.textContent = i18n.t("Press Enter to use") + ` "${searchText}"`;
                     customOption.setAttribute('role', 'status');
                     dropdownList.appendChild(customOption);
                 }

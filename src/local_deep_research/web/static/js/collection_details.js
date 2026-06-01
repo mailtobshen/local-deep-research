@@ -54,11 +54,11 @@ async function loadCollectionDetails() {
             // Show search section if any documents are indexed
             initCollectionSearch();
         } else {
-            showError('Failed to load collection details: ' + data.error);
+            showError(i18n.tf('Failed to load collection details: %s', data.error));
         }
     } catch (error) {
         SafeLogger.error('Error loading collection details:', error);
-        showError('Failed to load collection details');
+        showError(i18n.t('Failed to load collection details'));
     }
 }
 
@@ -89,54 +89,54 @@ function displayCollectionEmbeddingSettings() {
         // eslint-disable-next-line no-unsanitized/property -- audited 2026-03-28: all interpolations use escapeHtml/esc, numeric coercion, or hardcoded strings
         infoContainer.innerHTML = `
             <div class="ldr-info-item">
-                <span class="ldr-info-label">Provider:</span>
+                <span class="ldr-info-label">${i18n.t('Provider:')}</span>
                 <span class="ldr-info-value">${escapeHtml(getProviderLabel(collectionData.embedding_model_type))}</span>
             </div>
             <div class="ldr-info-item">
-                <span class="ldr-info-label">Model:</span>
+                <span class="ldr-info-label">${i18n.t('Model:')}</span>
                 <span class="ldr-info-value">${escapeHtml(collectionData.embedding_model)}</span>
             </div>
             <div class="ldr-info-item">
-                <span class="ldr-info-label">Chunk Size:</span>
-                <span class="ldr-info-value">${escapeHtml(String(collectionData.chunk_size || 'Not set'))} ${collectionData.chunk_size ? 'characters' : ''}</span>
+                <span class="ldr-info-label">${i18n.t('Chunk Size:')}</span>
+                <span class="ldr-info-value">${escapeHtml(String(collectionData.chunk_size || i18n.t('Not set')))} ${collectionData.chunk_size ? i18n.t('characters') : ''}</span>
             </div>
             <div class="ldr-info-item">
-                <span class="ldr-info-label">Chunk Overlap:</span>
-                <span class="ldr-info-value">${escapeHtml(String(collectionData.chunk_overlap || 'Not set'))} ${collectionData.chunk_overlap ? 'characters' : ''}</span>
+                <span class="ldr-info-label">${i18n.t('Chunk Overlap:')}</span>
+                <span class="ldr-info-value">${escapeHtml(String(collectionData.chunk_overlap || i18n.t('Not set')))} ${collectionData.chunk_overlap ? i18n.t('characters') : ''}</span>
             </div>
             ${collectionData.embedding_dimension ? `
             <div class="ldr-info-item">
-                <span class="ldr-info-label">Embedding Dimension:</span>
+                <span class="ldr-info-label">${i18n.t('Embedding Dimension:')}</span>
                 <span class="ldr-info-value">${escapeHtml(String(collectionData.embedding_dimension))}</span>
             </div>
             ` : ''}
             ${collectionData.splitter_type ? `
             <div class="ldr-info-item">
-                <span class="ldr-info-label">Splitter Type:</span>
+                <span class="ldr-info-label">${i18n.t('Splitter Type:')}</span>
                 <span class="ldr-info-value">${escapeHtml(collectionData.splitter_type)}</span>
             </div>
             ` : ''}
             ${collectionData.distance_metric ? `
             <div class="ldr-info-item">
-                <span class="ldr-info-label">Distance Metric:</span>
+                <span class="ldr-info-label">${i18n.t('Distance Metric:')}</span>
                 <span class="ldr-info-value">${escapeHtml(collectionData.distance_metric)}</span>
             </div>
             ` : ''}
             ${collectionData.index_type ? `
             <div class="ldr-info-item">
-                <span class="ldr-info-label">Index Type:</span>
+                <span class="ldr-info-label">${i18n.t('Index Type:')}</span>
                 <span class="ldr-info-value">${escapeHtml(collectionData.index_type)}</span>
             </div>
             ` : ''}
             ${collectionData.normalize_vectors !== null && collectionData.normalize_vectors !== undefined ? `
             <div class="ldr-info-item">
-                <span class="ldr-info-label">Normalize Vectors:</span>
-                <span class="ldr-info-value">${collectionData.normalize_vectors ? 'Yes' : 'No'}</span>
+                <span class="ldr-info-label">${i18n.t('Normalize Vectors:')}</span>
+                <span class="ldr-info-value">${collectionData.normalize_vectors ? i18n.t('Yes') : i18n.t('No')}</span>
             </div>
             ` : ''}
             ${collectionData.index_file_size ? `
             <div class="ldr-info-item">
-                <span class="ldr-info-label">Index File Size:</span>
+                <span class="ldr-info-label">${i18n.t('Index File Size:')}</span>
                 <span class="ldr-info-value">${escapeHtml(String(collectionData.index_file_size))}</span>
             </div>
             ` : ''}
@@ -145,7 +145,7 @@ function displayCollectionEmbeddingSettings() {
         // Collection not yet indexed - no settings stored
         infoContainer.innerHTML = `
             <div class="ldr-alert ldr-alert-info">
-                <i class="fas fa-info-circle"></i> This collection hasn't been indexed yet. Settings will be stored when you index documents.
+                <i class="fas fa-info-circle"></i> ${i18n.t("This collection hasn't been indexed yet. Settings will be stored when you index documents.")}
             </div>
         `;
     }
@@ -156,20 +156,20 @@ function displayCollectionEmbeddingSettings() {
  */
 function getProviderLabel(providerValue) {
     const providerMap = {
-        'sentence_transformers': 'Sentence Transformers',
+        'sentence_transformers': i18n.t('Sentence Transformers'),
         'ollama': 'Ollama',
         'openai': 'OpenAI',
         'anthropic': 'Anthropic',
         'cohere': 'Cohere'
     };
-    return providerMap[providerValue] || providerValue || 'Not configured';
+    return providerMap[providerValue] || providerValue || i18n.t('Not configured');
 }
 
 /**
  * Get model label (simplified version)
  */
 function getModelLabel(modelValue, provider) {
-    if (!modelValue) return 'Not configured';
+    if (!modelValue) return i18n.t('Not configured');
     if (provider === 'ollama' && modelValue.includes(':')) {
         return modelValue.split(':')[0];
     }
@@ -207,28 +207,28 @@ function renderDocuments() {
                 <div class="ldr-document-info">
                     <div class="ldr-document-title">
                         ${escapeHtml(doc.filename)}
-                        ${doc.has_pdf ? '<i class="fas fa-file-pdf" style="color: var(--error-color); margin-left: 8px;" title="PDF stored"></i>' : ''}
-                        ${doc.has_text_db ? '<i class="fas fa-file-alt" style="color: var(--success-color); margin-left: 8px;" title="Text content available"></i>' : ''}
-                        ${doc.in_other_collections ? `<i class="fas fa-link" style="color: var(--accent-primary); margin-left: 8px;" title="In ${escapeHtml(String(doc.other_collections_count + 1))} collections"></i>` : ''}
+                        ${doc.has_pdf ? '<i class="fas fa-file-pdf" style="color: var(--error-color); margin-left: 8px;" title="' + i18n.t('PDF stored') + '"></i>' : ''}
+                        ${doc.has_text_db ? '<i class="fas fa-file-alt" style="color: var(--success-color); margin-left: 8px;" title="' + i18n.t('Text content available') + '"></i>' : ''}
+                        ${doc.in_other_collections ? '<i class="fas fa-link" style="color: var(--accent-primary); margin-left: 8px;" title="' + i18n.tf('In %s collections', escapeHtml(String(doc.other_collections_count + 1))) + '"></i>' : ''}
                     </div>
                     <div class="ldr-document-meta">
-                        ${doc.file_size ? `Size: ${formatBytes(doc.file_size)} • ` : ''}
+                        ${doc.file_size ? i18n.t('Size:') + ' ' + formatBytes(doc.file_size) + ' • ' : ''}
                         ${doc.source_type && doc.source_type !== 'unknown' ? `<span class="ldr-badge ldr-badge-info">${escapeHtml(doc.source_type.replace('_', ' '))}</span> • ` : ''}
                         ${doc.indexed ?
-                            `<span class="ldr-badge ldr-badge-success">Indexed (${escapeHtml(String(doc.chunk_count))} chunks)</span>` :
-                            '<span class="ldr-badge ldr-badge-warning">Not indexed</span>'
+                            '<span class="ldr-badge ldr-badge-success">' + i18n.tf('Indexed (%s chunks)', escapeHtml(String(doc.chunk_count))) + '</span>' :
+                            '<span class="ldr-badge ldr-badge-warning">' + i18n.t('Not indexed') + '</span>'
                         }
-                        ${doc.last_indexed_at ? ` • Last indexed: ${escapeHtml(new Date(doc.last_indexed_at).toLocaleString())}` : ''}
+                        ${doc.last_indexed_at ? ' • ' + i18n.t('Last indexed:') + ' ' + escapeHtml(new Date(doc.last_indexed_at).toLocaleString()) : ''}
                     </div>
                 </div>
             </a>
             <div class="ldr-document-actions">
                 <button class="ldr-btn-remove-from-collection" onclick="event.stopPropagation(); removeDocumentFromCollection('${escapeHtml(doc.id)}')"
-                        title="Remove from collection. ${doc.in_other_collections ? 'Document exists in other collections.' : 'Document will be deleted (not in other collections).'}">
+                        title="${i18n.t('Remove from collection.')} ${doc.in_other_collections ? i18n.t('Document exists in other collections.') : i18n.t('Document will be deleted (not in other collections).')}">
                     <i class="fas fa-unlink"></i>
                 </button>
                 <button class="ldr-btn-delete-doc" onclick="event.stopPropagation(); deleteDocumentCompletely('${escapeHtml(doc.id)}')"
-                        title="Permanently delete this document, including PDF and text content. This cannot be undone.">
+                        title="${i18n.t('Permanently delete this document, including PDF and text content. This cannot be undone.')}">
                     <i class="fas fa-trash"></i>
                 </button>
             </div>
@@ -259,7 +259,7 @@ async function indexCollection(forceReindex) {
     SafeLogger.log('Index Collection button clicked, force_reindex:', forceReindex);
 
     const action = forceReindex ? 're-index' : 'index';
-    if (!confirm(`${action.charAt(0).toUpperCase() + action.slice(1)} all documents in this collection?`)) {
+    if (!confirm(i18n.t('Are you sure you want to') + ' ' + action + ' ' + i18n.t('all documents in this collection?'))) {
         return;
     }
 
@@ -281,11 +281,11 @@ async function indexCollection(forceReindex) {
         if (!data.success) {
             if (response.status === 409) {
                 // Already indexing
-                showError(data.error || 'Indexing is already in progress');
+                showError(data.error || i18n.t('Indexing is already in progress'));
                 showProgressUI();
                 startPolling();
             } else {
-                showError(data.error || 'Failed to start indexing');
+                showError(data.error || i18n.t('Failed to start indexing'));
             }
             return;
         }
@@ -294,12 +294,12 @@ async function indexCollection(forceReindex) {
 
         // Show progress UI and start polling
         showProgressUI();
-        addLogEntry('Indexing started in background...', 'info');
+        addLogEntry(i18n.t('Indexing started in background...'), 'info');
         startPolling();
 
     } catch (error) {
         SafeLogger.error('Error starting indexing:', error);
-        showError('Failed to start indexing');
+        showError(i18n.t('Failed to start indexing'));
     }
 }
 
@@ -380,11 +380,11 @@ function startPolling() {
                 indexingPollInterval = null;
 
                 if (ResearchStates.isCompleted(data.status)) {
-                    addLogEntry(data.progress_message || 'Indexing completed!', 'success');
+                    addLogEntry(data.progress_message || i18n.t('Indexing completed!'), 'success');
                 } else if (ResearchStates.isFailed(data.status)) {
-                    addLogEntry(`Indexing failed: ${data.error_message || 'Unknown error'}`, 'error');
+                    addLogEntry(i18n.tf('Indexing failed: %s', data.error_message || i18n.t('Unknown error')), 'error');
                 } else if (ResearchStates.isCancelled(data.status)) {
-                    addLogEntry('Indexing was cancelled', 'warning');
+                    addLogEntry(i18n.t('Indexing was cancelled'), 'warning');
                 }
 
                 hideProgressUI();
@@ -417,7 +417,7 @@ function updateProgressFromStatus(data) {
  * Cancel indexing
  */
 async function cancelIndexing() {
-    if (!confirm('Cancel the current indexing operation?')) {
+    if (!confirm(i18n.t('Cancel the current indexing operation?'))) {
         return;
     }
 
@@ -435,14 +435,14 @@ async function cancelIndexing() {
 
         if (data.success) {
             const progressText = document.getElementById('progress-text');
-            progressText.textContent = 'Cancelling...';
-            addLogEntry('Cancellation requested...', 'warning');
+            progressText.textContent = i18n.t('Cancelling...');
+            addLogEntry(i18n.t('Cancellation requested...'), 'warning');
         } else {
-            showError(data.error || 'Failed to cancel indexing');
+            showError(data.error || i18n.t('Failed to cancel indexing'));
         }
     } catch (error) {
         SafeLogger.error('Error cancelling indexing:', error);
-        showError('Failed to cancel indexing');
+        showError(i18n.t('Failed to cancel indexing'));
     }
 }
 
@@ -462,7 +462,7 @@ function addLogEntry(message, type = 'info') {
  * Delete collection
  */
 async function deleteCollection() {
-    if (!confirm(`Are you sure you want to delete "${collectionData.name}"? This action cannot be undone.`)) return;
+    if (!confirm(i18n.t('Are you sure you want to delete') + ' "' + collectionData.name + '"? ' + i18n.t('This action cannot be undone.'))) return;
 
     try {
         const csrfToken = window.api ? window.api.getCsrfToken() : '';
@@ -475,17 +475,17 @@ async function deleteCollection() {
 
         const data = await response.json();
         if (data.success) {
-            showSuccess(`Collection "${collectionData.name}" deleted successfully`);
+            showSuccess(i18n.tf('Collection "%s" deleted successfully', collectionData.name));
             // Redirect to collections page
             setTimeout(() => {
                 window.location.href = '/library/collections';
             }, 1000);
         } else {
-            showError('Failed to delete collection: ' + data.error);
+            showError(i18n.tf('Failed to delete collection: %s', data.error));
         }
     } catch (error) {
         SafeLogger.error('Error deleting collection:', error);
-        showError('Failed to delete collection');
+        showError(i18n.t('Failed to delete collection'));
     }
 }
 
@@ -504,14 +504,14 @@ function formatBytes(bytes) {
  * Show success message
  */
 function showSuccess(message) {
-    alert('Success: ' + message);
+    alert(i18n.t('Success:') + ' ' + message);
 }
 
 /**
  * Show error message
  */
 function showError(message) {
-    alert('Error: ' + message);
+    alert(i18n.tf('Error: %s', message));
 }
 
 /**
@@ -526,7 +526,7 @@ async function removeDocumentFromCollection(documentId) {
         });
     } else {
         // Fallback to simple confirm
-        if (!confirm('Remove this document from the collection? If not in other collections, it will be deleted.')) {
+        if (!confirm(i18n.t('Remove this document from the collection? If not in other collections, it will be deleted.'))) {
             return;
         }
 
@@ -542,16 +542,16 @@ async function removeDocumentFromCollection(documentId) {
             const data = await response.json();
             if (data.success) {
                 const message = data.document_deleted
-                    ? 'Document removed and deleted (not in other collections)'
-                    : 'Document removed from collection';
+                    ? i18n.t('Document removed and deleted (not in other collections)')
+                    : i18n.t('Document removed from collection');
                 showSuccess(message);
                 loadCollectionDetails();
             } else {
-                showError('Failed to remove document: ' + data.error);
+                showError(i18n.tf('Failed to remove document: %s', data.error));
             }
         } catch (error) {
             SafeLogger.error('Error removing document:', error);
-            showError('Failed to remove document');
+            showError(i18n.t('Failed to remove document'));
         }
     }
 }
@@ -567,7 +567,7 @@ async function deleteDocumentCompletely(documentId) {
         });
     } else {
         // Fallback to simple confirm
-        if (!confirm('Permanently delete this document? This cannot be undone.')) {
+        if (!confirm(i18n.t('Permanently delete this document? This cannot be undone.'))) {
             return;
         }
 
@@ -582,14 +582,14 @@ async function deleteDocumentCompletely(documentId) {
 
             const data = await response.json();
             if (data.success) {
-                showSuccess('Document deleted successfully');
+                showSuccess(i18n.t('Document deleted successfully'));
                 loadCollectionDetails();
             } else {
-                showError('Failed to delete document: ' + data.error);
+                showError(i18n.tf('Failed to delete document: %s', data.error));
             }
         } catch (error) {
             SafeLogger.error('Error deleting document:', error);
-            showError('Failed to delete document');
+            showError(i18n.t('Failed to delete document'));
         }
     }
 }
@@ -661,13 +661,13 @@ async function searchCollection(query) {
 
     // Show loading
     // bearer:disable javascript_lang_dangerous_insert_html
-    container.innerHTML = '<div class="ldr-hybrid-loading"><div class="ldr-spinner" style="width:16px;height:16px;border-width:2px;"></div> Searching...</div>';
+    container.innerHTML = '<div class="ldr-hybrid-loading"><div class="ldr-spinner" style="width:16px;height:16px;border-width:2px;"></div> ' + i18n.t('Searching...') + '</div>';
 
     try {
         // Reuse LibrarySearch module for the API call
         if (!window.LibrarySearch || !window.LibrarySearch.performSemanticSearch) {
             // bearer:disable javascript_lang_dangerous_insert_html
-            container.innerHTML = '<div class="ldr-empty-state"><p>Search module not loaded. Please refresh.</p></div>';
+            container.innerHTML = '<div class="ldr-empty-state"><p>' + i18n.t('Search module not loaded. Please refresh.') + '</p></div>';
             return;
         }
 
@@ -679,7 +679,7 @@ async function searchCollection(query) {
         if (data.success && data.results) {
             if (data.results.length === 0) {
                 // bearer:disable javascript_lang_dangerous_insert_html
-                container.innerHTML = '<div class="ldr-empty-state"><i class="fas fa-search fa-2x"></i><p>No matching results found.</p></div>';
+                container.innerHTML = '<div class="ldr-empty-state"><i class="fas fa-search fa-2x"></i><p>' + i18n.t('No matching results found.') + '</p></div>';
                 return;
             }
 
@@ -697,15 +697,15 @@ async function searchCollection(query) {
                 container.appendChild(fragment);
             } else {
                 // bearer:disable javascript_lang_dangerous_insert_html
-                container.innerHTML = '<div class="ldr-empty-state"><p>Semantic search module not loaded.</p></div>';
+                container.innerHTML = '<div class="ldr-empty-state"><p>' + i18n.t('Semantic search module not loaded.') + '</p></div>';
             }
         } else {
             // bearer:disable javascript_lang_dangerous_insert_html
-            container.innerHTML = '<div class="ldr-empty-state"><i class="fas fa-exclamation-triangle fa-2x"></i><p>' + escapeHtml(data.error || 'Search failed') + '</p></div>';
+            container.innerHTML = '<div class="ldr-empty-state"><i class="fas fa-exclamation-triangle fa-2x"></i><p>' + escapeHtml(data.error || i18n.t('Search failed')) + '</p></div>';
         }
     } catch (error) {
         SafeLogger.error('Collection search error:', error);
         // bearer:disable javascript_lang_dangerous_insert_html
-        container.innerHTML = '<div class="ldr-empty-state"><i class="fas fa-exclamation-triangle fa-2x"></i><p>Search failed. Please try again.</p></div>';
+        container.innerHTML = '<div class="ldr-empty-state"><i class="fas fa-exclamation-triangle fa-2x"></i><p>' + i18n.t('Search failed. Please try again.') + '</p></div>';
     }
 }

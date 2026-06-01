@@ -143,8 +143,8 @@
         const srText = advancedToggle.querySelector('.sr-only');
         if (srText) {
             srText.textContent = isOpen
-                ? 'Click to collapse advanced options'
-                : 'Click to expand advanced options';
+                ? i18n.t('Click to collapse advanced options')
+                : i18n.t('Click to expand advanced options');
         }
 
         const icon = advancedToggle.querySelector('i');
@@ -227,8 +227,8 @@
             alertContainer.innerHTML = `
                 <div class="alert alert-info alert-dismissible fade show" role="alert">
                     <i class="fas fa-redo me-2"></i>
-                    Re-running previous research. Review settings and click "Start Research" when ready.
-                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    i18n.t('Re-running previous research. Review settings and click "Start Research" when ready.')
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="${i18n.t('Close')}"></button>
                 </div>
             `;
         }
@@ -336,7 +336,7 @@
                     const searchDropdownInstance = window.setupCustomDropdown(
                         searchEngineInput,
                         searchEngineDropdownList,
-                        () => (searchEngineOptions.length > 0 ? searchEngineOptions : [{ value: '', label: 'No search engines available' }]),
+                        () => (searchEngineOptions.length > 0 ? searchEngineOptions : [{ value: '', label: i18n.t('No search engines available') }]),
                         (value, item) => {
                             selectedSearchEngineValue = value;
 
@@ -353,7 +353,7 @@
                             }
                         },
                         false,
-                        'No search engines available.',
+                        i18n.t('No search engines available.'),
                         handleSearchEngineFavoriteToggle
                     );
 
@@ -394,7 +394,7 @@
             loadSettings();
 
             if (window.ui && window.ui.showAlert) {
-                window.ui.showAlert('Some options could not be loaded. Using defaults instead.', 'warning');
+                window.ui.showAlert(i18n.t('Some options could not be loaded. Using defaults instead.'), 'warning');
             }
         });
     }
@@ -408,7 +408,7 @@
             SafeLogger.error('Custom dropdown script is not loaded');
             // Display an error message
             if (window.ui && window.ui.showAlert) {
-                window.ui.showAlert('Failed to initialize dropdowns. Please reload the page.', 'error');
+                window.ui.showAlert(i18n.t('Failed to initialize dropdowns. Please reload the page.'), 'error');
             }
             return;
         }
@@ -424,7 +424,7 @@
                 modelDropdownList,
                 () => {
                     SafeLogger.log('Getting model options from dropdown:', modelOptions);
-                    return modelOptions.length > 0 ? modelOptions : [{ value: '', label: 'No models available' }];
+                    return modelOptions.length > 0 ? modelOptions : [{ value: '', label: i18n.t('No models available') }];
                 },
                 (value, item) => {
                     SafeLogger.log('Model selected:', value, item);
@@ -450,7 +450,7 @@
                     }
                 },
                 true, // Allow custom values
-                'No models available. Type to enter a custom model name.'
+                i18n.t('No models available. Type to enter a custom model name.')
             );
 
             // Initialize model refresh button
@@ -480,7 +480,7 @@
                         modelRefreshBtn.classList.remove('ldr-loading');
 
                         if (window.ui && window.ui.showAlert) {
-                            window.ui.showAlert('Failed to refresh models: ' + error.message, 'error');
+                            window.ui.showAlert(i18n.tf('Failed to refresh models: %s', error.message), 'error');
                         }
                     });
                 });
@@ -502,7 +502,7 @@
                 () => {
                     // Log available search engines for debugging
                     SafeLogger.log('Getting search engine options:', searchEngineOptions);
-                    return searchEngineOptions.length > 0 ? searchEngineOptions : [{ value: '', label: 'No search engines available' }];
+                    return searchEngineOptions.length > 0 ? searchEngineOptions : [{ value: '', label: i18n.t('No search engines available') }];
                 },
                 (value, item) => {
                     SafeLogger.log('Search engine selected:', value, item);
@@ -521,7 +521,7 @@
                     }
                 },
                 false, // Don't allow custom values
-                'No search engines available.',
+                i18n.t('No search engines available.'),
                 handleSearchEngineFavoriteToggle
             );
 
@@ -548,7 +548,7 @@
                         searchEngineRefreshBtn.classList.remove('ldr-loading');
 
                         if (window.ui && window.ui.showAlert) {
-                            window.ui.showAlert('Failed to refresh search engines: ' + error.message, 'error');
+                            window.ui.showAlert(i18n.tf('Failed to refresh search engines: %s', error.message), 'error');
                         }
                     });
                 });
@@ -923,7 +923,7 @@
         }).catch(error => {
             SafeLogger.error('Failed to load options:', error);
             if (window.ui && window.ui.showAlert) {
-                window.ui.showAlert('Failed to load model options. Please check your connection and try again.', 'error');
+                window.ui.showAlert(i18n.t('Failed to load model options. Please check your connection and try again.'), 'error');
             }
         });
     }
@@ -939,7 +939,7 @@
             warningEl = document.createElement('div');
             warningEl.id = 'custom-model-warning';
             warningEl.className = 'ldr-model-warning';
-            warningEl.textContent = 'Custom model name entered. Make sure it exists in your provider.';
+            warningEl.textContent = i18n.t('Custom model name entered. Make sure it exists in your provider.');
             const parent = modelDropdown.closest('.form-group');
             if (parent) {
                 parent.appendChild(warningEl);
@@ -1276,8 +1276,8 @@
         if (!isRunning) {
             return {
                 success: false,
-                error: "Ollama service is not running.",
-                solution: "Please start Ollama and try again. If you've recently updated, you may need to run database migration with 'python -m src.local_deep_research.migrate_db'."
+                error: i18n.t("Ollama service is not running."),
+                solution: i18n.t("Please start Ollama and try again. If you've recently updated, you may need to run database migration with 'python -m src.local_deep_research.migrate_db'.")
             };
         }
 
@@ -1287,8 +1287,8 @@
         if (!model) {
             return {
                 success: false,
-                error: "No model selected.",
-                solution: "Please select or enter a valid model name."
+                error: i18n.t("No model selected."),
+                solution: i18n.t("Please select or enter a valid model name.")
             };
         }
 
@@ -1306,8 +1306,8 @@
             if (!response.ok) {
                 return {
                     success: false,
-                    error: "Error checking model availability.",
-                    solution: "Please check your Ollama installation and try again."
+                    error: i18n.t("Error checking model availability."),
+                    solution: i18n.t("Please check your Ollama installation and try again.")
                 };
             }
 
@@ -1320,16 +1320,16 @@
             }
             return {
                     success: false,
-                    error: data.message || "The selected model is not available in Ollama.",
-                    solution: "Please pull the model first using 'ollama pull " + model + "' or select a different model."
+                    error: data.message || i18n.t("The selected model is not available in Ollama."),
+                    solution: i18n.tf("Please pull the model first using 'ollama pull %s' or select a different model.", model)
                 };
 
         } catch (error) {
             SafeLogger.error("Error checking Ollama model:", error);
             return {
                 success: false,
-                error: "Error checking model availability: " + error.message,
-                solution: "Please check your Ollama installation and try again."
+                error: i18n.tf("Error checking model availability: %s", error.message),
+                solution: i18n.t("Please check your Ollama installation and try again.")
             };
         }
     }
@@ -2310,7 +2310,7 @@
                 researchValidator.validateAll();
                 queryInput.focus();
             } else {
-                showAlert('Please enter a research query.', 'error');
+                showAlert(i18n.t('Please enter a research query.'), 'error');
             }
             return;
         }
@@ -2328,7 +2328,7 @@
 
         // Show loading overlay for better feedback using centralized utility
         const loadingOverlay = window.createSafeLoadingOverlay({
-            title: 'Preparing your research...',
+            title: i18n.t('Preparing your research...'),
             description: 'Securing settings and initializing search engines'
         });
         loadingOverlay.style.cssText = `
@@ -2408,7 +2408,7 @@
                 SafeLogger.log('Research started:', data);
 
                 if (data.status === window.RESEARCH_STATUS.QUEUED) {
-                    showAlert(data.message || 'Your research has been queued.', 'info');
+                    showAlert(data.message || i18n.t('Your research has been queued.'), 'info');
                 }
 
                 // Store research preferences in localStorage
@@ -2419,7 +2419,7 @@
                 window.location.href = URLBuilder.progressPage(data.research_id);
             } else {
                 // Show error message
-                showAlert(data.message || 'Failed to start research.', 'error');
+                showAlert(data.message || i18n.t('Failed to start research.'), 'error');
 
                 // Re-enable the button
                 startBtn.disabled = false;
@@ -2435,7 +2435,7 @@
             SafeLogger.error('Error starting research:', error);
 
             // Show error message
-            showAlert('An error occurred while starting research. Please try again.', 'error');
+            showAlert(i18n.t('An error occurred while starting research. Please try again.'), 'error');
 
             // Re-enable the button
             startBtn.disabled = false;

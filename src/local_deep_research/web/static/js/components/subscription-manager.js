@@ -84,7 +84,7 @@ class SubscriptionManager {
 
         } catch (error) {
             SafeLogger.error('Error loading subscription data:', error);
-            this.showError('Failed to load subscriptions');
+            this.showError(i18n.t('Failed to load subscriptions'));
         }
     }
 
@@ -104,7 +104,7 @@ class SubscriptionManager {
                 document.getElementById('next-refresh-time').textContent =
                     hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
             } else {
-                document.getElementById('next-refresh-time').textContent = 'Soon';
+                document.getElementById('next-refresh-time').textContent = i18n.t('Soon');
             }
         }
     }
@@ -161,12 +161,7 @@ class SubscriptionManager {
         }
 
         if (subsToShow.length === 0) {
-            container.innerHTML = `
-                <div class="text-center p-4 text-muted">
-                    <i class="bi bi-inbox fs-1"></i>
-                    <p>No subscriptions in this folder</p>
-                </div>
-            `;
+            container.innerHTML = '<div class="text-center p-4 text-muted"><i class="bi bi-inbox fs-1"></i><p>' + i18n.t('No subscriptions in this folder') + '</p></div>';
             return;
         }
 
@@ -194,15 +189,15 @@ class SubscriptionManager {
                     </div>
                     <div class="ldr-subscription-actions">
                         <button class="btn btn-sm btn-outline-primary edit-subscription-btn"
-                                data-subscription-id="${this.escapeHtml(subscription.id)}" title="Edit">
+                                data-subscription-id="${this.escapeHtml(subscription.id)}" title="${i18n.t('Edit')}">
                             <i class="bi bi-pencil"></i>
                         </button>
                         <button class="btn btn-sm btn-outline-warning pause-subscription-btn"
-                                data-subscription-id="${this.escapeHtml(subscription.id)}" title="${subscription.status === 'active' ? 'Pause' : 'Resume'}">
+                                data-subscription-id="${this.escapeHtml(subscription.id)}" title="${subscription.status === 'active' ? i18n.t('Pause') : i18n.t('Resume')}">
                             <i class="bi bi-${subscription.status === 'active' ? 'pause' : 'play'}"></i>
                         </button>
                         <button class="btn btn-sm btn-outline-danger delete-subscription-btn"
-                                data-subscription-id="${this.escapeHtml(subscription.id)}" title="Delete">
+                                data-subscription-id="${this.escapeHtml(subscription.id)}" title="${i18n.t('Delete')}">
                             <i class="bi bi-trash"></i>
                         </button>
                     </div>
@@ -227,25 +222,25 @@ class SubscriptionManager {
                 <div class="modal-dialog">
                     <div class="modal-content">
                         <div class="modal-header">
-                            <h5 class="modal-title">Edit Subscription</h5>
+                            <h5 class="modal-title">${i18n.t('Edit Subscription')}</h5>
                             <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                         </div>
                         <div class="modal-body">
                             <div class="mb-3">
-                                <label class="form-label">Update Frequency</label>
+                                <label class="form-label">${i18n.t('Update Frequency')}</label>
                                 <select class="form-select" id="edit-frequency">
-                                    <option value="60" ${subscription.refresh_interval_minutes === 60 ? 'selected' : ''}>Every hour</option>
-                                    <option value="180" ${subscription.refresh_interval_minutes === 180 ? 'selected' : ''}>Every 3 hours</option>
-                                    <option value="360" ${subscription.refresh_interval_minutes === 360 ? 'selected' : ''}>Every 6 hours</option>
-                                    <option value="720" ${subscription.refresh_interval_minutes === 720 ? 'selected' : ''}>Every 12 hours</option>
-                                    <option value="1440" ${subscription.refresh_interval_minutes === 1440 ? 'selected' : ''}>Daily</option>
-                                    <option value="10080" ${subscription.refresh_interval_minutes === 10080 ? 'selected' : ''}>Weekly</option>
+                                    <option value="60" ${subscription.refresh_interval_minutes === 60 ? 'selected' : ''}>${i18n.t('Every hour')}</option>
+                                    <option value="180" ${subscription.refresh_interval_minutes === 180 ? 'selected' : ''}>${i18n.t('Every 3 hours')}</option>
+                                    <option value="360" ${subscription.refresh_interval_minutes === 360 ? 'selected' : ''}>${i18n.t('Every 6 hours')}</option>
+                                    <option value="720" ${subscription.refresh_interval_minutes === 720 ? 'selected' : ''}>${i18n.t('Every 12 hours')}</option>
+                                    <option value="1440" ${subscription.refresh_interval_minutes === 1440 ? 'selected' : ''}>${i18n.t('Daily')}</option>
+                                    <option value="10080" ${subscription.refresh_interval_minutes === 10080 ? 'selected' : ''}>${i18n.t('Weekly')}</option>
                                 </select>
                             </div>
                             <div class="mb-3">
-                                <label class="form-label">Folder</label>
+                                <label class="form-label">${i18n.t('Folder')}</label>
                                 <select class="form-select" id="edit-folder">
-                                    <option value="">No folder</option>
+                                    <option value="">${i18n.t('No folder')}</option>
                                     ${this.folders.map(f =>
             // Security: escapeHtml applied to folder name in option value and text
             `<option value="${this.escapeHtml(f.name)}" ${subscription.folder === f.name ? 'selected' : ''}>${this.escapeHtml(f.name)}</option>`
@@ -253,13 +248,13 @@ class SubscriptionManager {
                                 </select>
                             </div>
                             <div class="mb-3">
-                                <label class="form-label">Notes</label>
+                                <label class="form-label">${i18n.t('Notes')}</label>
                                 <textarea class="ldr-form-control" id="edit-notes" rows="2"></textarea>
                             </div>
                         </div>
                         <div class="modal-footer">
-                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                            <button type="button" class="btn btn-primary" id="save-subscription-edit">Save Changes</button>
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">${i18n.t('Cancel')}</button>
+                            <button type="button" class="btn btn-primary" id="save-subscription-edit">${i18n.t('Save Changes')}</button>
                         </div>
                     </div>
                 </div>
@@ -304,19 +299,19 @@ class SubscriptionManager {
             });
 
             if (response.ok) {
-                this.showSuccess('Subscription updated');
+                this.showSuccess(i18n.t('Subscription updated'));
                 await this.loadSubscriptionData();
             } else {
-                this.showError('Failed to update subscription');
+                this.showError(i18n.t('Failed to update subscription'));
             }
         } catch (error) {
             SafeLogger.error('Error updating subscription:', error);
-            this.showError('Error updating subscription');
+            this.showError(i18n.t('Error updating subscription'));
         }
     }
 
     async deleteSubscription(subscriptionId) {
-        if (!confirm('Are you sure you want to delete this subscription?')) return;
+        if (!confirm(i18n.t('Are you sure you want to delete this subscription?'))) return;
 
         try {
             const response = await fetch(`/news/api/subscription/subscriptions/${subscriptionId}`, {
@@ -327,14 +322,14 @@ class SubscriptionManager {
             });
 
             if (response.ok) {
-                this.showSuccess('Subscription deleted');
+                this.showSuccess(i18n.t('Subscription deleted'));
                 await this.loadSubscriptionData();
             } else {
-                this.showError('Failed to delete subscription');
+                this.showError(i18n.t('Failed to delete subscription'));
             }
         } catch (error) {
             SafeLogger.error('Error deleting subscription:', error);
-            this.showError('Error deleting subscription');
+            this.showError(i18n.t('Error deleting subscription'));
         }
     }
 
@@ -353,7 +348,7 @@ class SubscriptionManager {
     }
 
     showCreateFolderDialog() {
-        const name = prompt('Enter folder name:');
+        const name = prompt(i18n.t('Enter folder name:'));
         if (!name) return;
 
         this.createFolder(name);
@@ -371,21 +366,21 @@ class SubscriptionManager {
             });
 
             if (response.ok) {
-                this.showSuccess('Folder created');
+                this.showSuccess(i18n.t('Folder created'));
                 await this.loadSubscriptionData();
             } else {
                 const error = await response.json();
-                this.showError(error.error || 'Failed to create folder');
+                this.showError(error.error || i18n.t('Failed to create folder'));
             }
         } catch (error) {
             SafeLogger.error('Error creating folder:', error);
-            this.showError('Error creating folder');
+            this.showError(i18n.t('Error creating folder'));
         }
     }
 
     // Utility methods
     formatTimeUntil(milliseconds) {
-        if (milliseconds <= 0) return 'Now';
+        if (milliseconds <= 0) return i18n.t('Now');
 
         const hours = Math.floor(milliseconds / (1000 * 60 * 60));
         const days = Math.floor(hours / 24);
@@ -412,7 +407,7 @@ class SubscriptionManager {
         container.innerHTML = `
             <div class="text-center p-4">
                 <div class="spinner-border" role="status">
-                    <span class="visually-hidden">Loading...</span>
+                    <span class="visually-hidden">${i18n.t("Loading...")}</span>
                 </div>
             </div>
         `;

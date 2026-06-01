@@ -289,7 +289,7 @@ function displayWarnings(warnings) {
             : null;
         const actionHtml = safeActionUrl
             ? `<a href="${esc(safeActionUrl)}" class="ldr-alert-action">
-                  ${esc(warning.actionLabel || 'View details')}
+                  ${esc(warning.actionLabel || i18n.t('View details'))}
                   <span aria-hidden="true">→</span>
                </a>`
             : '';

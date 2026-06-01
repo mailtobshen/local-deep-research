@@ -212,8 +212,8 @@
                 // Update button label
                 const btn = document.getElementById('search-mode-btn');
                 const iconMap = { hybrid: 'fa-brain', text: 'fa-font', semantic: 'fa-brain' };
-                const labelMap = { hybrid: 'AI Hybrid', text: 'Text Only', semantic: 'AI Only' };
-                const placeholders = { hybrid: 'Search titles + content...', text: 'Filter history by title...', semantic: 'Search content with AI...' };
+                const labelMap = { hybrid: i18n.t('AI Hybrid'), text: i18n.t('Text Only'), semantic: i18n.t('AI Only') };
+                const placeholders = { hybrid: i18n.t('Search titles + content...'), text: i18n.t('Filter history by title...'), semantic: i18n.t('Search content with AI...') };
                 if (btn && labelMap[mode]) {
                     window.safeUpdateButton(btn, iconMap[mode], ' ' + labelMap[mode]);
                 }
@@ -287,7 +287,7 @@
         } catch (error) {
             SafeLogger.error('Error loading history:', error);
             uiUtils.hideSpinner(historyContainer);
-            uiUtils.showError('Error loading history: ' + error.message);
+            uiUtils.showError(i18n.tf('Error loading history: %s', error.message));
         }
     }
 
@@ -310,8 +310,8 @@
                 historyContainer.innerHTML = `
                     <div class="ldr-empty-state">
                         <i class="fas fa-history ldr-empty-icon"></i>
-                        <p>No research history found.</p>
-                        ${searchInput && searchInput.value ? '<p>Try adjusting your search query.</p>' : ''}
+                        <p>${i18n.t('No research history found.')}</p>
+                        ${searchInput && searchInput.value ? `<p>${i18n.t("Try adjusting your search query.")}</p>` : ''}
                     </div>
                 `;
             }
@@ -374,8 +374,8 @@
 
         // Simple fallback formatting
         const modeMap = {
-            'quick': 'Quick Summary',
-            'detailed': 'Detailed Report'
+            'quick': i18n.t('Quick Summary'),
+            'detailed': i18n.t('Detailed Report')
         };
 
         return modeMap[mode] || mode;
@@ -440,7 +440,7 @@
                         <i class="fas fa-bell"></i><span> Subscribe</span>
                     </button>` : ''}
                 ${ResearchStates.isCompleted(item.status) ?
-                    `<button class="btn btn-sm ldr-btn-outline ldr-rerun-btn" title="Re-run this research">
+                    `<button class="btn btn-sm ldr-btn-outline ldr-rerun-btn" title="i18n.t('Re-run this research')">
                         <i class="fas fa-redo"></i><span> Re-run</span>
                     </button>` : ''}
                 <button class="btn btn-sm ldr-btn-outline ldr-delete-item-btn">
@@ -473,7 +473,7 @@
         itemEl.className = 'ldr-history-item ldr-history-item--semantic-only';
         itemEl.dataset.id = semanticResult.research_id;
 
-        const displayTitle = semanticResult.research_title || semanticResult.title || 'Untitled Research';
+        const displayTitle = semanticResult.research_title || semanticResult.title || i18n.t('Untitled Research');
         let dateStr = '';
         if (semanticResult.research_created_at) {
             try {
@@ -522,8 +522,8 @@
             historyContainer.innerHTML = `
                 <div class="ldr-empty-state">
                     <i class="fas fa-history ldr-empty-icon"></i>
-                    <p>No research history found.</p>
-                    <p>Try adjusting your search query.</p>
+                    <p>${i18n.t('No research history found.')}</p>
+                    <p>${i18n.t('Try adjusting your search query.')}</p>
                 </div>
             `;
             return;
@@ -548,7 +548,7 @@
         if (tier3.length > 0) {
             const divider = document.createElement('div');
             divider.className = 'ldr-hybrid-divider';
-            divider.textContent = 'Also found in content';
+            divider.textContent = i18n.t('Also found in content');
             fragment.appendChild(divider);
 
             for (const entry of tier3) {
@@ -615,7 +615,7 @@
      * @returns {string} Formatted title
      */
     function formatTitleFromQuery(query) {
-        if (!query) return 'Untitled Research';
+        if (!query) return i18n.t('Untitled Research');
 
         // Truncate long queries
         if (query.length > 60) {
@@ -672,7 +672,7 @@
                         historyContainer.innerHTML = `
                             <div class="ldr-empty-state">
                                 <i class="fas fa-exclamation-triangle"></i>
-                                <p>Semantic search is loading. Please try again.</p>
+                                <p>${i18n.t('Semantic search is loading. Please try again.')}</p>
                             </div>
                         `;
                     }
@@ -692,7 +692,7 @@
                         historyContainer.innerHTML = `
                             <div class="ldr-empty-state">
                                 <i class="fas fa-brain"></i>
-                                <p>No research indexed yet. Use the "Index All" button above to enable semantic search.</p>
+                                <p>${i18n.t('No research indexed yet. Use the "Index All" button above to enable semantic search.')}</p>
                             </div>
                         `;
                         return;
@@ -704,7 +704,7 @@
                         historyContainer.innerHTML = `
                             <div class="ldr-empty-state">
                                 <i class="fas fa-exclamation-triangle"></i>
-                                <p>Search failed. Please try again.</p>
+                                <p>${i18n.t('Search failed. Please try again.')}</p>
                             </div>
                         `;
                     }
@@ -733,7 +733,7 @@
             const loadingDiv = document.createElement('div');
             loadingDiv.className = 'ldr-hybrid-loading';
             loadingDiv.id = 'hybrid-loading-indicator';
-            loadingDiv.innerHTML = '<div class="ldr-spinner" style="width: 16px; height: 16px; border-width: 2px;"></div> Searching content...';
+            loadingDiv.innerHTML = '<div class="ldr-spinner" style="width: 16px; height: 16px; border-width: 2px;"></div> ' + i18n.t('Searching content...');
             if (historyContainer) historyContainer.appendChild(loadingDiv);
 
             // 4. Race-condition guard
@@ -775,7 +775,7 @@
      * @param {string} itemId - The item ID to delete
      */
     async function handleDeleteItem(itemId) {
-        if (!confirm('Are you sure you want to delete this research? This action cannot be undone.')) {
+        if (!confirm(i18n.t('Are you sure you want to delete this research? This action cannot be undone.'))) {
             return;
         }
 
@@ -788,13 +788,13 @@
             filteredItems = filteredItems.filter(item => String(item.id) !== itemId);
 
             // Show success message
-            uiUtils.showMessage('Research deleted successfully');
+            uiUtils.showMessage(i18n.t('Research deleted successfully'));
 
             // Re-render via handleSearchInput to preserve hybrid/semantic state
             handleSearchInput();
         } catch (error) {
             SafeLogger.error('Error deleting research:', error);
-            uiUtils.showError('Error deleting research: ' + error.message);
+            uiUtils.showError(i18n.tf('Error deleting research: %s', error.message));
         }
     }
 
@@ -802,7 +802,7 @@
      * Handle clear history
      */
     async function handleClearHistory() {
-        if (!confirm('Are you sure you want to clear all research history? This action cannot be undone.')) {
+        if (!confirm(i18n.t('Are you sure you want to clear all research history? This action cannot be undone.'))) {
             return;
         }
 
@@ -815,13 +815,13 @@
             filteredItems = [];
 
             // Show success message
-            uiUtils.showMessage('Research history cleared successfully');
+            uiUtils.showMessage(i18n.t('Research history cleared successfully'));
 
             // Re-render history items
             renderHistoryItems();
         } catch (error) {
             SafeLogger.error('Error clearing history:', error);
-            uiUtils.showError('Error clearing history: ' + error.message);
+            uiUtils.showError(i18n.tf('Error clearing history: %s', error.message));
         }
     }
 

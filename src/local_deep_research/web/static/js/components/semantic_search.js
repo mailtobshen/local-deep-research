@@ -149,7 +149,7 @@ function createSemanticResultCard(result, config, query) {
     const cfg = config || {};
 
     const cardId = (cfg.getId || function(r) { return r.research_id || ''; })(result);
-    const displayTitle = (cfg.getTitle || function(r) { return r.research_title || r.title || 'Untitled'; })(result);
+    const displayTitle = (cfg.getTitle || function(r) { return r.research_title || r.title || i18n.t('Untitled'); })(result);
     const cardUrl = (cfg.getUrl || function(r) {
         return (typeof URLBuilder !== 'undefined' && r.research_id)
             ? URLBuilder.resultsPage(r.research_id) : '#';
@@ -158,7 +158,7 @@ function createSemanticResultCard(result, config, query) {
     const badges = cfg.getBadges
         ? cfg.getBadges(result)
         : [{ icon: result.type === 'report' ? 'file-alt' : 'link',
-             label: result.type === 'report' ? 'Report' : 'Source' }];
+             label: result.type === 'report' ? i18n.t('Report') : i18n.t('Source') }];
 
     const rawDate = cfg.getDate
         ? cfg.getDate(result)
@@ -195,7 +195,7 @@ function createSemanticResultCard(result, config, query) {
         <div class="ldr-semantic-result-header">
             <div>
                 ${badgesHtml}
-                ${similarity ? `<span class="ldr-ai-match-badge"><i class="fas fa-brain"></i> ${esc(similarity)}% match</span>` : ''}
+                ${similarity ? `<span class="ldr-ai-match-badge"><i class="fas fa-brain"></i> ${i18n.tf('%s%% match', esc(similarity))}</span>` : ''}
             </div>
             ${dateStr ? `<small class="ldr-semantic-result-date">${esc(dateStr)}</small>` : ''}
         </div>
@@ -207,7 +207,7 @@ function createSemanticResultCard(result, config, query) {
         ${result.url && isSafeExternalUrl(result.url) ? `
             <p class="ldr-semantic-result-source">
                 <a href="${esc(result.url)}" target="_blank" rel="noopener noreferrer">
-                    <i class="fas fa-external-link-alt"></i> View Source
+                    <i class="fas fa-external-link-alt"></i> ${i18n.t('View Source')}
                 </a>
             </p>
         ` : ''}
