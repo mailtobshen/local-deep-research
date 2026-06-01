@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="{{ current_language }}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login - Local Deep Research</title>
+    <title>{{ _("Login - Local Deep Research") }}</title>
 
     <!-- Vite HMR for development -->
     {{ vite_hmr() }}
@@ -314,8 +314,8 @@
     <div class="ldr-auth-wrapper">
         <div class="ldr-auth-container">
             <div class="ldr-auth-header">
-                <h1><i aria-hidden="true" class="fas fa-flask"></i> Local Deep Research</h1>
-                <p>Secure Research Platform</p>
+                <h1><i aria-hidden="true" class="fas fa-flask"></i> {{ _("Local Deep Research") }}</h1>
+                <p>{{ _("Secure Research Platform") }}</p>
             </div>
 
             <div class="ldr-card">
@@ -323,17 +323,17 @@
                     <div class="ldr-encryption-banner">
                         <i aria-hidden="true" class="fas fa-shield-alt"></i>
                         <div class="ldr-encryption-banner-content">
-                            <strong>Your data is encrypted</strong>
-                            <span>Each user has their own encrypted database protected by their password</span>
+                            <strong>{{ _("Your data is encrypted") }}</strong>
+                            <span>{{ _("Each user has their own encrypted database protected by their password") }}</span>
                         </div>
                     </div>
 
                 {% if not has_encryption %}
                     <div class="ldr-security-warning">
                         <i aria-hidden="true" class="fas fa-exclamation-triangle"></i>
-                        <strong>Security Warning:</strong>
-                        Database encryption is not available. Your data will be stored unencrypted.
-                        <br><small>Install SQLCipher for secure storage.</small>
+                        <strong>{{ _("Security Warning:") }}</strong>
+                        {{ _("Database encryption is not available. Your data will be stored unencrypted.") }}
+                        <br><small>{{ _("Install SQLCipher for secure storage.") }}</small>
                     </div>
                 {% endif %}
 
@@ -358,12 +358,12 @@
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
 
                     <div class="form-group">
-                        <label for="username">Username</label>
+                        <label for="username">{{ _("Username") }}</label>
                         <input type="text"
                                class="ldr-form-control"
                                id="username"
                                name="username"
-                               placeholder="Enter your username"
+                               placeholder="{{ _("Enter your username") }}"
                                autocomplete="username"
                                required
                                aria-required="true"
@@ -371,12 +371,12 @@
                     </div>
 
                     <div class="form-group">
-                        <label for="password">Password</label>
+                        <label for="password">{{ _("Password") }}</label>
                         <input type="password"
                                class="ldr-form-control"
                                id="password"
                                name="password"
-                               placeholder="Enter your password"
+                               placeholder="{{ _("Enter your password") }}"
                                autocomplete="current-password"
                                required
                                aria-required="true">
@@ -387,22 +387,22 @@
                                id="remember"
                                name="remember"
                                value="true">
-                        <span>Remember me for 30 days</span>
+                        <span>{{ _("Remember me for 30 days") }}</span>
                     </label>
 
                     <button type="submit" class="btn">
                         <i aria-hidden="true" class="fas fa-sign-in-alt"></i>
-                        Login
+                        {{ _("Login") }}
                     </button>
                 </form>
 
                 <div class="ldr-auth-links">
                     {% if allow_registrations %}
-                    <p>Don't have an account? <a href="{{ url_for('auth.register') }}">Register here</a></p>
+                    <p>{{ _("Don't have an account?") }} <a href="{{ url_for('auth.register') }}">{{ _("Register here") }}</a></p>
                     {% endif %}
                     <div class="ldr-browser-hint">
                         <i aria-hidden="true" class="fas fa-info-circle"></i>
-                        <span>Your browser can save your password for easy login</span>
+                        <span>{{ _("Your browser can save your password for easy login") }}</span>
                     </div>
                 </div>
             </div>

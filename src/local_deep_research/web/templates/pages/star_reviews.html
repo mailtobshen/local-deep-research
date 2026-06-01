@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% from "components/help_macros.html" import tooltip, help_panel, help_step, help_tip, privacy_note %}
 
-{% block title %}Star Reviews Analytics{% endblock %}
+{% block title %}{{ _('Star Reviews Analytics') }}{% endblock %}
 
 {% block extra_head %}
 <link rel="stylesheet" href="/static/css/star_reviews.css">
@@ -11,37 +11,37 @@
 <div class="ldr-star-reviews-container">
     <div class="ldr-metrics-header">
         <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
-            <h1>⭐ Star Reviews Analytics</h1>
+            <h1>{{ _("⭐ Star Reviews Analytics") }}</h1>
             <a href="/metrics/" style="background: var(--bg-tertiary); color: var(--text-primary); padding: 0.5rem 1rem; border-radius: 0.375rem; text-decoration: none; font-size: 0.875rem; border: 1px solid var(--border-color); transition: background-color 0.2s ease;">
-                ← Back to Metrics
+                {{ _('← Back to Metrics') }}
             </a>
         </div>
-        <p>Comprehensive analysis of user satisfaction ratings</p>
+        <p>{{ _("Comprehensive analysis of user satisfaction ratings") }}</p>
     </div>
 
     <div class="ldr-period-selector">
-        <label for="period-select">Time Period: </label>
+        <label for="period-select">{{ _("Time Period:") }} </label>
         <select id="period-select">
-            <option value="7d">Last 7 days</option>
-            <option value="30d" selected>Last 30 days</option>
-            <option value="3m">Last 3 months</option>
-            <option value="1y">Last year</option>
-            <option value="all">All time</option>
+            <option value="7d">{{ _("Last 7 days") }}</option>
+            <option value="30d" selected>{{ _("Last 30 days") }}</option>
+            <option value="3m">{{ _("Last 3 months") }}</option>
+            <option value="1y">{{ _("Last year") }}</option>
+            <option value="all">{{ _("All time") }}</option>
         </select>
     </div>
 
     <!-- Understanding Star Reviews Help Panel -->
-    {% call help_panel('reviews-how', 'Understanding Star Reviews', icon='star', collapsed=true, dismissible=true) %}
+    {% call help_panel('reviews-how', _('Understanding Star Reviews'), icon='star', collapsed=true, dismissible=true) %}
     <div class="ldr-help-steps">
-        {{ help_step(1, "Rate Your Research", "After viewing results, rate them 1-5 stars. This helps you track which settings produce best results.") }}
-        {{ help_step(2, "Model Comparison", "See which AI models and search engines give you the highest satisfaction.") }}
-        {{ help_step(3, "Improve Over Time", "Use insights to adjust settings - switch to models or engines that consistently rate higher.") }}
+        {{ help_step(1, _('Rate Your Research'), _('After viewing results, rate them 1-5 stars. This helps you track which settings produce best results.')) }}
+        {{ help_step(2, _('Model Comparison'), _('See which AI models and search engines give you the highest satisfaction.')) }}
+        {{ help_step(3, _('Improve Over Time'), _('Use insights to adjust settings - switch to models or engines that consistently rate higher.')) }}
     </div>
-    {{ privacy_note("All rating data is stored locally on your device only - never shared or sent anywhere.") }}
+    {{ privacy_note(_('All rating data is stored locally on your device only - never shared or sent anywhere.')) }}
     {% endcall %}
 
     <div id="loading" class="ldr-loading">
-        <div>Loading star reviews data...</div>
+        <div>{{ _('Loading star reviews data...') }}</div>
     </div>
 
     <div id="error" class="ldr-error" style="display: none;"></div>
@@ -49,24 +49,24 @@
     <div id="content" style="display: none;">
         <!-- Overall Statistics -->
         <div class="ldr-metric-card">
-            <h3>📊 Overall Satisfaction</h3>
+            <h3>{{ _("📊 Overall Satisfaction") }}</h3>
             <div class="ldr-overall-stats">
                 <div class="ldr-stat-item">
                     <span class="ldr-stat-value" id="avg-rating">0.0</span>
-                    <div class="ldr-stat-label">Average Rating</div>
+                    <div class="ldr-stat-label">{{ _("Average Rating") }}</div>
                 </div>
                 <div class="ldr-stat-item">
                     <span class="ldr-stat-value" id="total-ratings">0</span>
-                    <div class="ldr-stat-label">Total Ratings</div>
+                    <div class="ldr-stat-label">{{ _("Total Ratings") }}</div>
                 </div>
                 <div class="ldr-stat-item">
                     <span class="ldr-stat-value" id="satisfaction-rate">0%</span>
-                    <div class="ldr-stat-label">Satisfaction Rate</div>
+                    <div class="ldr-stat-label">{{ _("Satisfaction Rate") }}</div>
                 </div>
             </div>
 
             <div class="ldr-rating-distribution">
-                <h4>Rating Distribution</h4>
+                <h4>{{ _("Rating Distribution") }}</h4>
                 <div class="ldr-rating-bar">
                     <div class="ldr-rating-label">5 ⭐</div>
                     <div class="ldr-rating-progress">
@@ -108,7 +108,7 @@
         <div class="ldr-metrics-grid">
             <!-- LLM Model Ratings Chart -->
             <div class="ldr-metric-card">
-                <h3>🤖 LLM Model Performance</h3>
+                <h3>{{ _("🤖 LLM Model Performance") }}</h3>
                 <div class="ldr-chart-container">
                     <canvas id="llm-ratings-chart"></canvas>
                 </div>
@@ -116,7 +116,7 @@
 
             <!-- Search Engine Ratings Chart -->
             <div class="ldr-metric-card">
-                <h3>🔍 Search Engine Performance</h3>
+                <h3>{{ _("🔍 Search Engine Performance") }}</h3>
                 <div class="ldr-chart-container">
                     <canvas id="search-engine-ratings-chart"></canvas>
                 </div>
@@ -124,7 +124,7 @@
 
             <!-- Rating Trends Over Time -->
             <div class="ldr-metric-card">
-                <h3>📈 Rating Trends</h3>
+                <h3>{{ _("📈 Rating Trends") }}</h3>
                 <div class="ldr-chart-container">
                     <canvas id="rating-trends-chart"></canvas>
                 </div>
@@ -132,7 +132,7 @@
 
             <!-- Recent Ratings -->
             <div class="ldr-metric-card">
-                <h3>🕐 Recent Ratings</h3>
+                <h3>{{ _("🕐 Recent Ratings") }}</h3>
                 <div class="ldr-recent-ratings" id="recent-ratings">
                     <!-- Recent ratings will be populated here -->
                 </div>
@@ -144,34 +144,34 @@
         <div class="ldr-info-card">
             <div class="ldr-info-icon">📊</div>
             <div class="ldr-info-content">
-                <h3>Data-Driven Research Optimization</h3>
-                <p>Use your personal rating history to optimize your research workflow. Instead of relying on intuition alone, leverage actual performance statistics to identify which LLM models, search engines, and research approaches deliver the best results for your specific needs.</p>
+                <h3>{{ _("Data-Driven Research Optimization") }}</h3>
+                <p>{{ _('Use your personal rating history to optimize your research workflow. Instead of relying on intuition alone, leverage actual performance statistics to identify which LLM models, search engines, and research approaches deliver the best results for your specific needs.') }}</p>
             </div>
         </div>
 
         <div class="ldr-info-grid">
             <div class="ldr-info-item">
                 <div class="ldr-info-item-icon">🤖</div>
-                <h4>Model Performance</h4>
-                <p>Compare LLM models based on your actual satisfaction ratings to choose the best performing one for your research style.</p>
+                <h4>{{ _("Model Performance") }}</h4>
+                <p>{{ _('Compare LLM models based on your actual satisfaction ratings to choose the best performing one for your research style.') }}</p>
             </div>
 
             <div class="ldr-info-item">
                 <div class="ldr-info-item-icon">🔍</div>
-                <h4>Search Engine Insights</h4>
-                <p>Discover which search engines consistently deliver higher-quality results for your research topics and preferences.</p>
+                <h4>{{ _("Search Engine Insights") }}</h4>
+                <p>{{ _('Discover which search engines consistently deliver higher-quality results for your research topics and preferences.') }}</p>
             </div>
 
             <div class="ldr-info-item">
                 <div class="ldr-info-item-icon">📈</div>
-                <h4>Trend Analysis</h4>
-                <p>Track your satisfaction trends over time to understand how your research effectiveness evolves and identify optimization opportunities.</p>
+                <h4>{{ _("Trend Analysis") }}</h4>
+                <p>{{ _('Track your satisfaction trends over time to understand how your research effectiveness evolves and identify optimization opportunities.') }}</p>
             </div>
 
             <div class="ldr-info-item">
                 <div class="ldr-info-item-icon">🎯</div>
-                <h4>Personalized Recommendations</h4>
-                <p>Make informed decisions about your research configuration based on your personal usage patterns and satisfaction data.</p>
+                <h4>{{ _("Personalized Recommendations") }}</h4>
+                <p>{{ _('Make informed decisions about your research configuration based on your personal usage patterns and satisfaction data.') }}</p>
             </div>
         </div>
     </div>
@@ -222,7 +222,7 @@ async function loadStarReviews() {
 
     } catch (error) {
         console.error('Error loading star reviews:', error);
-        showError('Failed to load star reviews data: ' + error.message);
+        showError(i18n.t('Failed to load star reviews data:') + ' ' + error.message);
     }
 }
 
@@ -278,9 +278,9 @@ function updateLLMChart(llmRatings) {
     llmChart = new Chart(ctx, {
         type: 'bar',
         data: {
-            labels: sortedData.map(item => item.model || 'Unknown'),
+            labels: sortedData.map(item => item.model || i18n.t('Unknown')),
             datasets: [{
-                label: 'Average Rating',
+                label: i18n.t('Average Rating'),
                 data: sortedData.map(item => item.avg_rating),
                 backgroundColor: 'rgba(54, 162, 235, 0.8)',
                 borderColor: 'rgba(54, 162, 235, 1)',
@@ -296,13 +296,13 @@ function updateLLMChart(llmRatings) {
                     max: 5,
                     title: {
                         display: true,
-                        text: 'Average Rating (Stars)'
+                        text: i18n.t('Average Rating (Stars)')
                     }
                 },
                 x: {
                     title: {
                         display: true,
-                        text: 'LLM Models'
+                        text: i18n.t('LLM Models')
                     }
                 }
             },
@@ -316,8 +316,8 @@ function updateLLMChart(llmRatings) {
                             const index = context.dataIndex;
                             const item = sortedData[index];
                             return [
-                                `Ratings: ${item.rating_count}`,
-                                `Satisfaction: ${item.satisfaction_rate}%`
+                                `' + i18n.t('Ratings') + ': ${item.rating_count}`,
+                                `' + i18n.t('Satisfaction') + ': ${item.satisfaction_rate}%`
                             ];
                         }
                     }
@@ -340,9 +340,9 @@ function updateSearchEngineChart(searchEngineRatings) {
     searchEngineChart = new Chart(ctx, {
         type: 'bar',
         data: {
-            labels: sortedData.map(item => item.search_engine || 'Unknown'),
+            labels: sortedData.map(item => item.search_engine || i18n.t('Unknown')),
             datasets: [{
-                label: 'Average Rating',
+                label: i18n.t('Average Rating'),
                 data: sortedData.map(item => item.avg_rating),
                 backgroundColor: 'rgba(255, 99, 132, 0.8)',
                 borderColor: 'rgba(255, 99, 132, 1)',
@@ -358,13 +358,13 @@ function updateSearchEngineChart(searchEngineRatings) {
                     max: 5,
                     title: {
                         display: true,
-                        text: 'Average Rating (Stars)'
+                        text: i18n.t('Average Rating (Stars)')
                     }
                 },
                 x: {
                     title: {
                         display: true,
-                        text: 'Search Engines'
+                        text: i18n.t('Search Engines')
                     }
                 }
             },
@@ -378,8 +378,8 @@ function updateSearchEngineChart(searchEngineRatings) {
                             const index = context.dataIndex;
                             const item = sortedData[index];
                             return [
-                                `Ratings: ${item.rating_count}`,
-                                `Satisfaction: ${item.satisfaction_rate}%`
+                                `' + i18n.t('Ratings') + ': ${item.rating_count}`,
+                                `' + i18n.t('Satisfaction') + ': ${item.satisfaction_rate}%`
                             ];
                         }
                     }
@@ -399,9 +399,9 @@ function updateTrendsChart(ratingTrends) {
     trendsChart = new Chart(ctx, {
         type: 'line',
         data: {
-            labels: ratingTrends.map(item => new Date(item.date).toLocaleDateString()),
+            labels: ratingTrends.map(item => new Date(item.date).toLocaleDateString('zh-CN')),
             datasets: [{
-                label: 'Average Rating',
+                label: i18n.t('Average Rating'),
                 data: ratingTrends.map(item => item.avg_rating),
                 borderColor: 'rgba(75, 192, 192, 1)',
                 backgroundColor: 'rgba(75, 192, 192, 0.2)',
@@ -419,13 +419,13 @@ function updateTrendsChart(ratingTrends) {
                     max: 5,
                     title: {
                         display: true,
-                        text: 'Average Rating'
+                        text: i18n.t('Average Rating')
                     }
                 },
                 x: {
                     title: {
                         display: true,
-                        text: 'Date'
+                        text: i18n.t('Date')
                     }
                 }
             },
@@ -443,7 +443,7 @@ function updateRecentRatings(recentRatings) {
     container.innerHTML = '';
 
     if (recentRatings.length === 0) {
-        container.innerHTML = '<div style="text-align: center; padding: 20px; color: var(--text-muted);">No recent ratings found</div>';
+        container.innerHTML = '<div style="text-align: center; padding: 20px; color: var(--text-muted);">' + i18n.t('No recent ratings found') + '</div>';
         return;
     }
 
@@ -452,7 +452,7 @@ function updateRecentRatings(recentRatings) {
         item.className = 'ldr-rating-item';
 
         const stars = '⭐'.repeat(rating.rating);
-        const date = new Date(rating.rated_at).toLocaleDateString();
+        const date = new Date(rating.rated_at).toLocaleDateString('zh-CN');
 
         item.innerHTML = `
             <div class="ldr-rating-details">
@@ -467,7 +467,7 @@ function updateRecentRatings(recentRatings) {
             </div>
             <div class="ldr-rating-score">
                 <span class="ldr-star-rating">${stars}</span>
-                <span>${rating.rating}/5</span>
+                <span>${rating.rating}` + i18n.t('/5') + `</span>
             </div>
         `;
 

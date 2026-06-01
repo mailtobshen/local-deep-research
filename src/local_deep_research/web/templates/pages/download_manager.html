@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% from "components/help_macros.html" import tooltip, help_panel, help_step, help_tip %}
 
-{% block title %}Download Manager{% endblock %}
+{% block title %}{{ _('Download Manager') }}{% endblock %}
 
 {% block extra_head %}
 <link rel="stylesheet" href="/static/css/download_manager.css">
@@ -11,57 +11,57 @@
 {% block content %}
 <div class="ldr-download-manager-container">
     <div class="ldr-manager-header">
-        <h1>Download Manager</h1>
+        <h1>{{ _("Download Manager") }}</h1>
         <div class="ldr-header-actions">
             <div class="ldr-btn-group" style="margin-right: 15px;">
                 <button class="btn btn-success" onclick="downloadAllNew()"
                         {% if not enable_pdf_storage %}
                         disabled
-                        title="PDF storage is disabled. Click the storage mode button to enable."
+                        title="{{ _("PDF storage is disabled. Click the storage mode button to enable.") }}"
                         {% else %}
-                        title="Download PDF files from all your research sources and save to library"
+                        title="{{ _("Download PDF files from all your research sources and save to library") }}"
                         {% endif %}>
-                    <i aria-hidden="true" class="fas fa-file-pdf"></i> Get All Research PDFs
+                    <i aria-hidden="true" class="fas fa-file-pdf"></i> {{ _('Get All Research PDFs') }}
                 </button>
                 <button class="btn btn-info" onclick="downloadAllAsText()"
-                        title="Extract text from all research sources without saving PDF files">
-                    <i aria-hidden="true" class="fas fa-file-alt"></i> Text Only (from PDFs)
+                        title="{{ _("Extract text from all research sources without saving PDF files") }}">
+                    <i aria-hidden="true" class="fas fa-file-alt"></i> {{ _('Text Only (from PDFs)') }}
                 </button>
             </div>
             <div class="ldr-collection-selector" style="margin: 0 15px;">
                 <label for="target-collection" style="font-size: 0.9em; color: var(--text-secondary); margin-right: 8px;">
-                    <i aria-hidden="true" class="fas fa-folder"></i> Target Collection:
+                    <i aria-hidden="true" class="fas fa-folder"></i> {{ _('Target Collection:') }}
                 </label>
                 <select id="target-collection" class="form-control" style="width: 200px; display: inline-block;">
-                    <option value="">Loading collections...</option>
+                    <option value="">{{ _('Loading collections...') }}</option>
                 </select>
             </div>
             <div class="ldr-btn-group ldr-download-buttons">
                 <button class="btn btn-success" id="download-pdfs" disabled
                         {% if not enable_pdf_storage %}
-                        title="PDF storage is disabled. Click the storage mode button to enable."
+                        title="{{ _("PDF storage is disabled. Click the storage mode button to enable.") }}"
                         {% else %}
-                        title="Download PDF files and save to library"
+                        title="{{ _("Download PDF files and save to library") }}"
                         {% endif %}>
-                    <i aria-hidden="true" class="fas fa-file-pdf"></i> Get PDFs (<span class="ldr-selected-count-pdf">0</span>)
+                    <i aria-hidden="true" class="fas fa-file-pdf"></i> {{ _("Get PDFs (") }}<span class="ldr-selected-count-pdf">0</span>)
                 </button>
                 <button class="btn btn-info" id="download-text-db" disabled
-                        title="Extract text without saving PDF files">
-                    <i aria-hidden="true" class="fas fa-file-alt"></i> Text Only (<span class="ldr-selected-count-text-db">0</span>)
+                        title="{{ _("Extract text without saving PDF files") }}">
+                    <i aria-hidden="true" class="fas fa-file-alt"></i> {{ _("Text Only (") }}<span class="ldr-selected-count-text-db">0</span>)
                 </button>
             </div>
         </div>
     </div>
 
     <!-- Download Manager Help Panel -->
-    {% call help_panel('download-how', 'Using the Download Manager', icon='download', collapsed=true, dismissible=true) %}
+    {% call help_panel('download-how', _('Using the Download Manager'), icon='download', collapsed=true, dismissible=true) %}
     <div class="ldr-help-steps">
-        {{ help_step(1, "Source Tracking", "Research sessions automatically track all cited sources (PDFs, papers, articles).") }}
-        {{ help_step(2, "Bulk Download", "Select multiple research sessions and download all their PDFs at once.") }}
-        {{ help_step(3, "Text Only Option", "Extract just the text without saving PDFs. Saves storage while keeping content searchable.") }}
-        {{ help_step(4, "Target Collection", "Choose which collection to add downloaded documents to for organized searching.") }}
+        {{ help_step(1, _('Source Tracking'), _('Research sessions automatically track all cited sources (PDFs, papers, articles).')) }}
+        {{ help_step(2, _('Bulk Download'), _('Select multiple research sessions and download all their PDFs at once.')) }}
+        {{ help_step(3, _('Text Only Option'), _('Extract just the text without saving PDFs. Saves storage while keeping content searchable.')) }}
+        {{ help_step(4, _('Target Collection'), _('Choose which collection to add downloaded documents to for organized searching.')) }}
     </div>
-    {{ help_tip("<strong>Tip:</strong> Use 'Text Only' for initial exploration, then download PDFs for papers you want to keep permanently.") }}
+    {{ help_tip(_("<strong>Tip:</strong> Use 'Text Only' for initial exploration, then download PDFs for papers you want to keep permanently.")) }}
     {% endcall %}
 
     <!-- Library Storage Settings Info -->
@@ -71,41 +71,41 @@
                 <i aria-hidden="true" class="fas fa-info-circle"></i>
             </div>
             <div class="ldr-info-content">
-                <h4>Library Storage Settings</h4>
+                <h4>{{ _("Library Storage Settings") }}</h4>
                 {% if pdf_storage_mode == 'database' %}
-                <button class="ldr-storage-mode-btn ldr-info-message" onclick="showStorageModeModal()" title="Click to change storage mode">
+                <button class="ldr-storage-mode-btn ldr-info-message" onclick="showStorageModeModal()" title="{{ _("Click to change storage mode") }}">
                     <i aria-hidden="true" class="fas fa-database"></i>
-                    <strong>PDF Storage: Encrypted Database</strong> - PDFs encrypted in your personal database. Portable, isolated per-user.
+                    <strong>{{ _("PDF Storage: Encrypted Database") }}</strong> - PDFs encrypted in your personal database. Portable, isolated per-user.
                     <i aria-hidden="true" class="fas fa-pen" style="margin-left: 8px; opacity: 0.6; font-size: 0.85em;"></i>
                 </button>
                 {% elif pdf_storage_mode == 'filesystem' %}
-                <button class="ldr-storage-mode-btn ldr-warning-message" onclick="showStorageModeModal()" title="Click to change storage mode">
+                <button class="ldr-storage-mode-btn ldr-warning-message" onclick="showStorageModeModal()" title="{{ _("Click to change storage mode") }}">
                     <i aria-hidden="true" class="fas fa-hdd"></i>
-                    <strong>PDF Storage: Filesystem</strong> - PDFs saved unencrypted to disk. Faster for large files.
+                    <strong>{{ _('PDF Storage: Filesystem') }}</strong> - {{ _('PDFs saved unencrypted to disk. Faster for large files.') }}
                     <i aria-hidden="true" class="fas fa-pen" style="margin-left: 8px; opacity: 0.6; font-size: 0.85em;"></i>
                 </button>
                 {% else %}
-                <button class="ldr-storage-mode-btn ldr-warning-message" onclick="showStorageModeModal()" title="Click to change storage mode">
+                <button class="ldr-storage-mode-btn ldr-warning-message" onclick="showStorageModeModal()" title="{{ _("Click to change storage mode") }}">
                     <i aria-hidden="true" class="fas fa-file-alt"></i>
-                    <strong>PDF Storage: Text Only</strong> - Only extracted text stored. Re-download PDFs when needed.
+                    <strong>{{ _("PDF Storage: Text Only") }}</strong> - {{ _('Only extracted text stored. Re-download PDFs when needed.') }}
                     <i aria-hidden="true" class="fas fa-pen" style="margin-left: 8px; opacity: 0.6; font-size: 0.85em;"></i>
                 </button>
                 {% endif %}
 
                 <p class="ldr-info-message">
                     <i aria-hidden="true" class="fas fa-lock"></i>
-                    Text content is always stored in the encrypted database.
+                    {{ _('Text content is always stored in the encrypted database.') }}
                 </p>
 
                 {% if shared_library %}
                 <p class="ldr-warning-message">
                     <i aria-hidden="true" class="fas fa-users"></i>
-                    <strong>Shared Library Mode:</strong> All users share the same library directory.
+                    <strong>{{ _("Shared Library Mode:") }}</strong> {{ _('All users share the same library directory.') }}
                 </p>
                 {% endif %}
 
                 <a href="/settings#research-library" class="btn btn-sm btn-outline-primary ldr-settings-link">
-                    <i aria-hidden="true" class="fas fa-cog"></i> Configure Library Settings
+                    <i aria-hidden="true" class="fas fa-cog"></i> {{ _('Configure Library Settings') }}
                 </a>
             </div>
         </div>
@@ -115,19 +115,19 @@
     <div class="ldr-summary-stats">
         <div class="ldr-stat-card">
             <h3>{{ total_researches }}</h3>
-            <p>Total Research Sessions</p>
+            <p>{{ _("Total Research Sessions") }}</p>
         </div>
         <div class="ldr-stat-card">
             <h3>{{ total_resources }}</h3>
-            <p>Total Resources</p>
+            <p>{{ _("Total Resources") }}</p>
         </div>
         <div class="ldr-stat-card">
             <h3>{{ already_downloaded }}</h3>
-            <p>Already Downloaded</p>
+            <p>{{ _("Already Downloaded") }}</p>
         </div>
         <div class="ldr-stat-card">
             <h3>{{ available_to_download }}</h3>
-            <p>Available to Download</p>
+            <p>{{ _("Available to Download") }}</p>
         </div>
     </div>
 
@@ -135,56 +135,56 @@
     <div class="ldr-filters-section">
         <div class="ldr-filter-row">
             <div class="ldr-filter-group">
-                <label>Research Mode</label>
+                <label>{{ _("Research Mode") }}</label>
                 <select id="filter-mode" class="form-control">
-                    <option value="">All Modes</option>
-                    <option value="quick">Quick</option>
-                    <option value="detailed">Detailed</option>
+                    <option value="">{{ _("All Modes") }}</option>
+                    <option value="quick">{{ _("Quick Summary") }}</option>
+                    <option value="detailed">{{ _("Detailed Report") }}</option>
                 </select>
             </div>
 
             <div class="ldr-filter-group ldr-date-range">
-                <label>Date Range</label>
+                <label>{{ _("Date Range") }}</label>
                 <div class="ldr-date-inputs">
-                    <input type="date" id="filter-from" class="form-control" placeholder="From">
-                    <span class="ldr-date-separator">to</span>
-                    <input type="date" id="filter-to" class="form-control" placeholder="To">
+                    <input type="date" id="filter-from" class="form-control" placeholder="{{ _("From") }}">
+                    <span class="ldr-date-separator">{{ _("to") }}</span>
+                    <input type="date" id="filter-to" class="form-control" placeholder="{{ _("To") }}">
                 </div>
             </div>
 
             <div class="ldr-filter-group">
-                <label>Rating</label>
+                <label>{{ _("Your Rating:") }}</label>
                 <select id="filter-rating" class="form-control">
-                    <option value="">All Ratings</option>
-                    <option value="5">⭐⭐⭐⭐⭐ 5 Stars</option>
-                    <option value="4">⭐⭐⭐⭐ 4+ Stars</option>
-                    <option value="3">⭐⭐⭐ 3+ Stars</option>
+                    <option value="">{{ _("All Ratings") }}</option>
+                    <option value="5">{{ _("⭐⭐⭐⭐⭐ 5 Stars") }}</option>
+                    <option value="4">{{ _("⭐⭐⭐⭐ 4+ Stars") }}</option>
+                    <option value="3">{{ _("⭐⭐⭐ 3+ Stars") }}</option>
                 </select>
             </div>
 
             <div class="ldr-filter-group">
-                <label>PDF Status</label>
+                <label>{{ _("PDF Status") }}</label>
                 <select id="filter-pdfs" class="form-control">
-                    <option value="">All Research</option>
-                    <option value="yes">Has PDFs</option>
-                    <option value="no">No PDFs</option>
+                    <option value="">{{ _("All Research") }}</option>
+                    <option value="yes">{{ _("Has PDFs") }}</option>
+                    <option value="no">{{ _("No PDFs") }}</option>
                 </select>
             </div>
 
             <div class="ldr-filter-group ldr-search-group">
-                <label>Search</label>
+                <label>{{ _('Search') }}</label>
                 <div class="ldr-search-wrapper">
                     <i aria-hidden="true" class="fas fa-search"></i>
                     <input type="text" id="search-research" class="form-control"
-                           placeholder="Search titles or queries...">
+                           placeholder="{{ _("Search titles or queries...") }}">
                 </div>
             </div>
         </div>
 
         <div class="ldr-bulk-actions">
-            <button class="ldr-btn-bulk" onclick="selectAll()">Select All</button>
-            <button class="ldr-btn-bulk" onclick="selectNone()">Select None</button>
-            <button class="ldr-btn-bulk" onclick="selectFiltered()">Select Filtered</button>
+            <button class="ldr-btn-bulk" onclick="selectAll()">{{ _("Select All") }}</button>
+            <button class="ldr-btn-bulk" onclick="selectNone()">{{ _("Select None") }}</button>
+            <button class="ldr-btn-bulk" onclick="selectFiltered()">{{ _("Select Filtered") }}</button>
         </div>
     </div>
 
@@ -232,15 +232,15 @@
                 <div class="ldr-research-stats">
                     <div class="ldr-stat">
                         <strong>{{ research.total_resources }}</strong>
-                        <small>Total Sources</small>
+                        <small>{{ _("Total Sources") }}</small>
                     </div>
                     <div class="ldr-stat">
                         <strong>{{ research.downloadable_count }}</strong>
-                        <small>PDFs Available</small>
+                        <small>{{ _("PDFs Available") }}</small>
                     </div>
                     <div class="ldr-stat {{ 'ldr-success' if research.downloaded_count > 0 else '' }}">
                         <strong>{{ research.downloaded_count }}</strong>
-                        <small>Downloaded</small>
+                        <small>{{ _('Downloaded') }}</small>
                     </div>
                 </div>
             </div>
@@ -248,7 +248,7 @@
             <!-- Expandable Details -->
             <details class="ldr-research-details">
                 <summary>
-                    View Sources ({{ research.total_resources }})
+                    {{ _('View Sources') }} ({{ research.total_resources }})
                     <div class="ldr-domain-preview">
                         {% for domain, count in research.top_domains[:5] %}
                         <span class="ldr-domain-chip">{{ domain }} ({{ count }})</span>
@@ -259,15 +259,15 @@
                 <div class="ldr-sources-breakdown">
                     <!-- Domain breakdown -->
                     <div class="ldr-breakdown-section">
-                        <h4>Sources by Domain</h4>
+                        <h4>{{ _("Sources by Domain") }}</h4>
                         <div class="ldr-domain-list">
                             {% for domain, info in research.domains.items() %}
                             <div class="ldr-domain-item">
                                 <span class="ldr-domain-name">{{ domain }}</span>
                                 <span class="ldr-domain-stats">
-                                    {{ info.total }} total |
-                                    {{ info.pdfs }} PDFs |
-                                    {{ info.downloaded }} downloaded
+                                    {{ info.total }} {{ _('total') }} |
+                                    {{ info.pdfs }} {{ _('PDFs') }} |
+                                    {{ info.downloaded }} {{ _('downloaded') }}
                                 </span>
                             </div>
                             {% endfor %}
@@ -276,7 +276,7 @@
 
                     <!-- Individual sources preview -->
                     <div class="ldr-breakdown-section">
-                        <h4>Downloadable PDFs</h4>
+                        <h4>{{ _('Downloadable PDFs') }}</h4>
                         <div class="ldr-source-list">
                             {% for source in research.pdf_sources[:10] %}
                             <div class="ldr-source-item">
@@ -284,13 +284,13 @@
                                 <span class="ldr-source-title">{{ source.document_title|truncate(60) }}</span>
                                 <span class="ldr-source-domain">{{ source.domain }}</span>
                                 {% if source.download_status == 'completed' %}
-                                <span class="ldr-badge ldr-badge-success">Downloaded</span>
+                                <span class="ldr-badge ldr-badge-success">{{ _('Downloaded') }}</span>
                                 {% endif %}
                             </div>
                             {% endfor %}
                             {% if research.pdf_sources|length > 10 %}
                             <div class="ldr-source-item ldr-more">
-                                ... and {{ research.pdf_sources|length - 10 }} more PDFs
+                                {{ _('... and') }} {{ research.pdf_sources|length - 10 }} {{ _('more PDFs') }}
                             </div>
                             {% endif %}
                         </div>
@@ -301,26 +301,26 @@
             <!-- Action Buttons -->
             <div class="ldr-research-actions">
                 <button class="btn btn-sm" onclick="viewResearch('{{ research.id }}')">
-                    <i aria-hidden="true" class="fas fa-eye"></i> View Research
+                    <i aria-hidden="true" class="fas fa-eye"></i> {{ _('View Research') }}
                 </button>
                 <button class="btn btn-sm btn-success"
                         onclick="downloadResearch('{{ research.id }}', 'pdf')"
                         {% if not enable_pdf_storage %}
                         disabled
-                        title="PDF downloads are disabled. Enable PDF storage in Settings"
+                        title="{{ _("PDF downloads are disabled. Enable PDF storage in Settings") }}"
                         {% else %}
-                        title="Download PDFs from this research"
+                        title="{{ _("Download PDFs from this research") }}"
                         {% endif %}>
-                    <i aria-hidden="true" class="fas fa-file-pdf"></i> PDFs
+                    <i aria-hidden="true" class="fas fa-file-pdf"></i> {{ _('PDFs') }}
                 </button>
                 <button class="btn btn-sm btn-info"
                         onclick="downloadResearch('{{ research.id }}', 'text_only')"
-                        title="Extract text from this research without saving PDF files">
-                    <i aria-hidden="true" class="fas fa-file-alt"></i> Text Only
+                        title="{{ _("Extract text from this research without saving PDF files") }}">
+                    <i aria-hidden="true" class="fas fa-file-alt"></i> {{ _('Text Only') }}
                 </button>
                 {% if research.downloaded_count > 0 %}
                 <button class="btn btn-sm" onclick="viewDownloaded('{{ research.id }}')">
-                    <i aria-hidden="true" class="fas fa-folder-open"></i> View Downloaded
+                    <i aria-hidden="true" class="fas fa-folder-open"></i> {{ _('View Downloaded') }}
                 </button>
                 {% endif %}
             </div>
@@ -330,11 +330,11 @@
 
     <!-- Pagination -->
     {% if total_pages > 1 %}
-    <nav class="ldr-pagination" aria-label="Research list pagination">
+    <nav class="ldr-pagination" aria-label="{{ _("Research list pagination") }}">
         <a class="ldr-page-link {% if page <= 1 %}disabled{% endif %}"
            href="?page={{ page - 1 }}"
            {% if page <= 1 %}tabindex="-1" aria-disabled="true"{% endif %}>
-            <i aria-hidden="true" class="fas fa-chevron-left"></i> Previous
+            <i aria-hidden="true" class="fas fa-chevron-left"></i> {{ _('Previous') }}
         </a>
 
         {% set start_page = [1, page - 2] | max %}
@@ -357,7 +357,7 @@
         <a class="ldr-page-link {% if page >= total_pages %}disabled{% endif %}"
            href="?page={{ page + 1 }}"
            {% if page >= total_pages %}tabindex="-1" aria-disabled="true"{% endif %}>
-            Next <i aria-hidden="true" class="fas fa-chevron-right"></i>
+            {{ _('Next') }} <i aria-hidden="true" class="fas fa-chevron-right"></i>
         </a>
     </nav>
     {% endif %}
@@ -366,14 +366,14 @@
     <div id="download-progress-modal" class="modal" style="display: none;">
         <div class="modal-content">
             <div class="modal-header">
-                <h2>Download Progress</h2>
+                <h2>{{ _("Download Progress") }}</h2>
             </div>
             <div class="modal-body">
                 <div class="ldr-overall-progress">
                     <div class="ldr-progress-bar">
                         <div class="ldr-progress-fill" id="overall-progress" style="width: 0%"></div>
                     </div>
-                    <p><span id="current-count">0</span> / <span id="total-count">0</span> files</p>
+                    <p><span id="current-count">0</span> / <span id="total-count">0</span> {{ _('files') }}</p>
                 </div>
 
                 <div class="ldr-download-log" id="download-log">
@@ -381,8 +381,8 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="closeProgressModal()">Close</button>
-                <button class="btn btn-danger" onclick="cancelDownloads()">Cancel</button>
+                <button class="btn btn-secondary" onclick="closeProgressModal()">{{ _('Close') }}</button>
+                <button class="btn btn-danger" onclick="cancelDownloads()">{{ _('Cancel') }}</button>
             </div>
         </div>
     </div>
@@ -419,13 +419,13 @@ async function loadCollections() {
             // Fallback if no collections
             const option = document.createElement('option');
             option.value = '';
-            option.textContent = 'No collections available';
+            option.textContent = i18n.t('No collections available');
             select.appendChild(option);
         }
     } catch (error) {
         console.error('Error loading collections:', error);
         const select = document.getElementById('target-collection');
-        select.innerHTML = '<option value="">Error loading collections</option>';
+        select.innerHTML = '<option value="">' + i18n.t('Error loading collections') + '</option>';
     }
 }
 
@@ -520,10 +520,10 @@ async function startBulkDownload(researchIds, mode = 'pdf') {
 
     // Set modal title based on mode
     const modalTitles = {
-        'pdf': 'Downloading PDFs',
-        'text_only': 'Extracting Text to Database'
+        'pdf': i18n.t('Downloading PDFs'),
+        'text_only': i18n.t('Extracting Text to Database')
     };
-    document.querySelector('#download-progress-modal h2').textContent = modalTitles[mode] || 'Processing';
+    document.querySelector('#download-progress-modal h2').textContent = modalTitles[mode] || i18n.t('Processing');
 
     try {
         const requestBody = {
@@ -574,7 +574,7 @@ async function startBulkDownload(researchIds, mode = 'pdf') {
             const log = document.getElementById('download-log');
             const entry = document.createElement('div');
             entry.className = 'ldr-download-entry ldr-cancelled';
-            entry.innerHTML = '<strong>Download cancelled by user</strong>';
+            entry.innerHTML = '<strong>' + i18n.t('Download cancelled by user') + '</strong>';
             log.appendChild(entry);
         } else {
             console.error('Download error:', error);
@@ -676,7 +676,7 @@ function cancelDownloads() {
         const log = document.getElementById('download-log');
         const entry = document.createElement('div');
         entry.className = 'ldr-download-entry ldr-cancelled';
-        entry.innerHTML = '<strong class="ldr-error-text">Download process cancelled</strong>';
+        entry.innerHTML = '<strong class="ldr-error-text">' + i18n.t('Download process cancelled') + '</strong>';
         log.appendChild(entry);
 
         // Close modal after a delay
@@ -694,7 +694,7 @@ function cancelDownloads() {
 async function downloadAllNew() {
     const btn = event.target.closest('button');
     const originalContent = btn.innerHTML;
-    btn.innerHTML = '<i aria-hidden="true" class="fas fa-spinner fa-spin"></i> Preparing...';
+    btn.innerHTML = '<i aria-hidden="true" class="fas fa-spinner fa-spin"></i> ' + i18n.t('Preparing...');
     btn.disabled = true;
 
     try {
@@ -716,7 +716,7 @@ async function downloadAllNew() {
         const queueResult = await queueResponse.json();
 
         if (queueResult.queued === 0) {
-            alert('No new articles to download. All available articles have already been downloaded.');
+            alert(i18n.t('No new articles to download. All available articles have already been downloaded.'));
             btn.innerHTML = originalContent;
             btn.disabled = false;
             return;
@@ -724,7 +724,7 @@ async function downloadAllNew() {
 
         // Show progress modal
         document.getElementById('download-progress-modal').style.display = 'block';
-        document.querySelector('#download-progress-modal h2').textContent = 'Downloading ALL PDFs';
+        document.querySelector('#download-progress-modal h2').textContent = i18n.t('Downloading ALL PDFs');
 
         // Reset progress
         document.getElementById('overall-progress').style.width = '0%';
@@ -776,7 +776,7 @@ async function downloadAllNew() {
             console.log('Download cancelled by user');
         } else {
             console.error('Failed to start downloads:', error);
-            alert('Failed to start downloads. Please try again.');
+            alert(i18n.t('Failed to start downloads. Please try again.'));
         }
         btn.innerHTML = originalContent;
         btn.disabled = false;
@@ -789,7 +789,7 @@ async function downloadAllNew() {
 async function downloadAllAsText() {
     const btn = event.target.closest('button');
     const originalContent = btn.innerHTML;
-    btn.innerHTML = '<i aria-hidden="true" class="fas fa-spinner fa-spin"></i> Extracting...';
+    btn.innerHTML = '<i aria-hidden="true" class="fas fa-spinner fa-spin"></i> ' + i18n.t('Extracting...');
     btn.disabled = true;
 
     try {
@@ -797,7 +797,7 @@ async function downloadAllAsText() {
 
         // Show progress modal
         document.getElementById('download-progress-modal').style.display = 'block';
-        document.querySelector('#download-progress-modal h2').textContent = 'Text Extraction to Database';
+        document.querySelector('#download-progress-modal h2').textContent = i18n.t('Text Extraction to Database');
 
         // Reset progress
         document.getElementById('overall-progress').style.width = '0%';
@@ -832,7 +832,7 @@ async function downloadAllAsText() {
                     const data = JSON.parse(line.slice(6));
                     updateTextExtractionProgress(data);
 
-                    if (handleSSECompletion(data, (d) => alert(`Text extraction complete! Extracted ${d.total} documents to encrypted database.`))) {
+                    if (handleSSECompletion(data, (d) => alert(i18n.t('Text extraction complete!') + ' ' + i18n.t('Extracted') + ' ${d.total} ' + i18n.t('documents to encrypted database.')))) {
                         currentDownloadController = null;
                     }
                 }
@@ -844,7 +844,7 @@ async function downloadAllAsText() {
             console.log('Text extraction cancelled by user');
         } else {
             console.error('Failed to start text extraction:', error);
-            alert('Failed to start text extraction. Please try again.');
+            alert(i18n.t('Failed to start text extraction. Please try again.'));
         }
     } finally {
         btn.innerHTML = originalContent;
@@ -869,7 +869,7 @@ function updateTextExtractionProgress(data) {
         entry.className = `ldr-download-entry ldr-${data.status}`;
 
         let statusIcon = data.status === 'success' ? '✓' : '✗';
-        let statusText = data.status === 'success' ? 'Text extracted' : (data.error || 'Extraction failed');
+        let statusText = data.status === 'success' ? i18n.t('Text extracted') : (data.error || i18n.t('Extraction failed'));
 
         entry.innerHTML = `
             <span class="ldr-status-icon">${statusIcon}</span>
@@ -892,7 +892,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (dateStr) {
             const date = new Date(dateStr);
             if (!isNaN(date)) {
-                span.textContent = date.toLocaleDateString('en-US', {
+                span.textContent = date.toLocaleDateString('zh-CN', {
                     year: 'numeric',
                     month: 'short',
                     day: 'numeric'
@@ -910,9 +910,9 @@ document.addEventListener('DOMContentLoaded', function() {
             const secs = seconds % 60;
 
             let duration = '';
-            if (hours > 0) duration += hours + 'h ';
-            if (minutes > 0) duration += minutes + 'm ';
-            duration += secs + 's';
+            if (hours > 0) duration += hours + i18n.t('h') + ' ';
+            if (minutes > 0) duration += minutes + i18n.t('m') + ' ';
+            duration += secs + i18n.t('s');
 
             span.textContent = duration;
         }

@@ -47,7 +47,7 @@
 
    Usage:
    {% call help_panel('research-how', 'How Research Works') %}
-     <p>Your content here...</p>
+     <p>{{ _("Your content here...") }}</p>
    {% endcall %}
    --------------------------------------------- #}
 {% macro help_panel(panel_id, title, icon='question-circle', collapsed=true, dismissible=false) %}
@@ -74,8 +74,8 @@
             <label>
                 <input type="checkbox"
                        onchange="HelpService.dismissPanel('{{ panel_id }}')"
-                       aria-label="Don't show this help panel again">
-                <span>Don't show this again</span>
+                       aria-label="{{ _("Don't show this help panel again") }}">
+                <span>{{ _("Don't show this again") }}</span>
             </label>
         </div>
         {% endif %}
@@ -144,7 +144,7 @@
    Parameters:
    - text: The privacy note text
    --------------------------------------------- #}
-{% macro privacy_note(text='All data is stored locally on your device only.') %}
+{% macro privacy_note(text=_('All data is stored locally on your device only.')) %}
 <div class="ldr-privacy-note">
     <i aria-hidden="true" class="fas fa-shield-alt" ></i>
     <span>{{ text }}</span>

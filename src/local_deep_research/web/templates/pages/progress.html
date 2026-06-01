@@ -1,38 +1,38 @@
 {% extends "base.html" %}
 
-{% block title %}Research in Progress - Deep Research System{% endblock %}
+{% block title %}{{ _('Research in Progress') }} - {{ _('Deep Research System') }}{% endblock %}
 
 {% block content %}
 <div class="ldr-page active" id="research-progress">
     <div class="ldr-page-header" id="research-progress-header">
-        <h1>Research in Progress</h1>
+        <h1>{{ _("Research in Progress") }}</h1>
     </div>
     <div class="ldr-card" id="research-progress-card">
         <div class="ldr-card-content">
             <div class="ldr-progress-info">
                 <div class="ldr-current-query-container">
-                    <div class="ldr-current-query-label">Current Query:</div>
+                    <div class="ldr-current-query-label">{{ _("Current Query:") }}</div>
                     <div id="current-query" class="ldr-current-query"></div>
                 </div>
                 <div class="ldr-progress-container">
-                    <div class="ldr-progress-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Research progress">
+                    <div class="ldr-progress-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="{{ _("Research progress") }}">
                         <div id="progress-bar" class="ldr-progress-fill"></div>
                     </div>
                     <div id="progress-percentage" class="ldr-progress-percentage" aria-hidden="true">0%</div>
                 </div>
                 <div class="ldr-status-container">
-                    <div class="ldr-status-label">Status:</div>
-                    <div id="status-text" class="ldr-status-indicator" aria-live="polite" aria-atomic="true">Initializing</div>
+                    <div class="ldr-status-label">{{ _("Status:") }}</div>
+                    <div id="status-text" class="ldr-status-indicator" aria-live="polite" aria-atomic="true">{{ _('Initializing') }}</div>
                 </div>
                 <div class="ldr-task-container">
-                    <div class="ldr-task-label">Current Task:</div>
-                    <div id="current-task" class="ldr-task-text">Starting research...</div>
+                    <div class="ldr-task-label">{{ _("Current Task:") }}</div>
+                    <div id="current-task" class="ldr-task-text">{{ _("Starting research...") }}</div>
                 </div>
 
                 <!-- Agent Thinking Panel - Shows ReAct reasoning for MCP strategy -->
                 <div id="agent-thinking-panel" class="ldr-agent-thinking-panel" style="display: none;">
                     <div class="ldr-agent-thinking-header">
-                        <i aria-hidden="true" class="fas fa-brain"></i> Agent Reasoning
+                        <i aria-hidden="true" class="fas fa-brain"></i> {{ _('Agent Reasoning') }}
                     </div>
                     <div id="agent-thinking-content" class="ldr-agent-thinking-content">
                         <!-- ReAct steps will be added here -->
@@ -40,10 +40,10 @@
                 </div>
                 <div class="ldr-progress-actions">
                     <button id="cancel-research-btn" class="btn ldr-btn-outline ldr-terminate-btn">
-                        <i aria-hidden="true" class="fas fa-stop-circle"></i> Cancel Research
+                        <i aria-hidden="true" class="fas fa-stop-circle"></i> {{ _('Cancel Research') }}
                     </button>
                     <a id="view-results-btn" class="btn btn-primary" style="display: none;">
-                        <i aria-hidden="true" class="fas fa-eye"></i> View Results
+                        <i aria-hidden="true" class="fas fa-eye"></i> {{ _('View Results') }}
                     </a>
                 </div>
             </div>

@@ -68,8 +68,8 @@
                                             data-property="{{ key }}"
                                             data-parent-key="{{ setting.key }}"
                                             {% if not setting.editable %}disabled{% endif %}>
-                                        <option value="ITERATION" {% if value == "ITERATION" %}selected{% endif %}>Iteration</option>
-                                        <option value="NONE" {% if value == "NONE" %}selected{% endif %}>None</option>
+                                        <option value="ITERATION" {% if value == "ITERATION" %}selected{% endif %}>{{ _('Iteration') }}</option>
+                                        <option value="NONE" {% if value == "NONE" %}selected{% endif %}>{{ _('None') }}</option>
                                     </select>
                                 {% else %}
                                     <input type="text"
@@ -102,7 +102,7 @@
                 {{ render_dropdown(
                     input_id=setting.key,
                     dropdown_id=setting_id + "-dropdown",
-                    placeholder="Select a provider",
+                    placeholder=_("Select a provider"),
                     label=None,
                     help_text=setting.description if setting.description else None,
                     allow_custom=False,
@@ -209,7 +209,7 @@
             {{ render_dropdown(
                 input_id=setting.key,
                 dropdown_id=setting_id + "-dropdown",
-                placeholder="Select or enter a value",
+                placeholder=_("Select or enter a value"),
                 label=None,
                 help_text=setting.description if setting.description else None,
                 allow_custom=setting.key == "llm.model",

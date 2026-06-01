@@ -1,4 +1,4 @@
-{% macro render_dropdown(input_id, dropdown_id, placeholder, label=None, help_text=None, allow_custom=False, show_refresh=False, refresh_aria_label="Refresh options", data_setting_key=None, data_initial_value=None) %}
+{% macro render_dropdown(input_id, dropdown_id, placeholder, label=None, help_text=None, allow_custom=False, show_refresh=False, refresh_aria_label=_("Refresh options"), data_setting_key=None, data_initial_value=None) %}
 <div class="form-group">
     {% if label %}
     <label for="{{ input_id }}" id="{{ input_id }}-label">{{ label }}</label>

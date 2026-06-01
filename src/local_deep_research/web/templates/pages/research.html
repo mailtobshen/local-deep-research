@@ -4,7 +4,7 @@
 
 {% set active_page = 'new-research' %}
 
-{% block title %}New Research - Deep Research System{% endblock %}
+{% block title %}{{ _("New Research") }} - {{ _("Deep Research") }}{% endblock %}
 
 {% block extra_head %}
 <meta name="csrf-token" content="{{ csrf_token() }}">
@@ -14,7 +14,7 @@
 {% block content %}
 <div class="ldr-page active" id="new-research">
     <div class="ldr-page-header">
-        <h1>Start New Research</h1>
+        <h1>{{ _("Start New Research") }}</h1>
     </div>
     <!-- Alert container for form validation and error messages -->
     <div id="research-alert" class="ldr-settings-alert-container" role="alert" aria-atomic="true" style="display:none"></div>
@@ -22,39 +22,39 @@
         <div class="ldr-card-content">
             <form id="research-form">
                 <div class="ldr-form-group">
-                    <label for="query">Research Query</label>
-                    <textarea id="query" name="query" rows="3" placeholder="Enter your research topic or question..." autofocus aria-required="true"></textarea>
+                    <label for="query">{{ _("Research Query") }}</label>
+                    <textarea id="query" name="query" rows="3" placeholder="{{ _("Enter your research topic or question...") }}" autofocus aria-required="true"></textarea>
                     <div class="ldr-search-hints">
                         <div class="ldr-hint-row">
                             <span class="ldr-hint-item">
                                 <i aria-hidden="true" class="fas fa-play ldr-hint-icon"></i>
-                                <span class="ldr-hint-text"><kbd>Enter</kbd> to search</span>
+                                <span class="ldr-hint-text"><kbd>Enter</kbd> {{ _("to search") }}</span>
                             </span>
                             <span class="ldr-hint-item">
                                 <i aria-hidden="true" class="fas fa-level-down-alt ldr-hint-icon"></i>
-                                <span class="ldr-hint-text"><kbd>Shift</kbd>+<kbd>Enter</kbd> for new line</span>
+                                <span class="ldr-hint-text"><kbd>Shift</kbd>+<kbd>Enter</kbd> {{ _("for new line") }}</span>
                             </span>
                             <span class="ldr-hint-item">
                                 <i aria-hidden="true" class="fas fa-home ldr-hint-icon"></i>
-                                <span class="ldr-hint-text"><kbd>Esc</kbd> returns here from anywhere</span>
+                                <span class="ldr-hint-text"><kbd>Esc</kbd> {{ _("returns here from anywhere") }}</span>
                             </span>
                             <span class="ldr-hint-item">
                                 <i aria-hidden="true" class="fas fa-bars ldr-hint-icon"></i>
-                                <span class="ldr-hint-text"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>1-4</kbd> to navigate menu</span>
+                                <span class="ldr-hint-text"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>1-4</kbd> {{ _("to navigate menu") }}</span>
                             </span>
                         </div>
                     </div>
                 </div>
                 <div class="ldr-form-group">
                     <fieldset>
-                        <legend id="mode-legend">Research Mode</legend>
+                        <legend id="mode-legend">{{ _("Research Mode") }}</legend>
                         <div class="ldr-mode-selection">
                             <input type="radio" id="mode-quick" name="research_mode" value="quick" checked class="sr-only">
                             <label for="mode-quick" class="ldr-mode-option active" data-mode="quick" tabindex="0">
                                 <div class="ldr-mode-icon"><i aria-hidden="true" class="fas fa-bolt" ></i></div>
                                 <div class="ldr-mode-info">
-                                    <h2>Quick Summary</h2>
-                                    <p>Generated in a few minutes</p>
+                                    <h2>{{ _("Quick Summary") }}</h2>
+                                    <p>{{ _("Generated in a few minutes") }}</p>
                                 </div>
                             </label>
 
@@ -62,8 +62,8 @@
                             <label for="mode-detailed" class="ldr-mode-option" data-mode="detailed" tabindex="-1">
                                 <div class="ldr-mode-icon"><i aria-hidden="true" class="fas fa-microscope" ></i></div>
                                 <div class="ldr-mode-info">
-                                    <h2>Detailed Report <span class="ldr-mode-badge">Advanced</span></h2>
-                                    <p>Multi-section analysis {{ tooltip("?", "Generates comprehensive report with extensive source analysis. Duration varies by topic complexity and search settings.", position='right') }}</p>
+                                    <h2>{{ _("Detailed Report") }} <span class="ldr-mode-badge">{{ _("Advanced") }}</span></h2>
+                                    <p>{{ _("Multi-section analysis") }} {{ tooltip("?", _("Generates comprehensive report with extensive source analysis. Duration varies by topic complexity and search settings."), position='right') }}</p>
                                 </div>
                             </label>
                         </div>
@@ -72,121 +72,121 @@
 
                 <!-- Advanced Options - positioned before start for configuration -->
                 <button type="button" id="advanced-options-toggle" class="ldr-advanced-options-toggle ldr-open" aria-expanded="true" aria-controls="advanced-options-panel">
-                    <span class="ldr-toggle-text">Advanced Options</span>
+                    <span class="ldr-toggle-text">{{ _("Advanced Options") }}</span>
                     <i aria-hidden="true" class="fas fa-chevron-up" ></i>
-                    <span class="sr-only">Click to collapse advanced options</span>
+                    <span class="sr-only">{{ _("Click to collapse advanced options") }}</span>
                 </button>
 
                 <div class="ldr-advanced-options-panel ldr-expanded" id="advanced-options-panel" role="group" aria-labelledby="advanced-options-toggle">
                     <div class="ldr-form-row">
                         <!-- Model Provider Selection -->
                         <div class="ldr-form-group ldr-half">
-                            <label for="model_provider">{{ tooltip("Model Provider", "Local (Ollama, LM Studio): Free, private, runs on your hardware but slower. Cloud (OpenAI, Anthropic): Faster, smarter, but costs per request and sends data externally.") }}</label>
+                            <label for="model_provider">{{ tooltip(_("Model Provider"), _("Local (Ollama, LM Studio): Free, private, runs on your hardware but slower. Cloud (OpenAI, Anthropic): Faster, smarter, but costs per request and sends data externally.")) }}</label>
                             <select id="model_provider" name="model_provider" class="ldr-form-control" data-initial-value="{{ settings.llm_provider }}">
                                 <!-- Will be populated dynamically -->
-                                <option value="">Loading providers...</option>
+                                <option value="">{{ _("Loading providers...") }}</option>
                             </select>
-                            <span class="ldr-input-help">Local = runs on your computer | Cloud = external API</span>
+                            <span class="ldr-input-help">{{ _("Local = runs on your computer | Cloud = external API") }}</span>
                         </div>
 
                         <!-- Custom Endpoint (hidden by default) -->
                         <div class="ldr-form-group ldr-half" id="endpoint_container" style="display: none;">
-                            <label for="custom_endpoint">{{ tooltip("Custom Endpoint", "OpenAI-compatible API URL. Must include /v1 path (e.g., https://api.example.com/v1). Used for self-hosted or alternative API providers.") }}</label>
-                            <input type="text" id="custom_endpoint" name="custom_endpoint" class="ldr-form-control" placeholder="https://your-endpoint-url/v1" value="{{ settings.llm_openai_endpoint_url }}">
-                            <span class="ldr-input-help">Enter the OpenAI-compatible API endpoint URL</span>
+                            <label for="custom_endpoint">{{ tooltip(_("Custom Endpoint"), _("OpenAI-compatible API URL. Must include /v1 path (e.g., https://api.example.com/v1). Used for self-hosted or alternative API providers.")) }}</label>
+                            <input type="text" id="custom_endpoint" name="custom_endpoint" class="ldr-form-control" placeholder="https://..." value="{{ settings.llm_openai_endpoint_url }}">
+                            <span class="ldr-input-help">{{ _("Enter the OpenAI-compatible API endpoint URL") }}</span>
                         </div>
 
                         <!-- Ollama URL (hidden by default) -->
                         <div class="ldr-form-group ldr-half" id="ollama_url_container" style="display: none;">
-                            <label for="ollama_url">{{ tooltip("Ollama Endpoint", "Where Ollama is running. Default localhost:11434. If connection fails, check that Ollama is installed and running (ollama serve).") }}</label>
+                            <label for="ollama_url">{{ tooltip(_("Ollama Endpoint"), _("Where Ollama is running. Default localhost:11434. If connection fails, check that Ollama is installed and running (ollama serve).")) }}</label>
                             <input type="text" id="ollama_url" name="ollama_url" class="ldr-form-control" placeholder="http://localhost:11434" value="{{ settings.llm_ollama_url }}">
-                            <span class="ldr-input-help">Enter the Ollama endpoint URL</span>
+                            <span class="ldr-input-help">{{ _("Enter the Ollama endpoint URL") }}</span>
                         </div>
 
                         <!-- LM Studio URL (hidden by default) -->
                         <div class="ldr-form-group ldr-half" id="lmstudio_url_container" style="display: none;">
-                            <label for="lmstudio_url">{{ tooltip("LM Studio Endpoint", "Where LM Studio server is running. Default localhost:1234. Enable 'Local Server' in LM Studio settings first.") }}</label>
+                            <label for="lmstudio_url">{{ tooltip(_("LM Studio Endpoint"), _("Where LM Studio server is running. Default localhost:1234. Enable 'Local Server' in LM Studio settings first.")) }}</label>
                             <input type="text" id="lmstudio_url" name="lmstudio_url" class="ldr-form-control" placeholder="http://localhost:1234" value="{{ settings.llm_lmstudio_url }}">
-                            <span class="ldr-input-help">Enter the LM Studio endpoint URL</span>
+                            <span class="ldr-input-help">{{ _("Enter the LM Studio endpoint URL") }}</span>
                         </div>
 
                         <!-- Context Window Size (for local providers, hidden by default) -->
                         <div class="ldr-form-group ldr-half" id="context_window_container" style="display: none;">
-                            <label for="context_window">{{ tooltip("Context Window Size", "How much text the model can 'see' at once. Too small: model forgets earlier info. Too large: uses more RAM/VRAM. Only adjust if you see 'context exceeded' errors.") }}</label>
+                            <label for="context_window">{{ tooltip(_("Context Window Size"), _("How much text the model can 'see' at once. Too small: model forgets earlier info. Too large: uses more RAM/VRAM. Only adjust if you see 'context exceeded' errors.")) }}</label>
                             <input type="number" id="context_window" name="context_window" class="ldr-form-control" min="512" max="131072" step="1" value="{{ settings.llm_local_context_window_size }}">
-                            <span class="ldr-input-help">Context window size in tokens (512-131072) · <a href="/metrics/context-overflow">View context overflow diagnostics</a></span>
+                            <span class="ldr-input-help">{{ _("Context window size in tokens (512-131072) ·") }} <a href="/metrics/context-overflow">{{ _("View context overflow diagnostics") }}</a></span>
                         </div>
 
                         <!-- OpenAI API Key (hidden by default) -->
                         <div class="ldr-form-group ldr-half" id="openai_api_key_container" style="display: none;">
-                            <label for="openai_api_key">OpenAI API Key</label>
+                            <label for="openai_api_key">{{ _("OpenAI API Key") }}</label>
                             <input type="password" id="openai_api_key" name="openai_api_key" class="ldr-form-control"
-                                   placeholder="sk-..." autocomplete="off">
-                            <span class="ldr-input-help">Get your key at platform.openai.com</span>
+                                   placeholder="{{ _("sk-...") }}" autocomplete="off">
+                            <span class="ldr-input-help">{{ _("Get your key at platform.openai.com") }}</span>
                         </div>
 
                         <!-- Anthropic API Key (hidden by default) -->
                         <div class="ldr-form-group ldr-half" id="anthropic_api_key_container" style="display: none;">
-                            <label for="anthropic_api_key">Anthropic API Key</label>
+                            <label for="anthropic_api_key">{{ _("Anthropic API Key") }}</label>
                             <input type="password" id="anthropic_api_key" name="anthropic_api_key" class="ldr-form-control"
-                                   placeholder="sk-ant-..." autocomplete="off">
-                            <span class="ldr-input-help">Get your key at console.anthropic.com</span>
+                                   placeholder="{{ _("sk-ant-...") }}" autocomplete="off">
+                            <span class="ldr-input-help">{{ _("Get your key at console.anthropic.com") }}</span>
                         </div>
 
                         <!-- Google API Key (hidden by default) -->
                         <div class="ldr-form-group ldr-half" id="google_api_key_container" style="display: none;">
-                            <label for="google_api_key">Google API Key</label>
+                            <label for="google_api_key">{{ _("Google API Key") }}</label>
                             <input type="password" id="google_api_key" name="google_api_key" class="ldr-form-control"
-                                   placeholder="AIza..." autocomplete="off">
-                            <span class="ldr-input-help">Get your key at aistudio.google.com</span>
+                                   placeholder="{{ _("AIza...") }}" autocomplete="off">
+                            <span class="ldr-input-help">{{ _("Get your key at aistudio.google.com") }}</span>
                         </div>
 
                         <!-- OpenRouter API Key (hidden by default) -->
                         <div class="ldr-form-group ldr-half" id="openrouter_api_key_container" style="display: none;">
-                            <label for="openrouter_api_key">OpenRouter API Key</label>
+                            <label for="openrouter_api_key">{{ _("OpenRouter API Key") }}</label>
                             <input type="password" id="openrouter_api_key" name="openrouter_api_key" class="ldr-form-control"
-                                   placeholder="sk-or-..." autocomplete="off">
-                            <span class="ldr-input-help">Get your key at openrouter.ai</span>
+                                   placeholder="{{ _("sk-or-...") }}" autocomplete="off">
+                            <span class="ldr-input-help">{{ _("Get your key at openrouter.ai") }}</span>
                         </div>
 
                         <!-- xAI API Key (hidden by default) -->
                         <div class="ldr-form-group ldr-half" id="xai_api_key_container" style="display: none;">
-                            <label for="xai_api_key">xAI API Key</label>
+                            <label for="xai_api_key">{{ _("xAI API Key") }}</label>
                             <input type="password" id="xai_api_key" name="xai_api_key" class="ldr-form-control"
-                                   placeholder="xai-..." autocomplete="off">
-                            <span class="ldr-input-help">Get your key at x.ai</span>
+                                   placeholder="{{ _("xai-...") }}" autocomplete="off">
+                            <span class="ldr-input-help">{{ _("Get your key at x.ai") }}</span>
                         </div>
 
                         <!-- IONOS API Key (hidden by default) -->
                         <div class="ldr-form-group ldr-half" id="ionos_api_key_container" style="display: none;">
-                            <label for="ionos_api_key">IONOS API Key</label>
+                            <label for="ionos_api_key">{{ _("IONOS API Key") }}</label>
                             <input type="password" id="ionos_api_key" name="ionos_api_key" class="ldr-form-control"
-                                   placeholder="..." autocomplete="off">
-                            <span class="ldr-input-help">Get your key from IONOS AI Model Hub</span>
+                                   placeholder="{{ _("...") }}" autocomplete="off">
+                            <span class="ldr-input-help">{{ _("Get your key from IONOS AI Model Hub") }}</span>
                         </div>
 
                         <!-- OpenAI Endpoint API Key (hidden by default) -->
                         <div class="ldr-form-group ldr-half" id="openai_endpoint_api_key_container" style="display: none;">
-                            <label for="openai_endpoint_api_key">Endpoint API Key (Optional)</label>
+                            <label for="openai_endpoint_api_key">{{ _("Endpoint API Key (Optional)") }}</label>
                             <input type="password" id="openai_endpoint_api_key" name="openai_endpoint_api_key" class="ldr-form-control"
-                                   placeholder="Optional, leave empty if not required" autocomplete="off">
-                            <span class="ldr-input-help">Leave blank for local servers (llama.cpp, vLLM, LM Studio). Required only for hosted services (OpenRouter, Groq, Together, etc.).</span>
+                                   placeholder="{{ _("Optional, leave empty if not required") }}" autocomplete="off">
+                            <span class="ldr-input-help">{{ _("Leave blank for local servers (llama.cpp, vLLM, LM Studio). Required only for hosted services (OpenRouter, Groq, Together, etc.).") }}</span>
                         </div>
 
                         <!-- Ollama API Key (hidden by default, optional for authenticated instances) -->
                         <div class="ldr-form-group ldr-half" id="ollama_api_key_container" style="display: none;">
-                            <label for="ollama_api_key">Ollama API Key (Optional)</label>
+                            <label for="ollama_api_key">{{ _("Ollama API Key (Optional)") }}</label>
                             <input type="password" id="ollama_api_key" name="ollama_api_key" class="ldr-form-control"
-                                   placeholder="Optional, for authenticated instances" autocomplete="off">
-                            <span class="ldr-input-help">Only needed for authenticated Ollama instances</span>
+                                   placeholder="{{ _("Optional, for authenticated instances") }}" autocomplete="off">
+                            <span class="ldr-input-help">{{ _("Only needed for authenticated Ollama instances") }}</span>
                         </div>
 
                         <!-- LM Studio API Key (hidden by default, optional for authenticated instances) -->
                         <div class="ldr-form-group ldr-half" id="lmstudio_api_key_container" style="display: none;">
-                            <label for="lmstudio_api_key">LM Studio API Key (Optional)</label>
+                            <label for="lmstudio_api_key">{{ _("LM Studio API Key (Optional)") }}</label>
                             <input type="password" id="lmstudio_api_key" name="lmstudio_api_key" class="ldr-form-control"
-                                   placeholder="Optional, for authenticated instances" autocomplete="off">
-                            <span class="ldr-input-help">Only needed if your LM Studio server requires an API key</span>
+                                   placeholder="{{ _("Optional, for authenticated instances") }}" autocomplete="off">
+                            <span class="ldr-input-help">{{ _("Only needed if your LM Studio server requires an API key") }}</span>
                         </div>
                     </div>
 
@@ -196,17 +196,17 @@
                             {{ render_dropdown(
                                 input_id="model",
                                 dropdown_id="model-dropdown",
-                                placeholder="Enter or select a model",
-                                label="Language Model",
-                                help_text="Select or enter a custom model name",
+                                placeholder=_("Enter or select a model"),
+                                label=_("Language Model"),
+                                help_text=_("Select or enter a custom model name"),
                                 show_refresh=True,
-                                refresh_aria_label="Refresh model list",
+                                refresh_aria_label=_("Refresh model list"),
                                 data_initial_value=settings.llm_model
                             ) }}
                             <span class="ldr-input-help">
-                                Picking a local model? Compare community results on the
-                                <a href="https://huggingface.co/datasets/local-deep-research/ldr-benchmarks" target="_blank" rel="noopener noreferrer">LDR benchmarks dataset</a>
-                                to see which models work well for research.
+                                {{ _("Picking a local model? Compare community results on the") }}
+                                <a href="https://huggingface.co/datasets/local-deep-research/ldr-benchmarks" target="_blank" rel="noopener noreferrer">{{ _("LDR benchmarks dataset") }}</a>
+                                {{ _("to see which models work well for research.") }}
                             </span>
                         </div>
 
@@ -215,11 +215,11 @@
                             {{ render_dropdown(
                                 input_id="search_engine",
                                 dropdown_id="search-engine-dropdown",
-                                placeholder="Select a search engine",
-                                label="Search Engine",
-                                help_text="Select the search engine to use for research",
+                                placeholder=_("Select a search engine"),
+                                label=_("Search Engine"),
+                                help_text=_("Select the search engine to use for research"),
                                 show_refresh=True,
-                                refresh_aria_label="Refresh search engine list",
+                                refresh_aria_label=_("Refresh search engine list"),
                                 data_initial_value=settings.search_tool
                             ) }}
                         </div>
@@ -228,29 +228,29 @@
                     <div class="ldr-form-row">
                         <!-- Search Iterations -->
                         <div class="ldr-form-group ldr-half">
-                            <label for="iterations">{{ tooltip("Search Iterations", "Each cycle: AI generates follow-up questions based on what it found, then searches again. Searches run in parallel. More iterations = deeper coverage but longer wait.") }}</label>
+                            <label for="iterations">{{ tooltip(_("Search Iterations"), _("Each cycle: AI generates follow-up questions based on what it found, then searches again. Searches run in parallel. More iterations = deeper coverage but longer wait.")) }}</label>
                             <input type="number" id="iterations" name="iterations" class="ldr-form-control" min="1" value="{{ settings.search_iterations }}">
-                            <span class="ldr-input-help">More iterations = deeper research (even 20+ can make sense for Focused Iteration, depending on context window size)</span>
+                            <span class="ldr-input-help">{{ _("More iterations = deeper research (even 20+ can make sense for Focused Iteration, depending on context window size)") }}</span>
                         </div>
 
                         <!-- Questions Per Iteration -->
                         <div class="ldr-form-group ldr-half">
-                            <label for="questions_per_iteration">{{ tooltip("Questions Per Iteration", "Follow-up questions per cycle. Multiplies with iterations: 3 questions × 4 iterations = 12 searches. More = broader but slower/costlier.") }}</label>
+                            <label for="questions_per_iteration">{{ tooltip(_("Questions Per Iteration"), _("Follow-up questions per cycle. Multiplies with iterations: 3 questions × 4 iterations = 12 searches. More = broader but slower/costlier.")) }}</label>
                             <input type="number" id="questions_per_iteration" name="questions_per_iteration" class="ldr-form-control" min="1" value="{{ settings.search_questions_per_iteration }}">
-                            <span class="ldr-input-help">Lower is generally better (1-2 recommended). Prefer increasing iterations for deeper research.</span>
+                            <span class="ldr-input-help">{{ _("Lower is generally better (1-2 recommended). Prefer increasing iterations for deeper research.") }}</span>
                         </div>
                     </div>
 
                     <div class="ldr-form-row">
                         <!-- Search Strategy -->
                         <div class="ldr-form-group ldr-half">
-                            <label for="strategy">{{ tooltip("Search Strategy", "Source-Based: Full report with inline citations. Focused Quick: Concise Q&A. Focused Comprehensive: Detailed answer with citations. Topic Organization: Groups results by theme.") }}</label>
+                            <label for="strategy">{{ tooltip(_("Search Strategy"), _("Source-Based: Full report with inline citations. Focused Quick: Concise Q&A. Focused Comprehensive: Detailed answer with citations. Topic Organization: Groups results by theme.")) }}</label>
                             <select id="strategy" name="strategy" class="ldr-form-control">
                                 {% for s in strategies %}
                                 <option value="{{ s.name }}" {% if settings.search_strategy == s.name %}selected{% endif %}>{{ s.label }}</option>
                                 {% endfor %}
                             </select>
-                            <span class="ldr-input-help">Focused Iteration works best with >16,000 context window</span>
+                            <span class="ldr-input-help">{{ _("Focused Iteration works best with >16,000 context window") }}</span>
                         </div>
 
                     </div>
@@ -258,7 +258,7 @@
 
                 <!-- Start Research Button -->
                 <div class="ldr-form-actions">
-                    <button type="submit" class="btn btn-primary" id="start-research-btn"><i aria-hidden="true" class="fas fa-rocket"></i> Start Research</button>
+                    <button type="submit" class="btn btn-primary" id="start-research-btn"><i aria-hidden="true" class="fas fa-rocket"></i> {{ _("Start Research") }}</button>
                 </div>
 
                 <!-- Audio Notifications -->
@@ -266,21 +266,21 @@
                     <div class="ldr-form-option">
                         <label for="notification-toggle" class="ldr-checkbox-label">
                             <input type="checkbox" id="notification-toggle" checked>
-                            <span class="ldr-checkbox-text">Sound notifications when complete</span>
+                            <span class="ldr-checkbox-text">{{ _("Sound notifications when complete") }}</span>
                         </label>
                     </div>
                 </div>
             </form>
 
             <!-- How Research Works Help Panel -->
-            {% call help_panel('research-workflow', 'How Research Works', icon='lightbulb', collapsed=true, dismissible=true) %}
+            {% call help_panel('research-workflow', _('How Research Works'), icon='lightbulb', collapsed=true, dismissible=true) %}
             <div class="ldr-help-steps">
-                {{ help_step(1, "Query Analysis", "Your research question is analyzed to identify key concepts and generate initial search queries.") }}
-                {{ help_step(2, "Source Discovery", "The search engine finds relevant sources. Each iteration generates follow-up questions to explore the topic deeper.") }}
-                {{ help_step(3, "Content Analysis", "The AI reads and analyzes each source, extracting key information relevant to your query.") }}
-                {{ help_step(4, "Report Generation", "Findings are synthesized into a comprehensive report with citations and references.") }}
+                {{ help_step(1, _("Query Analysis"), _("Your research question is analyzed to identify key concepts and generate initial search queries.")) }}
+                {{ help_step(2, _("Source Discovery"), _("The search engine finds relevant sources. Each iteration generates follow-up questions to explore the topic deeper.")) }}
+                {{ help_step(3, _("Content Analysis"), _("The AI reads and analyzes each source, extracting key information relevant to your query.")) }}
+                {{ help_step(4, _("Report Generation"), _("Findings are synthesized into a comprehensive report with citations and references.")) }}
             </div>
-            {{ help_tip("<strong>Tip:</strong> For academic research, select ArXiv or PubMed as your search engine. For general topics, SearXNG provides the broadest coverage.") }}
+            {{ help_tip(_("<strong>Tip:</strong> For academic research, select ArXiv or PubMed as your search engine. For general topics, SearXNG provides the broadest coverage.")) }}
             {% endcall %}
         </div>
     </div>

@@ -12,37 +12,37 @@
 {% block content %}
 <div class="ldr-library-container">
     <div class="ldr-library-header">
-        <h1>Research Library</h1>
+        <h1>{{ _("Research Library") }}</h1>
         <div class="ldr-header-actions">
-            <button class="btn btn-secondary" onclick="showSyncModal()" title="Check if files exist and sync with filesystem">
-                <i class="fas fa-sync"></i> Sync Library
+            <button class="btn btn-secondary" onclick="showSyncModal()" title="{{ _("Check if files exist and sync with filesystem") }}">
+                <i class="fas fa-sync"></i> {{ _("Sync Library") }}
             </button>
             <div class="btn-group">
                 <button class="btn btn-success"
                         {% if not enable_pdf_storage %}
                         disabled
-                        title="PDF storage is disabled. Click the storage mode button above to enable."
+                        title="{{ _("PDF storage is disabled. Click the storage mode button above to enable.") }}"
                         data-toggle="tooltip"
                         {% else %}
                         onclick="downloadAllNew()"
-                        title="Download PDF files from all your research sources and save to library"
+                        title="{{ _("Download PDF files from all your research sources and save to library") }}"
                         {% endif %}>
-                    <i class="fas fa-file-pdf"></i> Get All Research PDFs
+                    <i class="fas fa-file-pdf"></i> {{ _("Get All Research PDFs") }}
                 </button>
                 <button class="btn btn-info"
                         onclick="downloadAllAsText()"
-                        title="Extract text from all research sources without saving PDF files">
-                    <i class="fas fa-file-alt"></i> Text Only (from PDFs)
+                        title="{{ _("Extract text from all research sources without saving PDF files") }}">
+                    <i class="fas fa-file-alt"></i> {{ _("Text Only (from PDFs)") }}
                 </button>
             </div>
             <div class="ldr-library-stats">
                 <span class="ldr-stat-item">
                     <i class="fas fa-file-pdf"></i>
-                    <span id="total-pdfs">{{ stats.total_pdfs }}</span> PDFs
+                    <span id="total-pdfs">{{ stats.total_pdfs }}</span> {{ _("PDFs") }}
                 </span>
                 <span class="ldr-stat-item">
                     <i class="fas fa-hdd"></i>
-                    <span id="total-size">{{ stats.total_size_mb|round(1) }}</span> MB
+                    <span id="total-size">{{ stats.total_size_mb|round(1) }}</span> {{ _("MB") }}
                 </span>
                 <span class="ldr-stat-item">
                     <i class="fas fa-folder"></i>
@@ -55,14 +55,14 @@
     <!-- Library Status Bar -->
     <div class="ldr-library-status-bar">
         <div class="ldr-status-item">
-            <span class="ldr-status-label">Storage Mode:</span>
+            <span class="ldr-status-label">{{ _("Storage Mode:") }}</span>
             {% if shared_library %}
                 <span class="ldr-badge ldr-badge-warning">
-                    <i class="fas fa-users"></i> Shared Library
+                    <i class="fas fa-users"></i> {{ _("Shared Library") }}
                 </span>
             {% else %}
                 <span class="ldr-badge ldr-badge-success">
-                    <i class="fas fa-user-lock"></i> Private Library
+                    <i class="fas fa-user-lock"></i> {{ _("Private Library") }}
                 </span>
             {% endif %}
         </div>
@@ -70,41 +70,41 @@
         <div class="ldr-status-item">
             <span class="ldr-status-label">{{ tooltip("PDF Storage:", "Database: Encrypted, most secure. Filesystem: Unencrypted files on disk - use only if you need external tool access. Text Only: Smallest footprint, no original PDFs kept.") }}</span>
             {% if pdf_storage_mode == 'database' %}
-                <button class="btn btn-sm btn-success" onclick="showStorageModeModal()" title="Click to change storage mode">
-                    <i class="fas fa-database"></i> Database (Encrypted)
+                <button class="btn btn-sm btn-success" onclick="showStorageModeModal()" title="{{ _("Click to change storage mode") }}">
+                    <i class="fas fa-database"></i> {{ _("Database (Encrypted)") }}
                 </button>
             {% elif pdf_storage_mode == 'filesystem' %}
-                <button class="btn btn-sm btn-warning" onclick="showStorageModeModal()" title="Click to change storage mode">
-                    <i class="fas fa-hdd"></i> Filesystem (Unencrypted)
+                <button class="btn btn-sm btn-warning" onclick="showStorageModeModal()" title="{{ _("Click to change storage mode") }}">
+                    <i class="fas fa-hdd"></i> {{ _("Filesystem (Unencrypted)") }}
                 </button>
             {% else %}
-                <button class="btn btn-sm btn-secondary" onclick="showStorageModeModal()" title="Click to change storage mode">
-                    <i class="fas fa-file-alt"></i> Text Only
+                <button class="btn btn-sm btn-secondary" onclick="showStorageModeModal()" title="{{ _("Click to change storage mode") }}">
+                    <i class="fas fa-file-alt"></i> {{ _("Text Only") }}
                 </button>
             {% endif %}
         </div>
 
         <div class="ldr-status-item">
             <a href="/settings#research-library" class="btn btn-sm btn-outline-primary">
-                <i class="fas fa-cog"></i> Configure Settings
+                <i class="fas fa-cog"></i> {{ _("Configure Settings") }}
             </a>
         </div>
     </div>
 
     <!-- How Library Works Help Panel -->
-    {% call help_panel('library-how', 'How the Research Library Works', icon='book', collapsed=true, dismissible=true) %}
+    {% call help_panel('library-how', _('How the Research Library Works'), icon='book', collapsed=true, dismissible=true) %}
     <div class="ldr-help-steps">
-        {{ help_step(1, "Research Sources", "When you run research, all discovered sources (PDFs, papers, articles) are automatically tracked.") }}
-        {{ help_step(2, "Download to Library", "Use 'Get All Research PDFs' to download PDFs from tracked sources. Use 'Text Only' for just searchable text.") }}
-        {{ help_step(3, "Organize with Collections", "Create collections to group documents by topic. The Library shows all documents; Collections are custom groupings.") }}
-        {{ help_step(4, "Search via RAG", "Index collections to enable semantic search. When researching, select a collection as your search engine to search your documents.") }}
+        {{ help_step(1, _('Research Sources'), _('When you run research, all discovered sources (PDFs, papers, articles) are automatically tracked.')) }}
+        {{ help_step(2, _('Download to Library'), _("Use 'Get All Research PDFs' to download PDFs from tracked sources. Use 'Text Only' for just searchable text.")) }}
+        {{ help_step(3, _('Organize with Collections'), _('Create collections to group documents by topic. The Library shows all documents; Collections are custom groupings.')) }}
+        {{ help_step(4, _('Search via RAG'), _('Index collections to enable semantic search. When researching, select a collection as your search engine to search your documents.')) }}
     </div>
     <div class="ldr-help-cards">
-        {{ help_card("Database Storage", "PDFs encrypted in your database. Most secure and portable.", icon="database", variant="success") }}
-        {{ help_card("Filesystem Storage", "PDFs stored on disk. Faster for large files but unencrypted.", icon="hdd", variant="warning") }}
-        {{ help_card("Text Only", "Only extracted text is stored. Smallest footprint, no PDF viewing.", icon="file-alt", variant="neutral") }}
+        {{ help_card(_('Database Storage'), _('PDFs encrypted in your database. Most secure and portable.'), icon="database", variant="success") }}
+        {{ help_card(_('Filesystem Storage'), _('PDFs stored on disk. Faster for large files but unencrypted.'), icon="hdd", variant="warning") }}
+        {{ help_card(_('Text Only'), _('Only extracted text is stored. Smallest footprint, no PDF viewing.'), icon="file-alt", variant="neutral") }}
     </div>
-    {{ help_tip("<strong>Tip:</strong> Use 'Sync Library' after moving or deleting files manually to update the database.") }}
+    {{ help_tip(_("<strong>Tip:</strong> Use 'Sync Library' after moving or deleting files manually to update the database.")) }}
     {% endcall %}
 
     <!-- Search Section — Collection + Search bar prominent on top -->
@@ -112,9 +112,9 @@
         <div class="ldr-filter-row ldr-library-search-row">
             <!-- Collection Filter -->
             <div class="ldr-filter-group">
-                <label for="filter-collection">Collection</label>
-                <select id="filter-collection" class="form-control" aria-label="Filter by collection">
-                    <option value="">All Collections</option>
+                <label for="filter-collection">{{ _("Collection") }}</label>
+                <select id="filter-collection" class="form-control" aria-label="{{ _("Filter by collection") }}">
+                    <option value="">{{ _("All Collections") }}</option>
                     {% for collection in collections %}
                     <option value="{{ collection.id }}" {% if selected_collection == collection.id %}selected{% endif %}>
                         {{ collection.name }}{% if collection.is_default %} (Default){% endif %} ({{ collection.document_count }})
@@ -125,24 +125,24 @@
 
             <!-- Search with mode toggle — large and prominent -->
             <div class="ldr-filter-group ldr-library-search-group">
-                <label for="search-documents">Search</label>
+                <label for="search-documents">{{ _("Search") }}</label>
                 <div class="ldr-search-row">
                     <input type="text" id="search-documents" class="form-control ldr-library-search-input"
-                           placeholder="AI Hybrid: titles & authors + AI content search..." aria-label="Search documents" style="flex: 1;">
+                           placeholder="{{ _("AI Hybrid: titles & authors + AI content search...") }}" aria-label="{{ _("Search documents") }}" style="flex: 1;">
                     <div class="dropdown d-inline-block">
                         <button class="btn btn-sm ldr-btn-outline dropdown-toggle" type="button"
                                 id="search-mode-btn" data-bs-toggle="dropdown" aria-expanded="false">
                             <i class="fas fa-brain" aria-hidden="true"></i> AI Hybrid
                         </button>
-                        <ul class="dropdown-menu" aria-label="Search mode" id="search-mode-menu">
+                        <ul class="dropdown-menu" aria-label="{{ _("Search mode") }}" id="search-mode-menu">
                             <li><a class="dropdown-item active" href="#" data-mode="hybrid">
-                                <i class="fas fa-brain" aria-hidden="true"></i> AI Hybrid <small class="text-muted">— titles + AI content</small>
+                                <i class="fas fa-brain" aria-hidden="true"></i> {{ _("AI Hybrid") }} <small class="text-muted">{{ _("— titles + AI content") }}</small>
                             </a></li>
                             <li><a class="dropdown-item" href="#" data-mode="text">
-                                <i class="fas fa-font" aria-hidden="true"></i> Text Only <small class="text-muted">— titles, authors, DOI</small>
+                                <i class="fas fa-font" aria-hidden="true"></i> {{ _("Text Only") }} <small class="text-muted">{{ _("— titles, authors, DOI") }}</small>
                             </a></li>
                             <li><a class="dropdown-item" href="#" data-mode="semantic">
-                                <i class="fas fa-brain" aria-hidden="true"></i> AI Only <small class="text-muted">— content search</small>
+                                <i class="fas fa-brain" aria-hidden="true"></i> {{ _("AI Only") }} <small class="text-muted">{{ _("— content search") }}</small>
                             </a></li>
                         </ul>
                     </div>
@@ -154,9 +154,9 @@
         <div class="ldr-filter-row ldr-library-filters-row">
             <!-- Domain Filter -->
             <div class="ldr-filter-group">
-                <label for="filter-domain">Domain</label>
-                <select id="filter-domain" class="form-control" aria-label="Filter by domain">
-                    <option value="">All Domains</option>
+                <label for="filter-domain">{{ _("Domain") }}</label>
+                <select id="filter-domain" class="form-control" aria-label="{{ _("Filter by domain") }}">
+                    <option value="">{{ _("All Domains") }}</option>
                     {% for domain in unique_domains %}
                     <option value="{{ domain }}" {% if selected_domain == domain %}selected{% endif %}>{{ domain }}</option>
                     {% endfor %}
@@ -165,9 +165,9 @@
 
             <!-- Research Filter -->
             <div class="ldr-filter-group">
-                <label for="filter-research">Research</label>
-                <select id="filter-research" class="form-control" aria-label="Filter by research">
-                    <option value="">All Research</option>
+                <label for="filter-research">{{ _("Research") }}</label>
+                <select id="filter-research" class="form-control" aria-label="{{ _("Filter by research") }}">
+                    <option value="">{{ _("All Research") }}</option>
                     {% for research in research_list %}
                     <option value="{{ research.id }}" {% if selected_research == research.id|string %}selected{% endif %}>{{ research.title or research.query[:50] }}</option>
                     {% endfor %}
@@ -176,12 +176,12 @@
 
             <!-- Date Filter -->
             <div class="ldr-filter-group">
-                <label for="filter-date">Downloaded</label>
-                <select id="filter-date" class="form-control" aria-label="Filter by download date">
-                    <option value="">All Time</option>
-                    <option value="today" {% if selected_date == "today" %}selected{% endif %}>Today</option>
-                    <option value="week" {% if selected_date == "week" %}selected{% endif %}>This Week</option>
-                    <option value="month" {% if selected_date == "month" %}selected{% endif %}>This Month</option>
+                <label for="filter-date">{{ _("Downloaded") }}</label>
+                <select id="filter-date" class="form-control" aria-label="{{ _("Filter by download date") }}">
+                    <option value="">{{ _("All Time") }}</option>
+                    <option value="today" {% if selected_date == "today" %}selected{% endif %}>{{ _("Today") }}</option>
+                    <option value="week" {% if selected_date == "week" %}selected{% endif %}>{{ _("This Week") }}</option>
+                    <option value="month" {% if selected_date == "month" %}selected{% endif %}>{{ _("This Month") }}</option>
                 </select>
             </div>
 
@@ -189,10 +189,10 @@
             <div class="ldr-filter-group" style="margin-left: auto;">
                 <label>&nbsp;</label>
                 <div class="btn-group ldr-view-toggle">
-                    <button class="btn btn-sm active" data-view="grid" aria-label="Grid view" aria-pressed="true">
+                    <button class="btn btn-sm active" data-view="grid" aria-label="{{ _("Grid view") }}" aria-pressed="true">
                         <i class="fas fa-th" aria-hidden="true"></i>
                     </button>
-                    <button class="btn btn-sm" data-view="list" aria-label="List view" aria-pressed="false">
+                    <button class="btn btn-sm" data-view="list" aria-label="{{ _("List view") }}" aria-pressed="false">
                         <i class="fas fa-list" aria-hidden="true"></i>
                     </button>
                 </div>
@@ -209,9 +209,9 @@
             <!-- Card Header with badges -->
             <div class="card-header">
                 {% if doc.is_arxiv %}
-                    <span class="ldr-badge ldr-badge-arxiv">arXiv</span>
+                    <span class="ldr-badge ldr-badge-arxiv">{{ _("arXiv") }}</span>
                 {% elif doc.is_pubmed %}
-                    <span class="ldr-badge ldr-badge-pubmed">PubMed</span>
+                    <span class="ldr-badge ldr-badge-pubmed">{{ _("PubMed") }}</span>
                 {% elif doc.file_type == 'pdf' %}
                     <i class="fas fa-file-pdf text-danger"></i>
                 {% else %}
@@ -225,22 +225,22 @@
                 <div class="ldr-action-buttons" onclick="event.stopPropagation()">
                     {% if doc.has_pdf %}
                     <a href="/library/document/{{ doc.id }}/pdf" target="_blank" rel="noopener noreferrer" class="ldr-action-btn ldr-action-btn-pdf">
-                        <i class="fas fa-file-pdf"></i> View PDF
+                        <i class="fas fa-file-pdf"></i> {{ _("View PDF") }}
                     </a>
                     {% endif %}
                     {% if doc.has_text_db %}
                     <a href="/library/document/{{ doc.id }}/txt" target="_blank" rel="noopener noreferrer" class="ldr-action-btn ldr-action-btn-txt">
-                        <i class="fas fa-file-alt"></i> View Text
+                        <i class="fas fa-file-alt"></i> {{ _("View Text") }}
                     </a>
                     {% endif %}
                     {% if doc.has_rag_indexed %}
-                    <a href="/library/document/{{ doc.id }}/chunks" class="ldr-action-btn ldr-action-btn-rag" title="{{ doc.rag_chunk_count }} chunks indexed">
-                        <i class="fas fa-brain"></i> RAG Indexed
+                    <a href="/library/document/{{ doc.id }}/chunks" class="ldr-action-btn ldr-action-btn-rag" title="{{ doc.rag_chunk_count }} {{ _("chunks indexed") }}">
+                        <i class="fas fa-brain"></i> {{ _("RAG Indexed") }}
                     </a>
                     {% endif %}
                     {% if not doc.has_pdf and not doc.has_text_db %}
                     <div class="ldr-action-btn ldr-action-btn-none">
-                        <i class="fas fa-exclamation-triangle"></i> Not Downloaded
+                        <i class="fas fa-exclamation-triangle"></i> {{ _("Not Downloaded") }}
                     </div>
                     {% endif %}
                 </div>
@@ -259,7 +259,7 @@
                     </span>
                     <span class="ldr-meta-item">
                         <i class="fas fa-file"></i>
-                        {{ (doc.file_size / 1024 / 1024)|round(1) }} MB
+                        {{ (doc.file_size / 1024 / 1024)|round(1) }} {{ _("MB") }}
                     </span>
                     {% if doc.doi %}
                     <span class="ldr-meta-item">
@@ -272,7 +272,7 @@
                 <!-- Research Info -->
                 <div class="ldr-research-info">
                     <span class="ldr-research-link">
-                        From: <a href="/results/{{ doc.research_id }}" onclick="event.stopPropagation()">
+                        {{ _("From:") }} <a href="/results/{{ doc.research_id }}" onclick="event.stopPropagation()">
                             {{ doc.research_title|truncate(40) }}
                         </a>
                     </span>
@@ -290,12 +290,12 @@
                 <div class="ldr-doc-actions" onclick="event.stopPropagation()">
                     {% if doc.has_pdf %}
                     <button class="ldr-btn-delete-blob" onclick="DeleteManager.deleteDocumentBlob('{{ doc.id }}', {onSuccess: () => location.reload()})"
-                            title="Remove PDF only (keep text). Text content will be preserved for searching.">
+                            title="{{ _("Remove PDF only (keep text). Text content will be preserved for searching.") }}">
                         <i class="fas fa-file-pdf"></i><i class="fas fa-times" style="font-size: 0.6em; margin-left: -2px;"></i>
                     </button>
                     {% endif %}
                     <button class="ldr-btn-delete-doc" onclick="DeleteManager.deleteDocument('{{ doc.id }}', {onSuccess: () => location.reload()})"
-                            title="Permanently delete this document, including PDF and text content. This cannot be undone.">
+                            title="{{ _("Permanently delete this document, including PDF and text content. This cannot be undone.") }}">
                         <i class="fas fa-trash"></i>
                     </button>
                 </div>
@@ -311,11 +311,11 @@
     {% if request.args.get('research') %}{% set filter_params = filter_params ~ "&research=" ~ (request.args.get('research') | urlencode) %}{% endif %}
     {% if request.args.get('domain') %}{% set filter_params = filter_params ~ "&domain=" ~ (request.args.get('domain') | urlencode) %}{% endif %}
     {% if request.args.get('date') %}{% set filter_params = filter_params ~ "&date=" ~ (request.args.get('date') | urlencode) %}{% endif %}
-    <nav class="ldr-pagination" aria-label="Document list pagination">
+    <nav class="ldr-pagination" aria-label="{{ _("Document list pagination") }}">
         <a class="ldr-page-link {% if page <= 1 %}disabled{% endif %}"
            href="?page={{ page - 1 }}{{ filter_params }}"
            {% if page <= 1 %}tabindex="-1" aria-disabled="true"{% endif %}>
-            <i aria-hidden="true" class="fas fa-chevron-left"></i> Previous
+            <i aria-hidden="true" class="fas fa-chevron-left"></i> {{ _("Previous") }}
         </a>
 
         {% set start_page = [1, page - 2] | max %}
@@ -338,7 +338,7 @@
         <a class="ldr-page-link {% if page >= total_pages %}disabled{% endif %}"
            href="?page={{ page + 1 }}{{ filter_params }}"
            {% if page >= total_pages %}tabindex="-1" aria-disabled="true"{% endif %}>
-            Next <i aria-hidden="true" class="fas fa-chevron-right"></i>
+            {{ _("Next") }} <i aria-hidden="true" class="fas fa-chevron-right"></i>
         </a>
     </nav>
     {% endif %}
@@ -354,37 +354,37 @@
     <div class="ldr-empty-state">
         {% if selected_domain or selected_research or selected_collection %}
         <i class="fas fa-filter fa-3x"></i>
-        <h3>No documents match the current filters</h3>
-        <p>Try changing or clearing your collection, domain, or research filters</p>
+        <h3>{{ _("No documents match the current filters") }}</h3>
+        <p>{{ _("Try changing or clearing your collection, domain, or research filters") }}</p>
         <a class="btn btn-secondary" href="{{ url_for('library.library_page') }}">
-            <i class="fas fa-times"></i> Clear All Filters
+            <i class="fas fa-times"></i> {{ _("Clear All Filters") }}
         </a>
         {% else %}
         <i class="fas fa-book fa-3x"></i>
-        <h3>No documents in your library yet</h3>
+        <h3>{{ _("No documents in your library yet") }}</h3>
         {% if not enable_pdf_storage %}
         <div class="ldr-empty-state-info">
-            <p><strong>PDF storage is set to Text Only mode.</strong></p>
-            <p>Choose how to store your research PDFs:</p>
+            <p><strong>{{ _("PDF storage is set to Text Only mode.") }}</strong></p>
+            <p>{{ _("Choose how to store your research PDFs:") }}</p>
             <ul style="text-align: left; margin: 10px auto; max-width: 500px;">
-                <li><strong>Database (Recommended):</strong> PDFs encrypted in your personal database. Secure, portable, isolated per-user.</li>
-                <li><strong>Filesystem:</strong> Faster for large files, but stored unencrypted on disk.</li>
-                <li><strong>Text Only:</strong> Current mode - only extracted text is stored.</li>
+                <li><strong>{{ _("Database (Recommended):") }}</strong> {{ _("PDFs encrypted in your personal database. Secure, portable, isolated per-user.") }}</li>
+                <li><strong>{{ _("Filesystem:") }}</strong> {{ _("Faster for large files, but stored unencrypted on disk.") }}</li>
+                <li><strong>{{ _("Text Only:") }}</strong> {{ _("Current mode - only extracted text is stored.") }}</li>
             </ul>
-            <p>Text content is always stored encrypted in your personal database.</p>
+            <p>{{ _("Text content is always stored encrypted in your personal database.") }}</p>
         </div>
         <div class="ldr-empty-state-actions">
             <button class="btn btn-primary" onclick="window.location.href='/settings#research-library'">
-                <i class="fas fa-cog"></i> Configure Library Settings
+                <i class="fas fa-cog"></i> {{ _("Configure Library Settings") }}
             </button>
             <button class="btn btn-secondary" onclick="window.location.href='/library/download-manager'">
-                <i class="fas fa-download"></i> Download Manager
+                <i class="fas fa-download"></i> {{ _("Download Manager") }}
             </button>
         </div>
         {% else %}
-        <p>Start downloading PDFs from your research to build your library</p>
+        <p>{{ _("Start downloading PDFs from your research to build your library") }}</p>
         <button class="btn btn-primary" onclick="window.location.href='/library/download-manager'">
-            <i class="fas fa-download"></i> Go to Download Manager
+            <i class="fas fa-download"></i> {{ _("Go to Download Manager") }}
         </button>
         {% endif %}
         {% endif %}
@@ -396,23 +396,23 @@
 <div id="ldr-pdf-modal" class="ldr-pdf-modal">
     <div class="ldr-pdf-modal-content">
         <div class="ldr-pdf-modal-header">
-            <h2 id="ldr-pdf-title" class="ldr-pdf-title">PDF Viewer</h2>
+            <h2 id="ldr-pdf-title" class="ldr-pdf-title">{{ _("PDF Viewer") }}</h2>
             <div class="ldr-pdf-header-actions">
                 <button class="ldr-pdf-action-btn"
                         {% if enable_pdf_storage %}
                         onclick="downloadCurrentPDF()"
-                        title="Download PDF"
+                        title="{{ _("Download PDF") }}"
                         {% else %}
                         disabled
-                        title="PDF downloads are disabled. Enable in Settings → Research Library"
+                        title="{{ _("PDF downloads are disabled. Enable in Settings → Research Library") }}"
                         data-toggle="tooltip"
                         {% endif %}>
                     <i class="fas fa-download"></i>
                 </button>
-                <button class="ldr-pdf-action-btn" onclick="openPDFInNewTab()" title="Open in new tab">
+                <button class="ldr-pdf-action-btn" onclick="openPDFInNewTab()" title="{{ _("Open in new tab") }}">
                     <i class="fas fa-external-link-alt"></i>
                 </button>
-                <button class="ldr-pdf-close-btn" onclick="closePDFModal()" title="Close">
+                <button class="ldr-pdf-close-btn" onclick="closePDFModal()" title="{{ _("Close") }}">
                     <i class="fas fa-times"></i>
                 </button>
             </div>
@@ -427,15 +427,15 @@
 <div id="text-modal" class="ldr-pdf-modal">
     <div class="ldr-pdf-modal-content">
         <div class="ldr-pdf-modal-header">
-            <h2 id="text-title" class="ldr-pdf-title">Text Viewer</h2>
+            <h2 id="text-title" class="ldr-pdf-title">{{ _("Text Viewer") }}</h2>
             <div class="ldr-pdf-header-actions">
-                <button class="ldr-pdf-action-btn" onclick="copyTextContent()" title="Copy to clipboard">
+                <button class="ldr-pdf-action-btn" onclick="copyTextContent()" title="{{ _("Copy to clipboard") }}">
                     <i class="fas fa-copy"></i>
                 </button>
-                <button class="ldr-pdf-action-btn" onclick="downloadTextContent()" title="Download as .txt">
+                <button class="ldr-pdf-action-btn" onclick="downloadTextContent()" title="{{ _("Download as .txt") }}">
                     <i class="fas fa-download"></i>
                 </button>
-                <button class="ldr-pdf-close-btn" onclick="closeTextModal()" title="Close">
+                <button class="ldr-pdf-close-btn" onclick="closeTextModal()" title="{{ _("Close") }}">
                     <i class="fas fa-times"></i>
                 </button>
             </div>
@@ -450,7 +450,7 @@
 <div id="download-progress-modal" class="modal" style="display: none;">
     <div class="modal-content">
         <div class="modal-header">
-            <h2>Download Progress</h2>
+            <h2>{{ _("Download Progress") }}</h2>
         </div>
         <div class="modal-body">
             <div class="ldr-overall-progress">
@@ -476,32 +476,32 @@
 <div id="sync-library-modal" class="modal" style="display: none;">
     <div class="modal-content" style="max-width: 600px;">
         <div class="modal-header">
-            <h2><i class="fas fa-sync"></i> Sync Library with Filesystem</h2>
+            <h2><i class="fas fa-sync"></i> {{ _("Sync Library with Filesystem") }}</h2>
             <button class="close" onclick="closeSyncModal()">&times;</button>
         </div>
         <div class="modal-body">
             <div class="ldr-sync-explanation">
-                <h3>What does Library Sync do?</h3>
-                <p>The sync feature ensures your database stays consistent with the actual PDF files on your disk. It performs a comprehensive check to:</p>
+                <h3>{{ _("What does Library Sync do?") }}</h3>
+                <p>{{ _("The sync feature ensures your database stays consistent with the actual PDF files on your disk. It performs a comprehensive check to:") }}</p>
                 <ul>
-                    <li><strong>Verify file existence:</strong> Checks if all PDFs referenced in the database still exist on disk</li>
-                    <li><strong>Update file status:</strong> Marks missing files so they can be re-downloaded if needed</li>
-                    <li><strong>Clean up database:</strong> Removes references to permanently deleted files</li>
-                    <li><strong>Detect external changes:</strong> Finds files that were moved, renamed, or deleted outside the app</li>
+                    <li><strong>{{ _("Verify file existence:") }}</strong> {{ _("Checks if all PDFs referenced in the database still exist on disk") }}</li>
+                    <li><strong>{{ _("Update file status:") }}</strong> {{ _("Marks missing files so they can be re-downloaded if needed") }}</li>
+                    <li><strong>{{ _("Clean up database:") }}</strong> {{ _("Removes references to permanently deleted files") }}</li>
+                    <li><strong>{{ _("Detect external changes:") }}</strong> {{ _("Finds files that were moved, renamed, or deleted outside the app") }}</li>
                 </ul>
 
-                <h3>When should you use this?</h3>
+                <h3>{{ _("When should you use this?") }}</h3>
                 <ul>
-                    <li>After manually deleting PDF files from the storage folder</li>
-                    <li>After moving the library folder to a different location</li>
-                    <li>If you're experiencing "file not found" errors when opening PDFs</li>
-                    <li>After a system crash or unexpected shutdown</li>
-                    <li>Periodically to ensure database integrity</li>
+                    <li>{{ _("After manually deleting PDF files from the storage folder") }}</li>
+                    <li>{{ _("After moving the library folder to a different location") }}</li>
+                    <li>{{ _("If you're experiencing \"file not found\" errors when opening PDFs") }}</li>
+                    <li>{{ _("After a system crash or unexpected shutdown") }}</li>
+                    <li>{{ _("Periodically to ensure database integrity") }}</li>
                 </ul>
 
                 <div class="ldr-sync-warning ldr-alert ldr-alert-warning" style="margin-top: 15px;">
                     <i class="fas fa-info-circle"></i>
-                    <strong>Note:</strong> This operation only checks files - it doesn't modify or delete any PDFs. Missing files can be re-downloaded using the Download Manager.
+                    <strong>{{ _("Note:") }}</strong> {{ _("This operation only checks files - it doesn't modify or delete any PDFs. Missing files can be re-downloaded using the Download Manager.") }}
                 </div>
             </div>
 
@@ -509,32 +509,32 @@
                 <div class="progress-bar">
                     <div class="ldr-progress-fill" style="width: 0%"></div>
                 </div>
-                <p id="sync-status">Checking files...</p>
+                <p id="sync-status">{{ _("Checking files...") }}</p>
             </div>
 
             <div id="sync-results" style="display: none; margin-top: 20px;">
-                <h3>Sync Results</h3>
+                <h3>{{ _("Sync Results") }}</h3>
                 <div class="ldr-sync-stats" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px;">
                     <div class="ldr-alert ldr-alert-success" style="padding: 10px;">
                         <i class="fas fa-check-circle"></i>
-                        <strong>Files Found:</strong> <span id="files-found">0</span>
+                        <strong>{{ _("Files Found:") }}</strong> <span id="files-found">0</span>
                     </div>
                     <div class="ldr-alert ldr-alert-danger" style="padding: 10px;">
                         <i class="fas fa-exclamation-circle"></i>
-                        <strong>Files Missing:</strong> <span id="files-missing">0</span>
+                        <strong>{{ _("Files Missing:") }}</strong> <span id="files-missing">0</span>
                     </div>
                 </div>
                 <div id="missing-files-action" class="ldr-alert ldr-alert-info" style="display: none; margin-top: 15px;">
-                    <p><strong>Missing files detected!</strong> These files have been marked in the database and can be re-downloaded.</p>
-                    <button class="btn btn-primary" onclick="goToDownloadManager()">Go to Download Manager</button>
+                    <p><strong>{{ _("Missing files detected!") }}</strong> These files have been marked in the database and can be re-downloaded.</p>
+                    <button class="btn btn-primary" onclick="goToDownloadManager()">{{ _("Go to Download Manager") }}</button>
                 </div>
             </div>
         </div>
         <div class="modal-footer">
             <button id="sync-start-btn" class="btn btn-primary" onclick="performSync()">
-                <i class="fas fa-play"></i> Start Sync
+                <i class="fas fa-play"></i> {{ _("Start Sync") }}
             </button>
-            <button id="sync-close-btn" class="btn btn-secondary" onclick="closeSyncModal()">Close</button>
+            <button id="sync-close-btn" class="btn btn-secondary" onclick="closeSyncModal()">{{ _("Close") }}</button>
         </div>
     </div>
 </div>
@@ -553,7 +553,7 @@ function openDocument(docId, hasPdf, hasTextDb) {
         openText(docId);
     } else {
         console.error('No content available for document', docId);
-        alert('No content available for this document');
+        alert("{{ _('No content available for this document') }}");
     }
 }
 
@@ -630,7 +630,7 @@ function openText(docId) {
         })
         .catch(err => {
             console.error('Error loading text:', err);
-            alert('Failed to load text content');
+            alert("{{ _('Failed to load text content') }}");
         });
 }
 
@@ -663,7 +663,7 @@ function copyTextContent() {
             })
             .catch(err => {
                 console.error('Failed to copy:', err);
-                alert('Failed to copy to clipboard');
+                alert("{{ _('Failed to copy to clipboard') }}");
             });
     }
 }
@@ -714,7 +714,7 @@ async function downloadAllAsText() {
 
         // Show progress modal
         showDownloadProgressModal();
-        document.querySelector('#download-progress-modal h2').textContent = 'Text Extraction to Database';
+        document.querySelector('#download-progress-modal h2').textContent = "{{ _('Text Extraction to Database') }}";
 
         // Reset progress
         document.getElementById('ldr-overall-progress').style.width = '0%';
@@ -770,11 +770,11 @@ async function downloadAllAsText() {
             const log = document.getElementById('ldr-download-log');
             const entry = document.createElement('div');
             entry.className = 'ldr-download-entry ldr-cancelled';
-            entry.innerHTML = '<strong>Text extraction cancelled by user</strong>';
+            entry.innerHTML = '<strong>' + "{{ _('Text extraction cancelled by user') }}" + '</strong>';
             log.appendChild(entry);
         } else {
             console.error('Failed to start text extraction:', error);
-            alert('Failed to start text extraction. Please try again.');
+            alert("{{ _('Failed to start text extraction. Please try again.') }}");
         }
         btn.innerHTML = originalContent;
         btn.disabled = false;
@@ -805,10 +805,10 @@ function updateTextExtractionProgress(data) {
 
         if (data.status === 'success') {
             statusIcon = '✓';
-            statusText = 'Text extracted';
+            statusText = "{{ _('Text extracted') }}";
         } else if (data.status === 'failed') {
             statusIcon = '✗';
-            statusText = data.error || 'Extraction failed';
+            statusText = data.error || "{{ _('Extraction failed') }}";
         }
 
         entry.innerHTML = `
@@ -852,7 +852,7 @@ async function downloadAllNew() {
         const queueResult = await queueResponse.json();
 
         if (queueResult.queued === 0) {
-            alert('No new articles to download. All available articles have already been downloaded.');
+            alert("{{ _('No new articles to download. All available articles have already been downloaded.') }}");
             btn.innerHTML = originalContent;
             btn.disabled = false;
             return;
@@ -914,11 +914,11 @@ async function downloadAllNew() {
             const log = document.getElementById('ldr-download-log');
             const entry = document.createElement('div');
             entry.className = 'ldr-download-entry ldr-cancelled';
-            entry.innerHTML = '<strong>Download cancelled by user</strong>';
+            entry.innerHTML = '<strong>' + "{{ _('Download cancelled by user') }}" + '</strong>';
             log.appendChild(entry);
         } else {
             console.error('Failed to start downloads:', error);
-            alert('Failed to start downloads. Please try again.');
+            alert("{{ _('Failed to start downloads. Please try again.') }}");
         }
         btn.innerHTML = originalContent;
         btn.disabled = false;
@@ -955,14 +955,14 @@ function updateDownloadProgress(data) {
 
         if (data.status === 'success') {
             statusIcon = '✓';
-            statusText = 'Downloaded';
+            statusText = "{{ _('Downloaded') }}";
         } else if (data.status === 'skipped') {
             statusIcon = '⊘';
             // Use the error field which contains the skip reason
-            statusText = data.error || data.skip_reason || 'Skipped';
+            statusText = data.error || data.skip_reason || "{{ _('Skipped') }}";
         } else if (data.status === 'failed') {
             statusIcon = '✗';
-            statusText = data.error || data.skip_reason || 'Failed';
+            statusText = data.error || data.skip_reason || "{{ _('Failed') }}";
         }
 
         entry.innerHTML = `
@@ -1036,7 +1036,7 @@ async function performSync() {
     btn.disabled = true;
     document.querySelector('.ldr-sync-explanation').style.display = 'none';
     document.getElementById('sync-progress').style.display = 'block';
-    document.getElementById('sync-status').textContent = 'Checking files in your library...';
+    document.getElementById('sync-status').textContent = "{{ _('Checking files in your library...') }}";
 
     try {
         // Get CSRF token
@@ -1084,7 +1084,7 @@ async function performSync() {
     } catch (error) {
         console.error('Sync failed:', error);
         document.getElementById('sync-progress').style.display = 'none';
-        document.getElementById('sync-status').textContent = 'Sync failed. Please try again.';
+        document.getElementById('sync-status').textContent = "{{ _('Sync failed. Please try again.') }}";
         alert('Failed to sync library. Please check your connection and try again.');
 
         // Reset button

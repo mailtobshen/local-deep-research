@@ -1,11 +1,11 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="hashed">
+<html lang="{{ current_language }}" data-theme="hashed">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <meta name="user-id" content="{{ session.username|default('anonymous', true) }}">
-    <title>{% block title %}Deep Research System{% endblock %}</title>
+    <title>{% block title %}{{ _("Deep Research System") }}{% endblock %}</title>
     <link rel="icon" type="image/png" href="/static/favicon.png">
 
     <!-- FOUC Prevention: Apply theme before any rendering -->
@@ -90,7 +90,7 @@
 </head>
 <body>
     <!-- Skip to content link for keyboard/screen reader users -->
-    <a href="#main-content" class="ldr-skip-link">Skip to main content</a>
+    <a href="#main-content" class="ldr-skip-link">{{ _("Skip to main content") }}</a>
 
     <div class="ldr-app-container">
         <!-- Sidebar -->
@@ -101,11 +101,20 @@
             {% if session.username %}
             <div class="ldr-top-bar">
                 <div class="ldr-top-bar-left">
+                    <!-- Language dropdown selector -->
+                    <div class="ldr-language-selector">
+                        <i aria-hidden="true" class="fas fa-globe ldr-language-icon"></i>
+                        <select id="language-dropdown" class="ldr-language-dropdown"
+                                title="{{ _("Select language") }}" aria-label="{{ _("Select interface language") }}">
+                            <option value="zh" {% if current_language == "zh" %}selected{% endif %}>{{ _("简体中文") }}</option>
+                            <option value="en" {% if current_language == "en" %}selected{% endif %}>{{ _("English") }}</option>
+                        </select>
+                    </div>
                     <!-- Theme dropdown selector -->
                     <div class="ldr-theme-selector">
                         <i aria-hidden="true" class="fas fa-palette ldr-theme-icon"></i>
                         <select id="theme-dropdown" class="ldr-theme-dropdown"
-                                title="Select theme" aria-label="Select color theme">
+                                title="{{ _("Select theme") }}" aria-label="{{ _("Select color theme") }}">
                             <!-- Options populated by theme.js -->
                         </select>
                     </div>
@@ -118,7 +127,7 @@
                         <form action="{{ url_for('auth.logout') }}" method="POST" class="ldr-logout-form" id="logout-form" style="display: inline;">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
                             <a href="#" class="ldr-logout-btn" onclick="event.preventDefault(); document.getElementById('logout-form').submit(); return false;">
-                                <i aria-hidden="true" class="fas fa-sign-out-alt"></i> Logout
+                                <i aria-hidden="true" class="fas fa-sign-out-alt"></i> {{ _("Logout") }}
                             </a>
                         </form>
                     </div>
@@ -168,11 +177,21 @@
 
     <!-- All vendor libraries are now loaded through Vite in the <head> section -->
 
+    <!-- Inline translations for synchronous frontend i18n (avoids fetch delay) -->
+    <script>
+        window.__TRANSLATIONS__ = {{ translations_dict | tojson }};
+        window.__CURRENT_LANGUAGE__ = {{ current_language | tojson }};
+    </script>
+
     <!-- Core JS
          IMPORTANT: ui.js defines the global `escapeHtmlFallback` constant.
          All subsequent scripts can reference it directly. Do NOT redeclare
          escapeHtmlFallback at top-level in any other script — it will cause
          a SyntaxError and crash the page. See the comment in ui.js. -->
+    <script defer src="/static/js/services/i18n.js"></script>
+    <script defer src="/static/js/components/language_switcher.js"></script>
+
+    <!-- Core JS -->
     <script defer src="/static/js/services/theme.js"></script>
     <script defer src="/static/js/services/formatting.js"></script>
     <script defer src="/static/js/services/ui.js"></script>

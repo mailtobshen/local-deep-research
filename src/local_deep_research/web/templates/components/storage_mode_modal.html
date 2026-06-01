@@ -2,11 +2,11 @@
 <div id="storage-mode-modal" class="modal" style="display: none;">
     <div class="modal-content" style="max-width: 650px;">
         <div class="modal-header">
-            <h2><i aria-hidden="true" class="fas fa-database"></i> PDF Storage Mode</h2>
+            <h2><i aria-hidden="true" class="fas fa-database"></i> {{ _("PDF Storage Mode") }}</h2>
             <button class="ldr-close" onclick="closeStorageModeModal()">&times;</button>
         </div>
         <div class="modal-body">
-            <p style="margin-bottom: 20px;">Choose where to store downloaded PDFs:</p>
+            <p style="margin-bottom: 20px;">{{ _("Choose where to store downloaded PDFs:") }}</p>
 
             <div class="ldr-storage-mode-options">
                 <label class="ldr-storage-mode-option" data-mode="database">
@@ -14,10 +14,10 @@
                     <div class="ldr-option-content">
                         <div class="ldr-option-header">
                             <i aria-hidden="true" class="fas fa-database ldr-icon-success"></i>
-                            <strong>Database (Encrypted)</strong>
-                            <span class="ldr-badge ldr-badge-success">Recommended</span>
+                            <strong>{{ _("Database (Encrypted)") }}</strong>
+                            <span class="ldr-badge ldr-badge-success">{{ _("Recommended") }}</span>
                         </div>
-                        <p class="ldr-option-description">PDFs stored encrypted in your personal database. Secure and portable, but increases database size.</p>
+                        <p class="ldr-option-description">{{ _("PDFs stored encrypted in your personal database. Secure and portable, but increases database size.") }}</p>
                     </div>
                 </label>
 
@@ -26,11 +26,11 @@
                     <div class="ldr-option-content">
                         <div class="ldr-option-header">
                             <i aria-hidden="true" class="fas fa-hdd ldr-icon-warning"></i>
-                            <strong>Filesystem (Unencrypted)</strong>
+                            <strong>{{ _('Filesystem (Unencrypted)') }}</strong>
                         </div>
-                        <p class="ldr-option-description">PDFs saved to disk unencrypted. Faster for large files, compatible with external tools.</p>
+                        <p class="ldr-option-description">{{ _("PDFs saved to disk unencrypted. Faster for large files, compatible with external tools.") }}</p>
                         <div class="ldr-option-warning">
-                            <i aria-hidden="true" class="fas fa-exclamation-triangle"></i> Files visible to anyone with disk access
+                            <i aria-hidden="true" class="fas fa-exclamation-triangle"></i> {{ _("Files visible to anyone with disk access") }}
                         </div>
                     </div>
                 </label>
@@ -40,18 +40,18 @@
                     <div class="ldr-option-content">
                         <div class="ldr-option-header">
                             <i aria-hidden="true" class="fas fa-file-alt ldr-icon-secondary"></i>
-                            <strong>Text Only</strong>
+                            <strong>{{ _("Text Only") }}</strong>
                         </div>
-                        <p class="ldr-option-description">Only extracted text stored. Smallest footprint, re-download PDFs when needed.</p>
+                        <p class="ldr-option-description">{{ _("Only extracted text stored. Smallest footprint, re-download PDFs when needed.") }}</p>
                     </div>
                 </label>
             </div>
         </div>
         <div class="modal-footer">
             <button id="storage-mode-confirm-btn" class="btn btn-primary" onclick="confirmStorageModeChange()">
-                <i aria-hidden="true" class="fas fa-check"></i> Save
+                <i aria-hidden="true" class="fas fa-check"></i> {{ _("Save") }}
             </button>
-            <button class="btn btn-secondary" onclick="closeStorageModeModal()">Cancel</button>
+            <button class="btn btn-secondary" onclick="closeStorageModeModal()">{{ _("Cancel") }}</button>
         </div>
     </div>
 </div>
@@ -213,13 +213,13 @@ function closeStorageModeModal() {
 async function confirmStorageModeChange() {
     const selectedMode = document.querySelector('input[name="storage_mode"]:checked')?.value;
     if (!selectedMode) {
-        alert('Please select a storage mode');
+        alert("{{ _('Please select a storage mode') }}");
         return;
     }
 
     const btn = document.getElementById('storage-mode-confirm-btn');
     const originalContent = btn.innerHTML;
-    btn.innerHTML = '<i aria-hidden="true" class="fas fa-spinner fa-spin"></i> Saving...';
+    btn.innerHTML = '<i aria-hidden="true" class="fas fa-spinner fa-spin"></i> ' + "{{ _('Saving...') }}";
     btn.disabled = true;
 
     try {
@@ -246,12 +246,12 @@ async function confirmStorageModeChange() {
             closeStorageModeModal();
             location.reload();
         } else {
-            throw new Error(result.message || 'Failed to update setting');
+            throw new Error(result.message || "{{ _('Failed to update setting') }}");
         }
 
     } catch (error) {
         console.error('Failed to update storage mode:', error);
-        alert('Failed to update PDF storage mode. Please try again or use the Settings page.');
+        alert("{{ _('Failed to update PDF storage mode. Please try again or use the Settings page.') }}");
         btn.innerHTML = originalContent;
         btn.disabled = false;
     }

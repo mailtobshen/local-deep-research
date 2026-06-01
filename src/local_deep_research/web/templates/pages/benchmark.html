@@ -4,7 +4,7 @@
 
 {% set active_page = 'benchmark' %}
 
-{% block title %}Benchmark Configuration - Deep Research System{% endblock %}
+{% block title %}{{ _("Benchmark Configuration - Deep Research System") }}{% endblock %}
 
 {% block extra_head %}
 <meta name="csrf-token" content="{{ csrf_token() }}">
@@ -15,31 +15,31 @@
 {% block content %}
 <div class="ldr-page active" id="benchmark">
     <div class="ldr-page-header">
-        <h1>Benchmark Configuration</h1>
-        <p class="ldr-page-subtitle">Test and optimize your search configurations</p>
+        <h1>{{ _("Benchmark Configuration") }}</h1>
+        <p class="ldr-page-subtitle">{{ _("Test and optimize your search configurations") }}</p>
         <div style="margin-top: 10px;">
             <a href="{{ url_for('benchmark.results') }}" class="btn btn-secondary">
-                <i aria-hidden="true" class="fas fa-chart-line"></i> View Past Results
+                <i aria-hidden="true" class="fas fa-chart-line"></i> {{ _("View Past Results") }}
             </a>
         </div>
     </div>
 
     <!-- Benchmark Usage Guidelines -->
-    {% call help_panel('benchmark-guidelines', 'Benchmark Guidelines', icon='info-circle', collapsed=true) %}
-    <p><strong>Purpose:</strong> Benchmarks help you evaluate if your configuration works well, not for research papers or production use.</p>
-    <p><strong>Responsible Usage:</strong> Use reasonable example counts to avoid overwhelming search engines. Default of 75 examples is good for testing.</p>
-    <p><strong>Requirements:</strong> Benchmarks require an evaluation model for grading. Configure in Evaluation Settings below. Default: OpenRouter with Claude 3.7 Sonnet.</p>
+    {% call help_panel('benchmark-guidelines', _('Benchmark Guidelines'), icon='info-circle', collapsed=true) %}
+    <p><strong>{{ _("Purpose:") }}</strong> {{ _("Benchmarks help you evaluate if your configuration works well, not for research papers or production use.") }}</p>
+    <p><strong>{{ _("Responsible Usage:") }}</strong> {{ _("Use reasonable example counts to avoid overwhelming search engines. Default of 75 examples is good for testing.") }}</p>
+    <p><strong>{{ _("Requirements:") }}</strong> {{ _("Benchmarks require an evaluation model for grading. Configure in Evaluation Settings below. Default: OpenRouter with Claude 3.7 Sonnet.") }}</p>
 
-    <h4 style="margin-top: 1rem; margin-bottom: 0.5rem;"><i aria-hidden="true" class="fas fa-search"></i> Search Engine Recommendations</h4>
+    <h4 style="margin-top: 1rem; margin-bottom: 0.5rem;"><i aria-hidden="true" class="fas fa-search"></i> {{ _("Search Engine Recommendations") }}</h4>
     <ul style="margin: 0; padding-left: 20px;">
-        <li><strong class="ldr-text-success">Tavily:</strong> Recommended - AI-optimized, reliable results</li>
-        <li><strong class="ldr-text-info">Brave:</strong> Independent but lower performance</li>
-        <li><strong class="ldr-text-warning">SearXNG:</strong> Aggregates multiple sources - shared resource, use moderate counts</li>
-        <li><strong class="ldr-text-error">Specialized (ArXiv, PubMed, Wikipedia):</strong> Not useful for general SimpleQA</li>
+        <li><strong class="ldr-text-success">{{ _("Tavily:") }}</strong> {{ _("Recommended - AI-optimized, reliable results") }}</li>
+        <li><strong class="ldr-text-info">{{ _("Brave:") }}</strong> {{ _("Independent but lower performance") }}</li>
+        <li><strong class="ldr-text-warning">{{ _("SearXNG:") }}</strong> {{ _("Aggregates multiple sources - shared resource, use moderate counts") }}</li>
+        <li><strong class="ldr-text-error">{{ _("Specialized (ArXiv, PubMed, Wikipedia):") }}</strong> {{ _("Not useful for general SimpleQA") }}</li>
     </ul>
-    {{ help_tip("<strong>Shared Resources:</strong> When using SearXNG, reduce iterations and questions per iteration to minimize load.") }}
+    {{ help_tip(_("<strong>Shared Resources:</strong> When using SearXNG, reduce iterations and questions per iteration to minimize load.")) }}
     <div id="context-window-warning" class="ldr-warning-notice" style="display: none;">
-        <strong class="ldr-text-warning">⚠️ Context Window:</strong> "Focused Iteration" strategy requires 15k+ token context window.
+        <strong class="ldr-text-warning">{{ _("⚠️ Context Window:") }}</strong> {{ _("\"Focused Iteration\" strategy requires 15k+ token context window.") }}
     </div>
     {% endcall %}
 
@@ -52,37 +52,36 @@
 
                 <!-- Benchmark Name -->
                 <div class="ldr-form-group">
-                    <label for="run_name">Benchmark Name (Optional)</label>
+                    <label for="run_name">{{ _("Benchmark Name (Optional)") }}</label>
                     <input type="text" id="run_name" name="run_name"
-                           class="ldr-form-control" placeholder="e.g., 'Test
-                           new search strategy'">
-                    <span class="ldr-input-help">Give your benchmark run a descriptive name</span>
+                           class="ldr-form-control" placeholder="{{ _("e.g., 'Test new search strategy'") }}">
+                    <span class="ldr-input-help">{{ _("Give your benchmark run a descriptive name") }}</span>
                 </div>
 
                 <!-- Dataset Configuration -->
                 <div class="ldr-form-group">
                     <fieldset>
-                        <legend>Dataset Selection</legend>
+                        <legend>{{ _("Dataset Selection") }}</legend>
 
                         <!-- SimpleQA Dataset -->
                         <div class="ldr-dataset-config">
                             <div class="ldr-dataset-header">
                                 <div>
-                                    <h3>SimpleQA</h3>
-                                    <p>Fact-based questions with clear answers</p>
+                                    <h3>{{ _("SimpleQA") }}</h3>
+                                    <p>{{ _("Fact-based questions with clear answers") }}</p>
                                 </div>
                                 <div class="ldr-dataset-toggle">
                                     <input type="checkbox" id="simpleqa_enabled" checked>
-                                    <label for="simpleqa_enabled">Enable</label>
+                                    <label for="simpleqa_enabled">{{ _("Enable") }}</label>
                                 </div>
                             </div>
                             <div class="ldr-form-group">
-                                <label for="simpleqa_count">Number of Examples</label>
+                                <label for="simpleqa_count">{{ _("Number of Examples") }}</label>
                                 <input type="number" id="simpleqa_count"
                                        name="simpleqa_count" value="50"
                                        min="1"
                                        class="ldr-form-control">
-                                <span class="ldr-input-help">Recommended: 50 examples provides good balance for configuration testing</span>
+                                <span class="ldr-input-help">{{ _("Recommended: 50 examples provides good balance for configuration testing") }}</span>
                             </div>
                         </div>
 
@@ -90,24 +89,24 @@
                         <div class="ldr-dataset-config ldr-dataset-success">
                             <div class="ldr-dataset-header">
                                 <div>
-                                    <h3>xbench-DeepSearch</h3>
-                                    <p>100 deep research questions requiring multi-step information seeking</p>
+                                    <h3>{{ _("xbench-DeepSearch") }}</h3>
+                                    <p>{{ _("100 deep research questions requiring multi-step information seeking") }}</p>
                                     <div class="ldr-dataset-success-notice">
-                                        <i aria-hidden="true" class="fas fa-info-circle"></i> <strong>New:</strong> Advanced benchmark for testing deep research capabilities
+                                        <i aria-hidden="true" class="fas fa-info-circle"></i> <strong>{{ _("New:") }}</strong> {{ _("Advanced benchmark for testing deep research capabilities") }}
                                     </div>
                                 </div>
                                 <div class="ldr-dataset-toggle">
                                     <input type="checkbox" id="xbench_deepsearch_enabled">
-                                    <label for="xbench_deepsearch_enabled">Enable</label>
+                                    <label for="xbench_deepsearch_enabled">{{ _("Enable") }}</label>
                                 </div>
                             </div>
                             <div class="form-group">
-                                <label for="xbench_deepsearch_count">Number of Examples</label>
+                                <label for="xbench_deepsearch_count">{{ _("Number of Examples") }}</label>
                                 <input type="number" id="xbench_deepsearch_count"
                                        name="xbench_deepsearch_count" value="10"
                                        min="1"
                                        class="ldr-form-control" disabled>
-                                <span class="ldr-input-help">100 challenging research questions available</span>
+                                <span class="ldr-input-help">{{ _("100 challenging research questions available") }}</span>
                             </div>
                         </div>
 
@@ -116,24 +115,24 @@
                             <div class="ldr-dataset-header">
                                 <div>
                                     <h3>BrowseComp</h3>
-                                    <p>Complex browsing and comparison tasks</p>
+                                    <p>{{ _("Complex browsing and comparison tasks") }}</p>
                                     <div class="ldr-dataset-danger-notice">
-                                        <i aria-hidden="true" class="fas fa-exclamation-triangle"></i> <strong>Poor Performance Warning:</strong> We currently achieve close to 0% accuracy on BrowseComp.
-                                        <br><strong>For testing only:</strong> Intended for curiosity testing to see what this benchmark is about.
+                                        <i aria-hidden="true" class="fas fa-exclamation-triangle"></i> <strong>{{ _("Poor Performance Warning:") }}</strong> {{ _("We currently achieve close to 0% accuracy on BrowseComp.") }}
+                                        <br><strong>{{ _("For testing only:") }}</strong> {{ _("Intended for curiosity testing to see what this benchmark is about.") }}
                                     </div>
                                 </div>
                                 <div class="ldr-dataset-toggle">
                                     <input type="checkbox" id="browsecomp_enabled">
-                                    <label for="browsecomp_enabled">Enable (Testing Only)</label>
+                                    <label for="browsecomp_enabled">{{ _("Enable (Testing Only)") }}</label>
                                 </div>
                             </div>
                             <div class="ldr-form-group">
-                                <label for="browsecomp_count">Number of Examples</label>
+                                <label for="browsecomp_count">{{ _("Number of Examples") }}</label>
                                 <input type="number" id="browsecomp_count"
                                        name="browsecomp_count" value="0"
                                        min="0"
                                        class="ldr-form-control" disabled>
-                                <span class="ldr-input-help ldr-text-error">Warning: Expect poor performance - for curiosity testing only</span>
+                                <span class="ldr-input-help ldr-text-error">{{ _("Warning: Expect poor performance - for curiosity testing only") }}</span>
                             </div>
                         </div>
                     </fieldset>
@@ -142,44 +141,44 @@
                 <!-- Current Database Settings -->
                 <div class="ldr-form-group">
                     <fieldset>
-                        <legend>Current Configuration</legend>
+                        <legend>{{ _("Current Configuration") }}</legend>
                         <div class="ldr-dataset-config" style="background: var(--bg-secondary); border: 1px solid var(--border-color);">
                             <div class="ldr-dataset-header">
                                 <div>
-                                    <h3>Active Database Settings</h3>
-                                    <p>Benchmark will use all settings from your database configuration</p>
+                                    <h3>{{ _("Active Database Settings") }}</h3>
+                                    <p>{{ _("Benchmark will use all settings from your database configuration") }}</p>
                                 </div>
                             </div>
 
                             <div id="current-settings-display" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; margin-bottom: 15px;">
                                 <div class="ldr-metric-card" style="text-align: left; padding: 10px;">
-                                    <div class="ldr-metric-label">Provider</div>
-                                    <div class="ldr-metric-value" style="font-size: 0.9rem;" id="current-provider">Loading...</div>
+                                    <div class="ldr-metric-label">{{ _("Provider") }}</div>
+                                    <div class="ldr-metric-value" style="font-size: 0.9rem;" id="current-provider">{{ _("Loading...") }}</div>
                                 </div>
                                 <div class="ldr-metric-card" style="text-align: left; padding: 10px;">
-                                    <div class="ldr-metric-label">Model</div>
-                                    <div class="ldr-metric-value" style="font-size: 0.9rem;" id="current-model">Loading...</div>
+                                    <div class="ldr-metric-label">{{ _("Model") }}</div>
+                                    <div class="ldr-metric-value" style="font-size: 0.9rem;" id="current-model">{{ _("Loading...") }}</div>
                                 </div>
                                 <div class="ldr-metric-card" style="text-align: left; padding: 10px;">
-                                    <div class="ldr-metric-label">Search Tool</div>
-                                    <div class="ldr-metric-value" style="font-size: 0.9rem;" id="current-search-tool">Loading...</div>
+                                    <div class="ldr-metric-label">{{ _("Search Tool") }}</div>
+                                    <div class="ldr-metric-value" style="font-size: 0.9rem;" id="current-search-tool">{{ _("Loading...") }}</div>
                                 </div>
                                 <div class="ldr-metric-card" style="text-align: left; padding: 10px;">
-                                    <div class="ldr-metric-label">Iterations</div>
-                                    <div class="ldr-metric-value" style="font-size: 0.9rem;" id="current-iterations">Loading...</div>
+                                    <div class="ldr-metric-label">{{ _("Iterations") }}</div>
+                                    <div class="ldr-metric-value" style="font-size: 0.9rem;" id="current-iterations">{{ _("Loading...") }}</div>
                                 </div>
                                 <div class="ldr-metric-card" style="text-align: left; padding: 10px;">
-                                    <div class="ldr-metric-label">Questions/Iter</div>
-                                    <div class="ldr-metric-value" style="font-size: 0.9rem;" id="current-questions">Loading...</div>
+                                    <div class="ldr-metric-label">{{ _("Questions/Iter") }}</div>
+                                    <div class="ldr-metric-value" style="font-size: 0.9rem;" id="current-questions">{{ _("Loading...") }}</div>
                                 </div>
                                 <div class="ldr-metric-card" style="text-align: left; padding: 10px;">
-                                    <div class="ldr-metric-label">Strategy</div>
-                                    <div class="ldr-metric-value" style="font-size: 0.9rem;" id="current-strategy">Loading...</div>
+                                    <div class="ldr-metric-label">{{ _("Strategy") }}</div>
+                                    <div class="ldr-metric-value" style="font-size: 0.9rem;" id="current-strategy">{{ _("Loading...") }}</div>
                                 </div>
                             </div>
 
                             <div style="font-size: 0.9rem; color: var(--text-muted); text-align: center;">
-                                <i aria-hidden="true" class="fas fa-info-circle"></i> To change any settings, go to <a href="/" target="_blank" style="color: var(--primary-color);">Settings Dashboard</a>
+                                <i aria-hidden="true" class="fas fa-info-circle"></i> {{ _("To change any settings, go to") }} <a href="/" target="_blank" style="color: var(--primary-color);">{{ _("Settings Dashboard") }}</a>
                             </div>
                         </div>
                     </fieldset>
@@ -188,25 +187,25 @@
                 <!-- Evaluation Model Settings -->
                 <div class="ldr-form-group">
                     <fieldset>
-                        <legend>Evaluation Model Settings</legend>
+                        <legend>{{ _("Evaluation Model Settings") }}</legend>
                         <div class="ldr-dataset-config" style="background: var(--bg-secondary); border: 1px solid var(--border-color);">
                             <div class="ldr-dataset-header">
                                 <div>
-                                    <h3>Benchmark Evaluation Configuration</h3>
-                                    <p>Configure the model used to grade benchmark results</p>
+                                    <h3>{{ _("Benchmark Evaluation Configuration") }}</h3>
+                                    <p>{{ _("Configure the model used to grade benchmark results") }}</p>
                                 </div>
                             </div>
                     <div class="ldr-form-row">
                         <!-- Evaluation Provider Selection -->
                         <div class="ldr-form-group ldr-half">
-                            <label for="evaluation_provider">Evaluation Provider</label>
+                            <label for="evaluation_provider">{{ _("Evaluation Provider") }}</label>
                             <select id="evaluation_provider"
                                     name="evaluation_provider"
                                     class="ldr-form-control"
                                     data-initial-value="{{ eval_settings.evaluation_provider }}">
-                                <option value="">Loading providers...</option>
+                                <option value="">{{ _("Loading providers...") }}</option>
                             </select>
-                            <span class="ldr-input-help">Provider for the evaluation model</span>
+                            <span class="ldr-input-help">{{ _("Provider for the evaluation model") }}</span>
                         </div>
 
                         <!-- Evaluation Model Selection -->
@@ -214,12 +213,12 @@
                             {{ render_dropdown(
                                 input_id="evaluation_model",
                                 dropdown_id="evaluation-model-dropdown",
-                                placeholder="Enter or select evaluation model",
-                                label="Evaluation Model",
-                                help_text="Model to grade benchmark results",
+                                placeholder=_("Enter or select evaluation model"),
+                                label=_("Evaluation Model"),
+                                help_text=_("Model to grade benchmark results"),
                                 allow_custom=true,
                                 show_refresh=true,
-                                refresh_aria_label="Refresh evaluation model list",
+                                refresh_aria_label=_("Refresh evaluation model list"),
                                 data_initial_value=eval_settings.evaluation_model
                             ) }}
                         </div>
@@ -228,31 +227,31 @@
                     <div class="ldr-form-row">
                         <!-- Evaluation Endpoint URL -->
                         <div class="ldr-form-group ldr-half">
-                            <label for="evaluation_endpoint_url">Endpoint URL</label>
+                            <label for="evaluation_endpoint_url">{{ _("Endpoint URL") }}</label>
                             <input type="text" id="evaluation_endpoint_url"
                                    name="evaluation_endpoint_url"
                                    class="ldr-form-control"
                                    placeholder="https://openrouter.ai/api/v1" value="{{ eval_settings.evaluation_endpoint_url }}">
-                            <span class="ldr-input-help">API endpoint for evaluation model</span>
+                            <span class="ldr-input-help">{{ _("API endpoint for evaluation model") }}</span>
                         </div>
 
                         <!-- Evaluation Temperature -->
                         <div class="ldr-form-group ldr-half">
-                            <label for="evaluation_temperature">Temperature</label>
+                            <label for="evaluation_temperature">{{ _("Temperature") }}</label>
                             <input type="range" id="evaluation_temperature"
                                    name="evaluation_temperature"
                                    class="ldr-form-control" min="0" max="1"
                                    step="0.1" value="{{ eval_settings.evaluation_temperature }}">
-                            <span class="ldr-input-help">0 recommended for consistent evaluation</span>
+                            <span class="ldr-input-help">{{ _("0 recommended for consistent evaluation") }}</span>
                         </div>
                     </div>
 
                             <div class="ldr-alert ldr-alert-info" style="margin-top: 15px;">
                                 <i aria-hidden="true" class="fas fa-info-circle"></i>
-                                <strong>Evaluation Model Selection:</strong>
-                                For accurate benchmark grading, use flagship models from major providers like Claude Sonnet series or GPT-4 class models.
-                                Local models and smaller cloud models may produce inconsistent evaluations, affecting benchmark accuracy scores.
-                                However, preliminary tests indicate that local models might be adequate for performance evaluation if highest grade standards are not required.
+                                <strong>{{ _("Evaluation Model Selection:") }}</strong>
+                                {{ _("For accurate benchmark grading, use flagship models from major providers like Claude Sonnet series or GPT-4 class models.") }}
+                                {{ _("Local models and smaller cloud models may produce inconsistent evaluations, affecting benchmark accuracy scores.") }}
+                                {{ _("However, preliminary tests indicate that local models might be adequate for performance evaluation if highest grade standards are not required.") }}
                             </div>
                         </div>
                     </fieldset>
@@ -262,7 +261,7 @@
                 <div class="ldr-form-group" id="search-engine-warning" style="display: none;">
                     <div class="ldr-alert ldr-alert-danger">
                         <i aria-hidden="true" class="fas fa-exclamation-triangle"></i>
-                        <strong>Search Engine Notice:</strong>
+                        <strong>{{ _("Search Engine Notice:") }}</strong>
                         <span id="search-warning-text"></span>
                     </div>
                 </div>
@@ -271,9 +270,9 @@
                 <div class="ldr-form-group">
                     <div id="config-summary" class="ldr-metric-card">
                         <div class="ldr-metric-value" id="total-examples">50</div>
-                        <div class="ldr-metric-label">Total Examples</div>
+                        <div class="ldr-metric-label">{{ _("Total Examples") }}</div>
                         <div style="margin-top: 10px; font-size: 0.9rem; color: var(--text-muted);">
-                            Estimated time: <span id="estimated-time-preview">40-60 minutes</span>
+                            {{ _("Estimated time:") }} <span id="estimated-time-preview">{{ _("40-60 minutes") }}</span>
                         </div>
                     </div>
                 </div>
@@ -281,10 +280,10 @@
                 <!-- Action Buttons -->
                 <div class="ldr-form-actions">
                     <button type="button" id="validate-config-btn" class="btn btn-secondary">
-                        <i aria-hidden="true" class="fas fa-check-circle"></i> Validate Configuration
+                        <i aria-hidden="true" class="fas fa-check-circle"></i> {{ _("Validate Configuration") }}
                     </button>
                     <button type="submit" id="start-benchmark-btn" class="btn btn-primary">
-                        <i aria-hidden="true" class="fas fa-play"></i> Start Benchmark
+                        <i aria-hidden="true" class="fas fa-play"></i> {{ _("Start Benchmark") }}
                     </button>
                 </div>
             </form>
@@ -297,7 +296,7 @@
             <div class="ldr-card-content">
                 <div class="ldr-progress-info">
                     <div class="ldr-current-query-container">
-                        <div class="ldr-current-query-label">Current Benchmark:</div>
+                        <div class="ldr-current-query-label">{{ _("Current Benchmark:") }}</div>
                         <div id="current-benchmark" class="ldr-current-query"></div>
                     </div>
                     <div class="ldr-progress-container">
@@ -307,69 +306,69 @@
                         <div id="progress-percentage" class="ldr-progress-percentage">0%</div>
                     </div>
                     <div class="ldr-status-container">
-                        <div class="ldr-status-label">Status:</div>
-                        <div id="status-text" class="ldr-status-indicator">Initializing</div>
+                        <div class="ldr-status-label">{{ _("Status:") }}</div>
+                        <div id="status-text" class="ldr-status-indicator">{{ _("Initializing") }}</div>
                     </div>
                     <div class="ldr-task-container">
-                        <div class="ldr-task-label">Current Task:</div>
-                        <div id="current-task" class="ldr-task-text">Starting benchmark...</div>
+                        <div class="ldr-task-label">{{ _("Current Task:") }}</div>
+                        <div id="current-task" class="ldr-task-text">{{ _("Starting benchmark...") }}</div>
                     </div>
 
                     <!-- Benchmark-specific metrics -->
                     <div class="ldr-metrics-grid">
                         <div class="ldr-metric-card">
                             <div class="ldr-metric-value" id="overall-accuracy">--%</div>
-                            <div class="ldr-metric-label">Overall Accuracy</div>
+                            <div class="ldr-metric-label">{{ _("Overall Accuracy") }}</div>
                             <div class="ldr-metric-subtitle" id="accuracy-confidence" style="font-size: 0.8rem; color: var(--text-muted); margin-top: 2px;">--</div>
                         </div>
                         <div class="ldr-metric-card">
                             <div class="ldr-metric-value" id="estimated-time">--</div>
-                            <div class="ldr-metric-label">Est. Time Left</div>
+                            <div class="ldr-metric-label">{{ _("Est. Time Left") }}</div>
                             <div class="ldr-metric-subtitle" id="elapsed-time" style="font-size: 0.8rem; color: var(--text-muted); margin-top: 2px;">--</div>
                         </div>
                         <div class="ldr-metric-card">
                             <div class="ldr-metric-value" id="completed-count">0</div>
-                            <div class="ldr-metric-label">Completed</div>
+                            <div class="ldr-metric-label">{{ _("Completed") }}</div>
                         </div>
                         <div class="ldr-metric-card">
                             <div class="ldr-metric-value" id="processing-rate">--</div>
-                            <div class="ldr-metric-label">Avg Time/Example</div>
+                            <div class="ldr-metric-label">{{ _("Avg Time/Example") }}</div>
                         </div>
                     </div>
 
                     <!-- SearXNG Rate Limiting Warning in Progress -->
                     <div id="rate-limit-warning" class="ldr-alert ldr-alert-warning" style="margin-top: 15px; margin-bottom: 15px; display: none;">
                         <i aria-hidden="true" class="fas fa-exclamation-triangle"></i>
-                        <strong>Rate Limiting Detected!</strong> SearXNG is blocking requests due to too many parallel searches.
-                        <br><small><strong>Quick fix:</strong> <code>docker restart searxng</code> or wait 5-10 minutes for limits to reset.</small>
-                        <br><small><strong>Prevention:</strong> Reduce iterations/questions per iteration in Settings.</small>
+                        <strong>{{ _("Rate Limiting Detected!") }}</strong> {{ _("SearXNG is blocking requests due to too many parallel searches.") }}
+                        <br><small><strong>{{ _("Quick fix:") }}</strong> <code>{{ _("docker restart searxng") }}</code> {{ _("or wait 5-10 minutes for limits to reset.") }}</small>
+                        <br><small><strong>{{ _("Prevention:") }}</strong> {{ _("Reduce iterations/questions per iteration in Settings.") }}</small>
                     </div>
 
                     <div id="dataset-accuracies">
                         <div class="ldr-dataset-accuracy">
-                            <span>SimpleQA: <strong id="simpleqa-accuracy">--%</strong></span>
-                            <span>BrowseComp: <strong id="browsecomp-accuracy">--%</strong></span>
+                            <span>{{ _("SimpleQA:") }} <strong id="simpleqa-accuracy">--%</strong></span>
+                            <span>{{ _("BrowseComp:") }} <strong id="browsecomp-accuracy">--%</strong></span>
                         </div>
                     </div>
 
                     <!-- Benchmark Control Actions -->
                     <div class="ldr-progress-actions" style="margin: 20px 0; text-align: center;">
                         <button id="cancel-benchmark-btn" class="btn ldr-btn-outline ldr-terminate-btn">
-                            <i aria-hidden="true" class="fas fa-stop-circle"></i> Cancel Benchmark
+                            <i aria-hidden="true" class="fas fa-stop-circle"></i> {{ _("Cancel Benchmark") }}
                         </button>
                         <button id="view-results-btn" class="btn btn-primary" style="display: none;">
-                            <i aria-hidden="true" class="fas fa-eye"></i> View Results
+                            <i aria-hidden="true" class="fas fa-eye"></i> {{ _("View Results") }}
                         </button>
                     </div>
 
                     <!-- Current Question Display -->
                     <div id="current-question-section" class="ldr-benchmark-section" style="margin-top: 20px;">
                         <h4 style="color: var(--primary-color); margin-bottom: 15px;">
-                            <i aria-hidden="true" class="fas fa-question-circle"></i> Current Question
+                            <i aria-hidden="true" class="fas fa-question-circle"></i> {{ _("Current Question") }}
                         </h4>
                         <div id="current-question-card" class="ldr-question-card">
                             <div class="ldr-question-content">
-                                <div class="ldr-question-text" id="current-question-text">No question being processed...</div>
+                                <div class="ldr-question-text" id="current-question-text">{{ _("No question being processed...") }}</div>
                                 <div class="ldr-question-meta">
                                     <span class="ldr-dataset-badge" id="current-dataset">--</span>
                                     <span class="ldr-example-id" id="current-example-id">--</span>
@@ -384,34 +383,34 @@
                     <!-- Performance Charts -->
                     <div id="performance-charts-section" class="ldr-charts-section" style="display: none;">
                         <h4 style="color: var(--primary-color); margin-bottom: 15px;">
-                            <i aria-hidden="true" class="fas fa-chart-line"></i> Performance Analysis
+                            <i aria-hidden="true" class="fas fa-chart-line"></i> {{ _("Performance Analysis") }}
                         </h4>
                         <div class="ldr-charts-grid">
                             <div class="ldr-chart-container">
-                                <div class="ldr-chart-title">Accuracy Trend</div>
+                                <div class="ldr-chart-title">{{ _("Accuracy Trend") }}</div>
                                 <canvas id="accuracy-chart" class="ldr-chart-canvas"></canvas>
                             </div>
                             <div class="ldr-chart-container">
-                                <div class="ldr-chart-title">Processing Time per Example</div>
+                                <div class="ldr-chart-title">{{ _("Processing Time per Example") }}</div>
                                 <canvas id="timing-chart" class="ldr-chart-canvas"></canvas>
                             </div>
                         </div>
                         <div class="ldr-charts-grid" style="margin-top: 20px;">
                             <div class="ldr-chart-container">
-                                <div class="ldr-chart-title">Search Results Count</div>
+                                <div class="ldr-chart-title">{{ _("Search Results Count") }}</div>
                                 <canvas id="search-results-chart" class="ldr-chart-canvas"></canvas>
                             </div>
                             <div class="ldr-chart-container">
-                                <div class="ldr-chart-title">Search Quality Alert</div>
+                                <div class="ldr-chart-title">{{ _("Search Quality Alert") }}</div>
                                 <div id="search-quality-status" class="ldr-search-quality-status">
                                     <div id="search-status-icon" style="font-size: 2rem; margin-bottom: 10px;">
                                         <i aria-hidden="true" class="fas fa-search"></i>
                                     </div>
                                     <div id="search-status-text" style="font-size: 1.1rem; margin-bottom: 10px;">
-                                        Waiting for data...
+                                        {{ _("Waiting for data...") }}
                                     </div>
                                     <div id="search-status-details" class="ldr-search-status-details">
-                                        Search result monitoring will begin when benchmark starts
+                                        {{ _("Search result monitoring will begin when benchmark starts") }}
                                     </div>
                                 </div>
                             </div>
@@ -421,10 +420,10 @@
                     <!-- All Results Display -->
                     <div id="recent-results-section" class="ldr-benchmark-section" style="margin-top: 20px;">
                         <h4 style="color: var(--primary-color); margin-bottom: 15px;">
-                            <i aria-hidden="true" class="fas fa-history"></i> All Results
+                            <i aria-hidden="true" class="fas fa-history"></i> {{ _("All Results") }}
                         </h4>
                         <div id="recent-results-container">
-                            <div class="ldr-no-results">No results yet...</div>
+                            <div class="ldr-no-results">{{ _("No results yet...") }}</div>
                         </div>
                     </div>
                 </div>
@@ -466,28 +465,28 @@ let chartData = {
 const datasetConfigs = [
     {
         key: 'overall',
-        label: 'Overall Accuracy',
+        label: i18n.t('Overall Accuracy'),
         borderColor: '#4caf50',
         backgroundColor: 'rgba(76, 175, 80, 0.1)',
         fill: true
     },
     {
         key: 'simpleqa',
-        label: 'SimpleQA Accuracy',
+        label: i18n.t('SimpleQA Accuracy'),
         borderColor: '#2196f3',
         backgroundColor: 'rgba(33, 150, 243, 0.1)',
         fill: false
     },
     {
         key: 'browsecomp',
-        label: 'BrowseComp Accuracy',
+        label: i18n.t('BrowseComp Accuracy'),
         borderColor: '#ff9800',
         backgroundColor: 'rgba(255, 152, 0, 0.1)',
         fill: false
     },
     {
         key: 'xbench_deepsearch',
-        label: 'xbench-DeepSearch Accuracy',
+        label: i18n.t('xbench-DeepSearch Accuracy'),
         borderColor: '#9c27b0',
         backgroundColor: 'rgba(156, 39, 176, 0.1)',
         fill: false
@@ -585,8 +584,8 @@ function updateConfigSummary() {
     // Estimate time (roughly 1-2 minutes per example)
     const estimatedMinutes = Math.round(totalExamples * 1.5);
     const estimatedTime = estimatedMinutes < 60 ?
-        `${estimatedMinutes} minutes` :
-        `${Math.round(estimatedMinutes/60)} hour${estimatedMinutes >= 120 ? 's' : ''}`;
+        estimatedMinutes + i18n.t(' minutes') :
+        Math.round(estimatedMinutes/60) + (estimatedMinutes >= 120 ? i18n.t(' hours') : i18n.t(' hour'));
     document.getElementById('estimated-time-preview').textContent = estimatedTime;
 }
 
@@ -604,14 +603,14 @@ function validateConfiguration() {
     .then(response => response.json())
     .then(data => {
         if (data.valid) {
-            showAlert('Configuration is valid! Ready to start benchmark.', 'success');
+            showAlert(i18n.t('Configuration is valid! Ready to start benchmark.'), 'success');
         } else {
-            showAlert('Configuration errors: ' + data.errors.join(', '), 'error');
+            showAlert(i18n.t('Configuration errors: ') + data.errors.join(', '), 'error');
         }
     })
     .catch(error => {
-        console.error('Validation error:', error);
-        showAlert('Error validating configuration: ' + error.message, 'error');
+        console.error(i18n.t('Validation error:'), error);
+        showAlert(i18n.t('Error validating configuration: ') + error.message, 'error');
     });
 }
 
@@ -663,16 +662,16 @@ function startBenchmark() {
     .then(data => {
         if (data.success) {
             currentBenchmarkId = data.benchmark_run_id;
-            showAlert('Benchmark started successfully!', 'success');
+            showAlert(i18n.t('Benchmark started successfully!'), 'success');
             startProgressTracking();
         } else {
-            showAlert('Error starting benchmark: ' + data.error, 'error');
+            showAlert(i18n.t('Error starting benchmark: ') + data.error, 'error');
             resetForm();
         }
     })
     .catch(error => {
-        console.error('Start error:', error);
-        showAlert('Error starting benchmark: ' + error.message, 'error');
+        console.error(i18n.t('Start error:'), error);
+        showAlert(i18n.t('Error starting benchmark: ') + error.message, 'error');
         resetForm();
     });
 }
@@ -721,7 +720,7 @@ function handleDetailedProgress(data) {
     // Update current task display
     const currentTask = document.getElementById('current-task');
     if (currentTask && data.status) {
-        currentTask.textContent = `Example ${data.example_id}: ${data.status}`;
+        currentTask.textContent = i18n.t('Example ') + data.example_id + ': ' + data.status;
     }
 
 }
@@ -767,9 +766,11 @@ function updateBenchmarkProgress() {
                 progressInterval = null;
 
                 if (status.status === 'completed') {
-                    showAlert('Benchmark completed successfully!', 'success');
+                    showAlert(i18n.t('Benchmark completed successfully!'), 'success');
                 } else {
-                    showAlert(`Benchmark ${status.status}: ${status.error_message || ''}`, 'error');
+                    const statusMap = {'failed': i18n.t('failed'), 'cancelled': i18n.t('cancelled')};
+                    const statusLabel = statusMap[status.status] || status.status;
+                    showAlert(i18n.t('Benchmark ') + statusLabel + ': ' + (status.error_message || ''), 'error');
                 }
             }
         }
@@ -792,8 +793,8 @@ function updateProgressDisplay(status) {
 
     if (progressBar) progressBar.style.width = percentage + '%';
     if (progressPercentage) progressPercentage.textContent = Math.round(percentage) + '%';
-    if (statusText) statusText.textContent = status.status || 'Running';
-    if (currentTask) currentTask.textContent = `Processing example ${status.completed_examples} of ${status.total_examples}`;
+    if (statusText) statusText.textContent = status.status === 'Running' ? i18n.t('Running') : (status.status || i18n.t('Running'));
+    if (currentTask) currentTask.textContent = i18n.t('Processing example ') + status.completed_examples + i18n.t(' of ') + status.total_examples;
     if (currentBenchmark && status.run_name) currentBenchmark.textContent = status.run_name;
 
     // Update benchmark-specific metrics
@@ -824,14 +825,14 @@ function updateProgressDisplay(status) {
     });
     if (estimatedTime && status.estimated_time_remaining) {
         const minutes = Math.round(status.estimated_time_remaining / 60);
-        estimatedTime.textContent = minutes > 0 ? `${minutes}m` : '<1m';
+        estimatedTime.textContent = minutes > 0 ? minutes + 'm' : '<1m';
     } else if (estimatedTime) {
         estimatedTime.textContent = '--';
     }
 
     if (elapsedTime && status.total_elapsed_time) {
         const minutes = Math.round(status.total_elapsed_time / 60);
-        elapsedTime.textContent = `${minutes}m elapsed`;
+        elapsedTime.textContent = minutes + 'm ' + i18n.t('elapsed');
     } else if (elapsedTime) {
         elapsedTime.textContent = '--';
     }
@@ -839,7 +840,7 @@ function updateProgressDisplay(status) {
     // Average processing time per example
     if (processingRate && status.avg_time_per_example) {
         const avgMinutes = (status.avg_time_per_example / 60).toFixed(1);
-        processingRate.textContent = `${avgMinutes}m`;
+        processingRate.textContent = avgMinutes + 'm';
     } else if (processingRate) {
         processingRate.textContent = '--';
     }
@@ -868,17 +869,17 @@ function cancelBenchmark() {
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            showAlert('Benchmark cancelled successfully.', 'info');
+            showAlert(i18n.t('Benchmark cancelled successfully.'), 'info');
             clearInterval(progressInterval);
             progressInterval = null;
             resetForm();
         } else {
-            showAlert('Error cancelling benchmark: ' + data.error, 'error');
+            showAlert(i18n.t('Error cancelling benchmark: ') + data.error, 'error');
         }
     })
     .catch(error => {
-        console.error('Cancel error:', error);
-        showAlert('Error cancelling benchmark: ' + error.message, 'error');
+        console.error(i18n.t('Cancel error:'), error);
+        showAlert(i18n.t('Error cancelling benchmark: ') + error.message, 'error');
     });
 }
 
@@ -957,7 +958,7 @@ function checkForRunningBenchmark() {
     .then(data => {
         if (data.success && data.benchmark_run_id) {
             currentBenchmarkId = data.benchmark_run_id;
-            showAlert(`Reconnected to running benchmark #${currentBenchmarkId}`, 'info');
+            showAlert(i18n.t('Reconnected to running benchmark #') + currentBenchmarkId, 'info');
 
             // Show progress panel and hide form
             document.getElementById('benchmark-form').style.display = 'none';
@@ -1034,17 +1035,17 @@ async function loadCurrentSettings() {
             // Set provider
             if (llmProviderData && llmProviderData.value) {
                 const provider = llmProviderData.value;
-                if (providerEl) providerEl.textContent = provider ? provider.toUpperCase() : 'ERROR: No value';
+                if (providerEl) providerEl.textContent = provider ? provider.toUpperCase() : i18n.t('ERROR: No value');
             } else {
-                if (providerEl) providerEl.textContent = 'ERROR: Failed to load';
+                if (providerEl) providerEl.textContent = i18n.t('ERROR: Failed to load');
             }
 
             // Set model
             if (llmModelData && llmModelData.value) {
                 const model = llmModelData.value;
-                if (modelEl) modelEl.textContent = model || 'ERROR: No value';
+                if (modelEl) modelEl.textContent = model || i18n.t('ERROR: No value');
             } else {
-                if (modelEl) modelEl.textContent = 'ERROR: Failed to load';
+                if (modelEl) modelEl.textContent = i18n.t('ERROR: Failed to load');
             }
         } catch (e) {
             console.error('Error setting LLM display:', e);
@@ -1052,34 +1053,34 @@ async function loadCurrentSettings() {
 
         // Display search tool and check for warnings
         if (searchToolData && searchToolData.value) {
-            const searchTool = searchToolData.value || 'ERROR: No value';
+            const searchTool = searchToolData.value || i18n.t('ERROR: No value');
             document.getElementById('current-search-tool').textContent = searchTool;
 
             // Check for search engine warnings
             checkSearchEngineWarnings(searchTool);
         } else {
-            document.getElementById('current-search-tool').textContent = 'ERROR: Failed to load';
+            document.getElementById('current-search-tool').textContent = i18n.t('ERROR: Failed to load');
         }
 
         // Display search iterations
         if (iterationsData && iterationsData.value !== null) {
             document.getElementById('current-iterations').textContent =
-                iterationsData.value || 'ERROR';
+                iterationsData.value || i18n.t('ERROR: Failed to load');
         } else {
-            document.getElementById('current-iterations').textContent = 'ERROR: Failed to load';
+            document.getElementById('current-iterations').textContent = i18n.t('ERROR: Failed to load');
         }
 
         // Display questions per iteration
         if (questionsData && questionsData.value !== null) {
             document.getElementById('current-questions').textContent =
-                questionsData.value || 'ERROR';
+                questionsData.value || i18n.t('ERROR: Failed to load');
         } else {
-            document.getElementById('current-questions').textContent = 'ERROR: Failed to load';
+            document.getElementById('current-questions').textContent = i18n.t('ERROR: Failed to load');
         }
 
         // Display search strategy and check for context window warning
         if (strategyData && strategyData.value) {
-            const searchStrategy = strategyData.value || 'ERROR: No value';
+            const searchStrategy = strategyData.value || i18n.t('ERROR: No value');
             // Display the strategy with hyphens for readability
             const displayStrategy = searchStrategy.replace(/_/g, '-');
             document.getElementById('current-strategy').textContent = displayStrategy;
@@ -1103,7 +1104,7 @@ async function loadCurrentSettings() {
                 }
             }
         } else {
-            document.getElementById('current-strategy').textContent = 'ERROR: Failed to load';
+            document.getElementById('current-strategy').textContent = i18n.t('ERROR: Failed to load');
         }
 
         // Display evaluation settings (commented out as these elements don't exist)
@@ -1124,10 +1125,10 @@ async function loadCurrentSettings() {
 
         // Set error text on all metric values
         document.querySelectorAll('#current-settings-display .ldr-metric-value').forEach(el => {
-            el.textContent = 'Error loading';
+            el.textContent = i18n.t('Error loading');
         });
 
-        showAlert('Could not load current settings. Check console for details.', 'warning');
+        showAlert(i18n.t('Could not load current settings. Check console for details.'), 'warning');
     }
 }
 
@@ -1138,24 +1139,24 @@ function updateCurrentQuestion(status) {
     const currentProcessingStatus = document.getElementById('current-processing-status');
 
     if (status.status === 'in_progress') {
-        currentProcessingStatus.innerHTML = '<i aria-hidden="true" class="fas fa-spinner fa-spin"></i> Processing...';
+        currentProcessingStatus.innerHTML = '<i aria-hidden="true" class="fas fa-spinner fa-spin"></i> ' + i18n.t('Processing...');
         currentProcessingStatus.className = 'ldr-processing-status ldr-processing';
 
         // Show progress info - show what's actually completed, not what's "next"
-        const progressText = `Completed ${status.completed_examples} of ${status.total_examples} examples`;
+        const progressText = status.completed_examples + i18n.t(' of ') + status.total_examples + i18n.t(' examples completed');
         currentQuestionText.textContent = progressText;
-        currentDataset.textContent = status.completed_examples < status.total_examples ? 'Active' : 'Completed';
-        currentExampleId.textContent = `${status.completed_examples}/${status.total_examples} processed`;
+        currentDataset.textContent = status.completed_examples < status.total_examples ? i18n.t('Active') : i18n.t('Completed');
+        currentExampleId.textContent = status.completed_examples + '/' + status.total_examples + ' ' + i18n.t('processed');
     } else if (status.status === 'completed') {
-        currentProcessingStatus.innerHTML = '<i aria-hidden="true" class="fas fa-check-circle"></i> Benchmark completed!';
+        currentProcessingStatus.innerHTML = '<i aria-hidden="true" class="fas fa-check-circle"></i> ' + i18n.t('Benchmark completed!');
         currentProcessingStatus.className = 'ldr-processing-status ldr-completed';
-        currentQuestionText.textContent = 'All questions processed successfully.';
-        currentDataset.textContent = 'Completed';
+        currentQuestionText.textContent = i18n.t('All questions processed successfully.');
+        currentDataset.textContent = i18n.t('Completed');
         currentExampleId.textContent = `${status.completed_examples}/${status.total_examples}`;
     } else {
-        currentProcessingStatus.innerHTML = '<i aria-hidden="true" class="fas fa-clock"></i> Waiting...';
+        currentProcessingStatus.innerHTML = '<i aria-hidden="true" class="fas fa-clock"></i> ' + i18n.t('Waiting...');
         currentProcessingStatus.className = 'ldr-processing-status';
-        currentQuestionText.textContent = 'No question being processed...';
+        currentQuestionText.textContent = i18n.t('No question being processed...');
         currentDataset.textContent = '--';
         currentExampleId.textContent = '--';
     }
@@ -1196,7 +1197,7 @@ function displayRecentResults(results) {
     const container = document.getElementById('recent-results-container');
 
     if (!results || results.length === 0) {
-        container.innerHTML = '<div class="ldr-no-results">No results yet...</div>';
+        container.innerHTML = '<div class="ldr-no-results">' + i18n.t('No results yet...') + '</div>';
         return;
     }
 
@@ -1214,11 +1215,11 @@ function displayRecentResults(results) {
     const resultsHtml = results.map((result, index) => {
         const statusClass = result.is_correct ? 'ldr-correct' : 'ldr-incorrect';
         const statusIcon = result.is_correct ? '<i aria-hidden="true" class="fas fa-check-circle"></i>' : '<i aria-hidden="true" class="fas fa-times-circle"></i>';
-        const statusText = result.is_correct ? 'Correct' : 'Incorrect';
+        const statusText = result.is_correct ? i18n.t('Correct') : i18n.t('Incorrect');
 
         // Function to create expandable text
         const createExpandableText = (text, id, maxLength = 200) => {
-            if (!text) return 'No answer provided';
+            if (!text) return i18n.t('No answer provided');
 
             if (text.length <= maxLength) return window.escapeHtml(text);
 
@@ -1228,7 +1229,7 @@ function displayRecentResults(results) {
             return `
                 <span id="truncated-${id}" style="display: ${isExpanded ? 'none' : 'inline'};">${window.escapeHtml(truncated)}</span>
                 <span id="full-${id}" style="display: ${isExpanded ? 'inline' : 'none'};">${window.escapeHtml(text)}</span>
-                <a href="#" onclick="toggleText('${id}'); return false;" id="toggle-${id}" class="ldr-link">${isExpanded ? 'Show less' : 'Show more'}</a>
+                <a href="#" onclick="toggleText('${id}'); return false;" id="toggle-${id}" class="ldr-link">${isExpanded ? i18n.t('Show less') : i18n.t('Show more')}</a>
             `;
         };
 
@@ -1239,7 +1240,7 @@ function displayRecentResults(results) {
                         <span class="ldr-dataset-badge">${window.escapeHtml(result.dataset_type)}</span>
                         <span class="ldr-example-id">${window.escapeHtml(result.example_id)}</span>
                         ${result.search_result_count !== undefined ?
-                            `<span class="ldr-search-count-badge ${getSearchCountClass(result.search_result_count)}" title="Search results found">${window.escapeHtml(String(result.search_result_count))} results</span>` :
+                            `<span class="ldr-search-count-badge ${getSearchCountClass(result.search_result_count)}" title="{{ _("Search results found") }}">${window.escapeHtml(String(result.search_result_count))} ${i18n.t('results')}</span>` :
                             ''}
                     </div>
                     <span class="ldr-result-status ${statusClass}">
@@ -1247,16 +1248,16 @@ function displayRecentResults(results) {
                     </span>
                 </div>
                 <div class="ldr-question-text" style="margin-bottom: 10px; font-size: 0.9rem;">
-                    ${window.escapeHtml(result.question || 'No question provided')}
+                    ${window.escapeHtml(result.question || i18n.t('No question provided'))}
                 </div>
                 <div class="ldr-answer-comparison">
                     <div class="ldr-answer-box ldr-model-answer">
-                        <div class="ldr-answer-label">Model Answer</div>
-                        <div>${createExpandableText(result.model_answer || 'No answer provided', `model-${index}`)}</div>
+                        <div class="ldr-answer-label">${i18n.t('Model Answer')}</div>
+                        <div>${createExpandableText(result.model_answer || i18n.t('No answer provided'), `model-${index}`)}</div>
                     </div>
                     <div class="ldr-answer-box ldr-correct-answer">
-                        <div class="ldr-answer-label">Correct Answer</div>
-                        <div>${createExpandableText(result.correct_answer || 'No correct answer available', `correct-${index}`)}</div>
+                        <div class="ldr-answer-label">${i18n.t('Correct Answer')}</div>
+                        <div>${createExpandableText(result.correct_answer || i18n.t('No correct answer available'), `correct-${index}`)}</div>
                     </div>
                 </div>
             </div>
@@ -1275,11 +1276,11 @@ function toggleText(id) {
     if (truncated.style.display === 'none') {
         truncated.style.display = 'inline';
         full.style.display = 'none';
-        toggle.textContent = 'Show more';
+        toggle.textContent = i18n.t('Show more');
     } else {
         truncated.style.display = 'none';
         full.style.display = 'inline';
-        toggle.textContent = 'Show less';
+        toggle.textContent = i18n.t('Show less');
     }
 }
 
@@ -1361,7 +1362,7 @@ function initializeCharts() {
         data: {
             labels: [],
             datasets: [{
-                label: 'Processing Time (minutes)',
+                label: i18n.t('Processing Time (minutes)'),
                 data: [],
                 borderColor: '#e91e63',
                 backgroundColor: 'rgba(233, 30, 99, 0.1)',
@@ -1394,7 +1395,7 @@ function initializeCharts() {
         data: {
             labels: [],
             datasets: [{
-                label: 'Search Results Count',
+                label: i18n.t('Search Results Count'),
                 data: [],
                 borderColor: '#9c27b0',
                 backgroundColor: 'rgba(156, 39, 176, 0.1)',
@@ -1626,8 +1627,8 @@ function updateSearchQualityAlert(avgSearchResults) {
 
     if (avgSearchResults < 2) {
         alertLevel = 'critical';
-        alertMessage = 'CRITICAL: Very few search results';
-        alertDetails = `Only ${avgSearchResults.toFixed(1)} results per query. Accuracy likely severely degraded.`;
+        alertMessage = i18n.t('CRITICAL: Very few search results');
+        alertDetails = i18n.t('Only ') + avgSearchResults.toFixed(1) + i18n.t(' results per query. Accuracy likely severely degraded.');
         alertIcon = 'fas fa-exclamation-triangle';
         alertColor = '#f44336';
 
@@ -1636,22 +1637,22 @@ function updateSearchQualityAlert(avgSearchResults) {
 
     } else if (avgSearchResults < 5) {
         alertLevel = 'warning';
-        alertMessage = 'WARNING: Low search results';
-        alertDetails = `${avgSearchResults.toFixed(1)} results per query. Consider restarting SearXNG.`;
+        alertMessage = i18n.t('WARNING: Low search results');
+        alertDetails = avgSearchResults.toFixed(1) + i18n.t(' results per query. Consider restarting SearXNG.');
         alertIcon = 'fas fa-exclamation-circle';
         alertColor = '#ff9800';
 
     } else if (avgSearchResults < 10) {
         alertLevel = 'caution';
-        alertMessage = 'CAUTION: Moderate search results';
-        alertDetails = `${avgSearchResults.toFixed(1)} results per query. Performance may be affected.`;
+        alertMessage = i18n.t('CAUTION: Moderate search results');
+        alertDetails = avgSearchResults.toFixed(1) + i18n.t(' results per query. Performance may be affected.');
         alertIcon = 'fas fa-info-circle';
         alertColor = '#2196f3';
 
     } else {
         alertLevel = 'good';
-        alertMessage = 'GOOD: Healthy search results';
-        alertDetails = `${avgSearchResults.toFixed(1)} results per query. Search engines working well.`;
+        alertMessage = i18n.t('GOOD: Healthy search results');
+        alertDetails = avgSearchResults.toFixed(1) + i18n.t(' results per query. Search engines working well.');
         alertIcon = 'fas fa-check-circle';
         alertColor = '#4caf50';
 
@@ -1669,10 +1670,10 @@ function updateSearchQualityAlert(avgSearchResults) {
     // Trigger alert if we detect degradation
     if (alertLevel === 'critical' && !searchQualityAlert) {
         searchQualityAlert = true;
-        showAlert('Search engine performance critically degraded! Consider restarting SearXNG.', 'error');
+        showAlert(i18n.t('Search engine performance critically degraded! Consider restarting SearXNG.'), 'error');
     } else if (alertLevel === 'warning' && !searchQualityAlert) {
         searchQualityAlert = true;
-        showAlert('Search engine performance is declining. Monitor closely.', 'warning');
+        showAlert(i18n.t('Search engine performance is declining. Monitor closely.'), 'warning');
     } else if (alertLevel === 'good') {
         searchQualityAlert = false; // Reset alert flag when performance improves
     }
@@ -1695,8 +1696,8 @@ async function updateRateLimitingStatus() {
                 console.warn('Low search results detected:', searxngStats);
 
                 const statusDetails = document.getElementById('search-status-details');
-                if (statusDetails && !statusDetails.textContent.includes('Very low results')) {
-                    statusDetails.textContent += ` Very low results: ${searxngStats.recent_avg_results.toFixed(1)} avg.`;
+                if (statusDetails && !statusDetails.textContent.includes(i18n.t('Very low results'))) {
+                    statusDetails.textContent += ' ' + i18n.t('Very low results: ') + searxngStats.recent_avg_results.toFixed(1) + i18n.t(' avg.');
                 }
             }
         }
@@ -1716,23 +1717,23 @@ function checkSearchEngineWarnings(searchTool) {
     switch (searchTool?.toLowerCase()) {
         case 'searxng':
             showWarning = true;
-            message = 'SearXNG is a shared resource. Please use reasonable example counts to avoid affecting other users. Consider shorter benchmarks for testing.';
+            message = i18n.t('SearXNG is a shared resource. Please use reasonable example counts to avoid affecting other users. Consider shorter benchmarks for testing.');
             break;
         case 'arxiv':
             showWarning = true;
-            message = 'ArXiv is a shared resource containing only academic papers - benchmarking with SimpleQA is useless as it will find zero relevant results for general knowledge questions. Should not be used for this test. Use Tavily instead.';
+            message = i18n.t('ArXiv is a shared resource containing only academic papers - benchmarking with SimpleQA is useless as it will find zero relevant results for general knowledge questions. Should not be used for this test. Use Tavily instead.');
             break;
         case 'pubmed':
             showWarning = true;
-            message = 'PubMed is a shared resource containing only medical literature - benchmarking with SimpleQA is absolutely useless as general knowledge questions will find zero relevant results. Should not be used for this test. Use Tavily instead.';
+            message = i18n.t('PubMed is a shared resource containing only medical literature - benchmarking with SimpleQA is absolutely useless as general knowledge questions will find zero relevant results. Should not be used for this test. Use Tavily instead.');
             break;
         case 'semanticscholar':
             showWarning = true;
-            message = 'Semantic Scholar is a shared resource specialized for academic research - not suitable for general SimpleQA questions and should not be used for this test. Use Tavily instead.';
+            message = i18n.t('Semantic Scholar is a shared resource specialized for academic research - not suitable for general SimpleQA questions and should not be used for this test. Use Tavily instead.');
             break;
         case 'wikipedia':
             showWarning = true;
-            message = 'Wikipedia is a shared resource with limited coverage - benchmarking with it is useless for comprehensive testing and should not be used for this test. Use Tavily instead.';
+            message = i18n.t('Wikipedia is a shared resource with limited coverage - benchmarking with it is useless for comprehensive testing and should not be used for this test. Use Tavily instead.');
             break;
         default:
             showWarning = false;
@@ -1802,12 +1803,12 @@ function populateEvaluationProviders() {
 
     // Use EVAL_MODEL_PROVIDERS if loaded from API, otherwise use defaults
     let providers = EVAL_MODEL_PROVIDERS.length > 0 ? EVAL_MODEL_PROVIDERS : [
-        { value: 'ollama', label: 'Ollama (Local)' },
-        { value: 'openai', label: 'OpenAI (Cloud)' },
-        { value: 'anthropic', label: 'Anthropic (Cloud)' },
-        { value: 'openai_endpoint', label: 'OpenAI-Compatible Endpoint' },
-        { value: 'lmstudio', label: 'LM Studio (Local)' },
-        { value: 'llamacpp', label: 'Llama.cpp (Local GGUF files only)' }
+        { value: 'ollama', label: i18n.t('Ollama (Local)') },
+        { value: 'openai', label: i18n.t('OpenAI (Cloud)') },
+        { value: 'anthropic', label: i18n.t('Anthropic (Cloud)') },
+        { value: 'openai_endpoint', label: i18n.t('OpenAI-Compatible Endpoint') },
+        { value: 'lmstudio', label: i18n.t('LM Studio (Local)') },
+        { value: 'llamacpp', label: i18n.t('Llama.cpp (Local GGUF files only)') }
     ];
 
     // Add options
@@ -1866,7 +1867,7 @@ function setupEvaluationModelDropdown() {
                 saveEvaluationSetting('benchmark.evaluation.model', value);
             },
             true, // Allow custom values
-            'No models available'
+            i18n.t('No models available')
         );
     }
 

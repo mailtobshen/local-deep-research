@@ -2,7 +2,7 @@
 {% from "components/custom_dropdown.html" import render_dropdown %}
 {% from "components/help_macros.html" import tooltip, help_panel, help_step, help_tip %}
 
-{% block title %}LDR News - AI-Powered Research Feed{% endblock %}
+{% block title %}{{ _("LDR News - AI-Powered Research Feed") }}{% endblock %}
 
 {% block extra_head %}
 <meta name="csrf-token" content="{{ csrf_token() }}">
@@ -24,7 +24,7 @@
             <!-- Header with integrated search -->
             <div class="ldr-feed-header-section">
                 <div class="ldr-feed-header">
-                    <h1><i aria-hidden="true" class="bi bi-newspaper"></i> Research News Feed</h1>
+                    <h1><i aria-hidden="true" class="bi bi-newspaper"></i> {{ _("Research News Feed") }}</h1>
                 </div>
 
                 <!-- Search box below header -->
@@ -33,21 +33,21 @@
                         <div class="dropdown d-inline-block">
                             <button class="btn btn-sm ldr-btn-outline dropdown-toggle" type="button"
                                     id="news-search-mode-btn" data-bs-toggle="dropdown" aria-expanded="false">
-                                <i aria-hidden="true" class="fas fa-brain" ></i> AI Hybrid
+                                <i aria-hidden="true" class="fas fa-brain" ></i> {{ _("AI Hybrid") }}
                             </button>
-                            <ul class="dropdown-menu" aria-label="Search mode" id="news-search-mode-menu">
+                            <ul class="dropdown-menu" aria-label="{{ _("Search mode") }}" id="news-search-mode-menu">
                                 <li><a class="dropdown-item active" href="#" data-mode="hybrid">
-                                    <i aria-hidden="true" class="fas fa-brain" ></i> AI Hybrid <small class="text-muted">&mdash; titles + content</small></a></li>
+                                    <i aria-hidden="true" class="fas fa-brain" ></i> {{ _("AI Hybrid") }} <small class="text-muted">{{ _("&mdash; titles + content") }}</small></a></li>
                                 <li><a class="dropdown-item" href="#" data-mode="text">
-                                    <i aria-hidden="true" class="fas fa-font" ></i> Text Only <small class="text-muted">&mdash; headlines &amp; topics</small></a></li>
+                                    <i aria-hidden="true" class="fas fa-font" ></i> {{ _("Text Only") }} <small class="text-muted">{{ _("&mdash; headlines &amp; topics") }}</small></a></li>
                                 <li><a class="dropdown-item" href="#" data-mode="semantic">
-                                    <i aria-hidden="true" class="fas fa-brain" ></i> AI Only <small class="text-muted">&mdash; content similarity</small></a></li>
+                                    <i aria-hidden="true" class="fas fa-brain" ></i> {{ _("AI Only") }} <small class="text-muted">{{ _("&mdash; content similarity") }}</small></a></li>
                             </ul>
                         </div>
                         <i aria-hidden="true" class="bi bi-search ldr-search-icon"></i>
-                        <input type="text" id="news-search" class="ldr-form-control" placeholder="AI Hybrid: searches headlines & content with AI...">
+                        <input type="text" id="news-search" class="ldr-form-control" placeholder="{{ _("AI Hybrid: searches headlines & content with AI...") }}">
                         <button id="search-btn" class="btn btn-primary">
-                            Search
+                            {{ _("Search") }}
                         </button>
                     </div>
                 </div>
@@ -55,18 +55,18 @@
                 <!-- Quick actions row -->
                 <div class="ldr-quick-actions-row">
                     <button class="btn btn-warning" id="refresh-feed-btn">
-                        <i aria-hidden="true" class="bi bi-arrow-clockwise"></i> Refresh Feed
+                        <i aria-hidden="true" class="bi bi-arrow-clockwise"></i> {{ _("Refresh Feed") }}
                     </button>
                     <button type="button" class="btn btn-outline-primary" id="create-subscription-btn">
-                        <i aria-hidden="true" class="bi bi-plus-circle"></i> Create Subscription
+                        <i aria-hidden="true" class="bi bi-plus-circle"></i> {{ _("Create Subscription") }}
                     </button>
                     <a href="/news/subscriptions" class="btn btn-outline-secondary">
-                        <i aria-hidden="true" class="bi bi-bell"></i> Manage Subscriptions
+                        <i aria-hidden="true" class="bi bi-bell"></i> {{ _("Manage Subscriptions") }}
                     </a>
                     <div class="form-check form-switch d-inline-block ms-3">
                         <input class="form-check-input" type="checkbox" id="auto-refresh" checked>
                         <label class="form-check-label" for="auto-refresh">
-                            <i aria-hidden="true" class="bi bi-arrow-clockwise"></i> Auto-refresh
+                            <i aria-hidden="true" class="bi bi-arrow-clockwise"></i> {{ _("Auto-refresh") }}
                         </label>
                     </div>
                 </div>
@@ -82,22 +82,22 @@
             <div class="ldr-filters-bar">
                 <div class="ldr-filter-section">
                     <div class="ldr-subscriptions-horizontal">
-                        <select id="subscription-filter" class="form-select" aria-label="Filter by subscription">
-                            <option value="">All News</option>
+                        <select id="subscription-filter" class="form-select" aria-label="{{ _("Filter by subscription") }}">
+                            <option value="">{{ _("All News") }}</option>
                         </select>
                     </div>
 
                     <div class="ldr-time-filter-group">
-                        <button class="ldr-filter-btn active" data-time="all">All</button>
-                        <button class="ldr-filter-btn" data-time="today">Today</button>
-                        <button class="ldr-filter-btn" data-time="week">This Week</button>
-                        <button class="ldr-filter-btn" data-time="month">This Month</button>
+                        <button class="ldr-filter-btn active" data-time="all">{{ _("All") }}</button>
+                        <button class="ldr-filter-btn" data-time="today">{{ _("Today") }}</button>
+                        <button class="ldr-filter-btn" data-time="week">{{ _("This Week") }}</button>
+                        <button class="ldr-filter-btn" data-time="month">{{ _("This Month") }}</button>
                     </div>
 
                     <div class="ldr-impact-filter-group">
-                        <label for="impact-filter">Impact:</label>
-                        <input type="range" class="ldr-impact-slider" min="0" max="10" value="0" id="impact-filter" aria-label="Minimum impact score filter">
-                        <span class="ldr-impact-value">0+</span>
+                        <label for="impact-filter">{{ _("Impact:") }}</label>
+                        <input type="range" class="ldr-impact-slider" min="0" max="10" value="0" id="impact-filter" aria-label="{{ _("Minimum impact score filter") }}">
+                        <span class="ldr-impact-value">{{ _("0+") }}</span>
                     </div>
                 </div>
             </div>
@@ -113,7 +113,7 @@
             <!-- Load More -->
             <div class="ldr-load-more-section">
                 <button class="btn btn-outline-primary" id="load-more-btn">
-                    <i aria-hidden="true" class="bi bi-plus-circle"></i> Load More Stories
+                    <i aria-hidden="true" class="bi bi-plus-circle"></i> {{ _("Load More Stories") }}
                 </button>
             </div>
         </div>
@@ -121,47 +121,47 @@
         <!-- Right Sidebar - Recommendations -->
         <div class="ldr-recommendations">
             <!-- News Templates -->
-            <h3><i aria-hidden="true" class="bi bi-table"></i> News Templates</h3>
+            <h3><i aria-hidden="true" class="bi bi-table"></i> {{ _("News Templates") }}</h3>
             <div class="ldr-news-templates">
                 <button class="ldr-template-btn" onclick="useNewsTemplate('breaking-news')">
                     <i aria-hidden="true" class="bi bi-newspaper"></i>
-                    <span>Breaking News Table</span>
+                    <span>{{ _("Breaking News Table") }}</span>
                 </button>
                 <button class="ldr-template-btn" onclick="useNewsTemplate('market-analysis')">
                     <i aria-hidden="true" class="bi bi-graph-up-arrow"></i>
-                    <span>Market Analysis</span>
+                    <span>{{ _("Market Analysis") }}</span>
                 </button>
                 <button class="ldr-template-btn" onclick="useNewsTemplate('tech-updates')">
                     <i aria-hidden="true" class="bi bi-cpu"></i>
-                    <span>Tech Updates</span>
+                    <span>{{ _("Tech Updates") }}</span>
                 </button>
                 <button class="ldr-template-btn" onclick="useNewsTemplate('local-news')">
                     <i aria-hidden="true" class="bi bi-geo-alt"></i>
-                    <span>Local News</span>
+                    <span>{{ _("Local News") }}</span>
                 </button>
                 <button class="ldr-template-btn" onclick="useNewsTemplate('topic-news')">
                     <i aria-hidden="true" class="bi bi-bookmark-ldr-star"></i>
-                    <span>Topic News</span>
+                    <span>{{ _("Topic News") }}</span>
                 </button>
                 <button class="ldr-template-btn" onclick="useNewsTemplate('product-prices')">
                     <i aria-hidden="true" class="bi bi-tag"></i>
-                    <span>Product Prices</span>
+                    <span>{{ _("Product Prices") }}</span>
                 </button>
                 <button class="ldr-template-btn" onclick="useNewsTemplate('custom')">
                     <i aria-hidden="true" class="bi bi-pencil-square"></i>
-                    <span>Custom Template</span>
+                    <span>{{ _("Custom Template") }}</span>
                 </button>
             </div>
 
             <!-- Trending Topics -->
-            <h3 class="mt-4"><i aria-hidden="true" class="bi bi-trending-up"></i> Trending Topics</h3>
+            <h3 class="mt-4"><i aria-hidden="true" class="bi bi-trending-up"></i> {{ _("Trending Topics") }}</h3>
             <div id="trending-topics" class="ldr-topic-tags">
                 <!-- Will be populated with trending topics -->
             </div>
 
             <h3 class="mt-4 d-flex justify-content-between align-items-center">
-                <span><i aria-hidden="true" class="bi bi-clock-history"></i> Recent Searches</span>
-                <button class="btn btn-sm btn-outline-secondary" onclick="clearSearchHistory()" title="Clear search history" aria-label="Clear search history">
+                <span><i aria-hidden="true" class="bi bi-clock-history"></i> {{ _("Recent Searches") }}</span>
+                <button class="btn btn-sm btn-outline-secondary" onclick="clearSearchHistory()" title="{{ _("Clear search history") }}" aria-label="{{ _("Clear search history") }}">
                     <i aria-hidden="true" class="bi bi-trash"></i>
                 </button>
             </h3>
@@ -182,8 +182,8 @@
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">Manage News Subscriptions</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                <h5 class="modal-title">{{ _("Manage News Subscriptions") }}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _("Close") }}"></button>
             </div>
             <div class="modal-body">
                 <!-- Subscription Stats -->
@@ -192,25 +192,25 @@
                         <div class="col-md-3">
                             <div class="ldr-stat-card">
                                 <h3 id="total-subscriptions">0</h3>
-                                <p>Total Subscriptions</p>
+                                <p>{{ _("Total Subscriptions") }}</p>
                             </div>
                         </div>
                         <div class="col-md-3">
                             <div class="ldr-stat-card">
                                 <h3 id="active-subscriptions">0</h3>
-                                <p>Active</p>
+                                <p>{{ _("Active") }}</p>
                             </div>
                         </div>
                         <div class="col-md-3">
                             <div class="ldr-stat-card">
                                 <h3 id="total-folders">0</h3>
-                                <p>Folders</p>
+                                <p>{{ _("Folders") }}</p>
                             </div>
                         </div>
                         <div class="col-md-3">
                             <div class="ldr-stat-card">
                                 <h3 id="next-refresh-time">--</h3>
-                                <p>Next Update</p>
+                                <p>{{ _("Next Update") }}</p>
                             </div>
                         </div>
                     </div>
@@ -220,18 +220,18 @@
                 <ul class="nav ldr-nav-tabs mb-3" id="folderTabs" role="tablist">
                     <li class="ldr-nav-item" role="presentation">
                         <button class="ldr-nav-link active" data-folder="all" type="button">
-                            All Subscriptions
+                            {{ _("All Subscriptions") }}
                         </button>
                     </li>
                     <li class="ldr-nav-item" role="presentation">
                         <button class="ldr-nav-link" data-folder="Unfiled" type="button">
-                            📁 Unfiled
+                            📁 {{ _("Unfiled") }}
                         </button>
                     </li>
                     <!-- Dynamic folder tabs will be added here -->
                     <li class="ldr-nav-item ms-auto" role="presentation">
                         <button class="btn btn-sm btn-outline-primary" id="create-folder-btn">
-                            <i aria-hidden="true" class="bi bi-plus"></i> New Folder
+                            <i aria-hidden="true" class="bi bi-plus"></i> {{ _("New Folder") }}
                         </button>
                     </li>
                 </ul>
@@ -240,13 +240,13 @@
                 <div id="subscriptions-list" class="ldr-subscriptions-container">
                     <div class="text-center p-4">
                         <div class="spinner-border" role="status">
-                            <span class="visually-hidden">Loading...</span>
+                            <span class="visually-hidden">{{ _("Loading...") }}</span>
                         </div>
                     </div>
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ _("Close") }}</button>
             </div>
         </div>
     </div>
@@ -257,39 +257,39 @@
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title"><i aria-hidden="true" class="bi bi-bell-fill"></i> Create News Subscription</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                <h5 class="modal-title"><i aria-hidden="true" class="bi bi-bell-fill"></i> {{ _("Create News Subscription") }}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _("Close") }}"></button>
             </div>
             <form id="news-subscription-form" onsubmit="handleNewsSubscriptionSubmit(event)">
                 <div class="modal-body">
                     <div class="mb-3">
-                        <label for="news-subscription-query" class="form-label">Search Query</label>
+                        <label for="news-subscription-query" class="form-label">{{ _("Search Query") }}</label>
                         <textarea class="ldr-form-control" id="news-subscription-query" rows="3" required
-                                  placeholder="e.g., AI breakthroughs, climate news, tech updates..."></textarea>
-                        <small class="text-muted">Enter keywords or topics you want to track</small>
+                                  placeholder="{{ _("e.g., AI breakthroughs, climate news, tech updates...") }}"></textarea>
+                        <small class="text-muted">{{ _("Enter keywords or topics you want to track") }}</small>
                     </div>
 
                     <div class="mb-3">
-                        <label for="news-subscription-name" class="form-label">Subscription Name</label>
+                        <label for="news-subscription-name" class="form-label">{{ _("Subscription Name") }}</label>
                         <input type="text" class="ldr-form-control" id="news-subscription-name"
-                               placeholder="Optional - defaults to query">
+                               placeholder="{{ _("Optional - defaults to query") }}">
                     </div>
 
                     <div class="mb-3">
-                        <label for="news-subscription-frequency" class="form-label">Update Frequency</label>
+                        <label for="news-subscription-frequency" class="form-label">{{ _("Update Frequency") }}</label>
                         <select class="form-select" id="news-subscription-frequency">
-                            <option value="1">Every hour</option>
-                            <option value="2">Every 2 hours</option>
-                            <option value="4" selected>Every 4 hours</option>
-                            <option value="8">Every 8 hours</option>
-                            <option value="24">Daily</option>
+                            <option value="1">{{ _("Every hour") }}</option>
+                            <option value="2">{{ _("Every 2 hours") }}</option>
+                            <option value="4" selected>{{ _("Every 4 hours") }}</option>
+                            <option value="8">{{ _("Every 8 hours") }}</option>
+                            <option value="24">{{ _("Daily") }}</option>
                         </select>
                     </div>
 
                     <div class="mb-3">
-                        <label for="news-subscription-folder" class="form-label">Folder</label>
+                        <label for="news-subscription-folder" class="form-label">{{ _("Folder") }}</label>
                         <select class="form-select" id="news-subscription-folder">
-                            <option value="">Uncategorized</option>
+                            <option value="">{{ _("Uncategorized") }}</option>
                         </select>
                     </div>
 
@@ -298,19 +298,19 @@
                         {{ render_dropdown(
                             input_id="news-subscription-model",
                             dropdown_id="news-model-dropdown",
-                            placeholder="Enter or select a model",
-                            label="Language Model",
-                            help_text="Select model for this subscription (leave empty for default)",
+                            placeholder=_("Enter or select a model"),
+                            label=_("Language Model"),
+                            help_text=_("Select model for this subscription (leave empty for default)"),
                             show_refresh=False
                         ) }}
                         <div class="ldr-form-text">
-                            Not sure which model to use? Compare community results on the
-                            <a href="https://huggingface.co/datasets/local-deep-research/ldr-benchmarks" target="_blank" rel="noopener noreferrer">LDR benchmarks dataset</a>.
+                            {{ _("Not sure which model to use? Compare community results on the") }}
+                            <a href="https://huggingface.co/datasets/local-deep-research/ldr-benchmarks" target="_blank" rel="noopener noreferrer">{{ _("LDR benchmarks dataset") }}</a>.
                         </div>
                     </div>
 
                     <div class="mb-3">
-                        <label for="news-subscription-strategy" class="form-label">Search Strategy</label>
+                        <label for="news-subscription-strategy" class="form-label">{{ _("Search Strategy") }}</label>
                         <select class="form-select" id="news-subscription-strategy">
                             {% for s in strategies %}
                             <option value="{{ s.name }}">{{ s.label }}</option>
@@ -321,21 +321,21 @@
                     <div class="form-check mb-3">
                         <input class="form-check-input" type="checkbox" id="news-subscription-active" checked>
                         <label class="form-check-label" for="news-subscription-active">
-                            Active
+                            {{ _("Active") }}
                         </label>
                     </div>
 
                     <div class="form-check">
                         <input class="form-check-input" type="checkbox" id="news-subscription-run-now">
                         <label class="form-check-label" for="news-subscription-run-now">
-                            Run search immediately
+                            {{ _("Run search immediately") }}
                         </label>
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-primary" id="run-template-btn">Run Once</button>
-                    <button type="submit" class="btn btn-primary">Create Subscription</button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ _("Cancel") }}</button>
+                    <button type="button" class="btn btn-primary" id="run-template-btn">{{ _("Run Once") }}</button>
+                    <button type="submit" class="btn btn-primary">{{ _("Create Subscription") }}</button>
                 </div>
             </form>
         </div>
