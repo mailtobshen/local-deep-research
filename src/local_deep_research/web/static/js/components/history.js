@@ -254,8 +254,11 @@
                     handleSubscribe(itemData);
                 } else if (e.target.closest('.ldr-rerun-btn')) {
                     handleRerun(itemData);
-                } else if (ResearchStates.isCompleted(itemData.status)) {
-                    // Item-level click (navigate to results/progress)
+                } else if (e.target.closest('.ldr-copy-query-btn')) {
+                    handleCopyQuery(itemData, e.target.closest('.ldr-copy-query-btn'));
+                } else if (ResearchStates.isCompleted(itemData.status) || ResearchStates.isPartialSuccess(itemData.status)) {
+                    // Item-level click (navigate to results/progress).
+                    // PARTIAL_SUCCESS also has a viewable report.
                     URLValidator.safeAssign(window.location, 'href', URLBuilder.resultsPage(itemId));
                 } else {
                     URLValidator.safeAssign(window.location, 'href', URLBuilder.progressPage(itemId));
@@ -427,7 +430,7 @@
                 ${isNewsItem ? '<span class="ldr-news-indicator"><i class="fas fa-newspaper"></i> News</span>' : ''}
             </div>
             <div class="ldr-history-item-actions">
-                ${ResearchStates.isCompleted(item.status) ?
+                ${(ResearchStates.isCompleted(item.status) || ResearchStates.isPartialSuccess(item.status)) ?
                     `<button class="btn btn-sm ldr-btn-outline ldr-view-btn">
                         <i class="fas fa-eye"></i><span> View</span>
                     </button>` : ''}
@@ -439,9 +442,13 @@
                     `<button class="btn btn-sm ldr-btn-outline ldr-subscribe-btn" data-research-id="${esc(item.id)}" data-query="${esc(encodeURIComponent(item.query))}">
                         <i class="fas fa-bell"></i><span> Subscribe</span>
                     </button>` : ''}
-                ${ResearchStates.isCompleted(item.status) ?
+                ${(ResearchStates.isCompleted(item.status) || ResearchStates.isPartialSuccess(item.status)) ?
                     `<button class="btn btn-sm ldr-btn-outline ldr-rerun-btn" title="i18n.t('Re-run this research')">
                         <i class="fas fa-redo"></i><span> Re-run</span>
+                    </button>` : ''}
+                ${item.query ?
+                    `<button class="btn btn-sm ldr-btn-outline ldr-copy-query-btn" title="${esc(i18n.t('Copy research query'))}" aria-label="${esc(i18n.t('Copy research query'))}">
+                        <i class="fas fa-copy"></i>
                     </button>` : ''}
                 <button class="btn btn-sm ldr-btn-outline ldr-delete-item-btn">
                     <i class="fas fa-trash-alt"></i>
@@ -579,6 +586,73 @@
             source_id: item.id
         });
         URLValidator.safeAssign(window.location, 'href', `/news/subscriptions/new?${params.toString()}`);
+    }
+
+    /**
+     * Handle copy-query button click
+     * Copies the research query text to the clipboard. Uses the modern
+     * Clipboard API with a `document.execCommand` fallback for older
+     * browsers and unsecure contexts. On success, swaps the icon to a
+     * checkmark for a moment so the user gets visual confirmation.
+     * @param {Object} item - The research item whose query to copy
+     * @param {HTMLElement} button - The copy button (for icon feedback)
+     */
+    async function handleCopyQuery(item, button) {
+        const text = item.query;
+        if (!text) return;
+
+        let success = false;
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            try {
+                await navigator.clipboard.writeText(text);
+                success = true;
+            } catch (err) {
+                SafeLogger.warn('Clipboard API failed, falling back:', err);
+            }
+        }
+
+        // Fallback for browsers/contexts without async Clipboard API
+        if (!success) {
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            textarea.setAttribute('readonly', '');
+            textarea.style.position = 'fixed';
+            textarea.style.top = '0';
+            textarea.style.left = '0';
+            textarea.style.opacity = '0';
+            document.body.appendChild(textarea);
+            textarea.select();
+            try {
+                success = document.execCommand('copy');
+            } catch (err) {
+                SafeLogger.error('execCommand copy failed:', err);
+            }
+            document.body.removeChild(textarea);
+        }
+
+        if (success) {
+            uiUtils.showMessage(i18n.t('Research query copied to clipboard'));
+            if (button) flashCopySuccess(button);
+        } else {
+            uiUtils.showError(i18n.t('Failed to copy research query. Please copy manually.'));
+        }
+    }
+
+    /**
+     * Briefly swap the copy button's icon to a checkmark to give
+     * visual feedback that the copy succeeded.
+     * @param {HTMLElement} button - The copy button whose icon to swap
+     */
+    function flashCopySuccess(button) {
+        const icon = button.querySelector('i');
+        if (!icon) return;
+        const originalClass = icon.className;
+        icon.className = 'fas fa-check';
+        button.classList.add('ldr-copy-success');
+        setTimeout(() => {
+            icon.className = originalClass;
+            button.classList.remove('ldr-copy-success');
+        }, 1500);
     }
 
     /**

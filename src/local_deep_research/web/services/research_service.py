@@ -18,6 +18,7 @@ from ...constants import ResearchStatus
 from ...database.models import ResearchHistory, ResearchStrategy
 from ...database.session_context import get_user_db_session
 from ...database.thread_local_session import thread_cleanup
+from ..translations import _
 from ...error_handling.openai_compat_errors import (
     friendly_openai_compatible_error,
     is_openai_compat_runtime_error,
@@ -345,7 +346,10 @@ def run_research_process(research_id, query, mode, **kwargs):
                 f"Research {research_id} was terminated before starting"
             )
             cleanup_research_resources(
-                research_id, username, user_password=user_password
+                research_id,
+                username,
+                user_password=user_password,
+                final_status=ResearchStatus.SUSPENDED,
             )
             return
 
@@ -439,8 +443,16 @@ def run_research_process(research_id, query, mode, **kwargs):
 
         # Set up progress callback
         def progress_callback(message, progress_percent, metadata):
-            # Frequent termination check
-            if is_termination_requested(research_id):
+            # Frequent termination check.
+            #
+            # Skip when we are already in the error-handling path
+            # (phase == "error"): a real error reached the outer except
+            # handler, so the research has genuinely failed — we must
+            # not overwrite that status with SUSPENDED just because the
+            # user also happened to click cancel while the request was
+            # in flight. The clean-cancel case is handled by the
+            # explicit `except ResearchTerminatedException` block.
+            if metadata.get("phase") != "error" and is_termination_requested(research_id):
                 handle_termination(research_id, username)
                 raise ResearchTerminatedException(  # noqa: TRY301 — inside nested callback, not caught by enclosing try
                     "Research was terminated by user"
@@ -785,10 +797,20 @@ def run_research_process(research_id, query, mode, **kwargs):
             if results.get("findings") or results.get("formatted_findings"):
                 raw_formatted_findings = results["formatted_findings"]
 
+                # Track whether synthesis hit an error and we fell back to
+                # raw findings. When True we still produce a (partial)
+                # report from whatever findings were already collected,
+                # but the final status will be PARTIAL_SUCCESS rather
+                # than COMPLETED so the UI can distinguish "fully
+                # synthesised report" from "report assembled despite a
+                # synthesis-time error".
+                synthesis_had_error = False
+
                 # Check if formatted_findings contains an error message
                 if isinstance(
                     raw_formatted_findings, str
                 ) and raw_formatted_findings.startswith("Error:"):
+                    synthesis_had_error = True
                     logger.exception(
                         f"Detected error in formatted findings: {raw_formatted_findings[:100]}..."
                     )
@@ -947,6 +969,16 @@ def run_research_process(research_id, query, mode, **kwargs):
                         },
                     )
 
+                # If after all fallback attempts the formatted findings
+                # still look like a raw error message, we have nothing
+                # useful to show: the final status should be FAILED, not
+                # PARTIAL_SUCCESS.
+                fallback_failed = (
+                    synthesis_had_error
+                    and isinstance(raw_formatted_findings, str)
+                    and raw_formatted_findings.startswith("Error:")
+                )
+
                 logger.info(
                     "Found formatted_findings of length: {}",
                     len(str(raw_formatted_findings)),
@@ -1021,12 +1053,12 @@ def run_research_process(research_id, query, mode, **kwargs):
                     )
 
                     # Prepare complete report content
-                    full_report_content = f"""{formatted_content}
-
-## Research Metrics
-- Search Iterations: {results["iterations"]}
-- Generated at: {datetime.now(UTC).isoformat()}
-"""
+                    full_report_content = (
+                        f"{formatted_content}\n\n"
+                        + _("## Research Metrics") + "\n"
+                        + _("- Search Iterations: {n}").format(n=results["iterations"]) + "\n"
+                        + _("- Generated at: {ts}").format(ts=datetime.now(UTC).isoformat()) + "\n"
+                    )
 
                     # Save sources to database (non-fatal - report should still
                     # be saved even if source saving fails)
@@ -1111,7 +1143,16 @@ def run_research_process(research_id, query, mode, **kwargs):
                             research.created_at, completed_at
                         )
 
-                        research.status = ResearchStatus.COMPLETED
+                        # Three-way status: FAILED if fallback also gave
+                        # us no useful content; PARTIAL_SUCCESS if
+                        # synthesis errored but fallback recovered some
+                        # findings; COMPLETED otherwise.
+                        if fallback_failed:
+                            research.status = ResearchStatus.FAILED
+                        elif synthesis_had_error:
+                            research.status = ResearchStatus.PARTIAL_SUCCESS
+                        else:
+                            research.status = ResearchStatus.COMPLETED
                         research.completed_at = completed_at
                         research.duration_seconds = duration_seconds
                         # Note: report_content is saved by CachedResearchService
@@ -1250,7 +1291,18 @@ def run_research_process(research_id, query, mode, **kwargs):
                         "Cleaning up resources for research_id: {}", research_id
                     )
                     cleanup_research_resources(
-                        research_id, username, user_password=user_password
+                        research_id,
+                        username,
+                        user_password=user_password,
+                        final_status=(
+                            ResearchStatus.FAILED
+                            if fallback_failed
+                            else (
+                                ResearchStatus.PARTIAL_SUCCESS
+                                if synthesis_had_error
+                                else ResearchStatus.COMPLETED
+                            )
+                        ),
                     )
                     logger.info(
                         "Resources cleaned up for research_id: {}", research_id
@@ -1496,7 +1548,10 @@ def run_research_process(research_id, query, mode, **kwargs):
 
             # Clean up resources
             cleanup_research_resources(
-                research_id, username, user_password=user_password
+                research_id,
+                username,
+                user_password=user_password,
+                final_status=ResearchStatus.SUSPENDED,
             )
 
     except ResearchTerminatedException:
@@ -1667,17 +1722,16 @@ def run_research_process(research_id, query, mode, **kwargs):
             if is_research_active(research_id):
                 progress_callback(user_friendly_error, None, metadata)
 
-            # If termination was requested, mark as suspended instead of failed
-            status = (
-                ResearchStatus.SUSPENDED
-                if is_termination_requested(research_id)
-                else ResearchStatus.FAILED
-            )
-            message = (
-                "Research was terminated by user"
-                if status == ResearchStatus.SUSPENDED
-                else user_friendly_error
-            )
+            # We reached the generic exception handler, which means a
+            # real error occurred (a clean user-cancel is handled by the
+            # earlier `except ResearchTerminatedException` block, not
+            # here). Mark FAILED unconditionally so the history view
+            # can distinguish "research errored out" from "user
+            # cancelled" — even if the user happened to click cancel
+            # while this error was in flight, the real error is the
+            # more informative cause.
+            status = ResearchStatus.FAILED
+            message = user_friendly_error
 
             # Calculate duration up to termination point - using UTC consistently
             now = datetime.now(UTC)
@@ -1724,7 +1778,10 @@ def run_research_process(research_id, query, mode, **kwargs):
 
         # Clean up resources
         cleanup_research_resources(
-            research_id, username, user_password=user_password
+            research_id,
+            username,
+            user_password=user_password,
+            final_status=ResearchStatus.FAILED,
         )
 
     finally:
@@ -1762,13 +1819,24 @@ def run_research_process(research_id, query, mode, **kwargs):
             safe_close(use_llm, "research LLM")
 
 
-def cleanup_research_resources(research_id, username=None, user_password=None):
+def cleanup_research_resources(
+    research_id, username=None, user_password=None, final_status=None
+):
     """
     Clean up resources for a completed research.
 
     Args:
         research_id: The ID of the research
         username: The username for database access (required for thread context)
+        user_password: Optional decryption password for the user's DB
+        final_status: Optional explicit final status the caller already
+            knows (e.g. SUSPENDED from the cancel path, FAILED from the
+            error path). Used because handle_termination() and the error
+            handler queue the DB status update asynchronously via
+            processor_v2 — by the time we reach this function the queue
+            may not have been processed yet, so a fresh DB read would
+            still see ``in_progress``. When None, falls back to reading
+            from DB, then to COMPLETED.
     """
     from ..routes.globals import cleanup_research
 
@@ -1786,8 +1854,41 @@ def cleanup_research_resources(research_id, username=None, user_password=None):
         )
         time.sleep(5)
 
-    # Get the current status from the database to determine the final status message
-    current_status = ResearchStatus.COMPLETED  # Default
+    # Determine the final status for the socket message.
+    #
+    # Preference order:
+    #   1. Explicit ``final_status`` from caller — most reliable; the
+    #      caller knows which path it came from before any async queue
+    #      processing.
+    #   2. Latest committed status in the DB — best-effort fallback for
+    #      legacy callers that don't pass an explicit hint.
+    #   3. COMPLETED — last-resort default for the success path.
+    #
+    # Without this, the socket emit below sends
+    # ``{status: COMPLETED, message: "Research process has ended..."}``
+    # for every cleanup path — including the cancel and error paths
+    # whose status was queued as SUSPENDED / FAILED. That bogus
+    # "completed" socket message then overwrites the real status in the
+    # browser UI, leaving cancelled / failed research mislabelled as
+    # "Completed".
+    current_status = final_status
+    if current_status is None and username:
+        try:
+            with get_user_db_session(username) as db_session:
+                row = (
+                    db_session.query(ResearchHistory)
+                    .filter_by(id=research_id)
+                    .first()
+                )
+                if row and row.status:
+                    current_status = row.status
+        except Exception:
+            logger.exception(
+                f"Could not read current status for research {research_id}; "
+                f"falling back to COMPLETED"
+            )
+    if current_status is None:
+        current_status = ResearchStatus.COMPLETED
 
     # NOTE: Queue processor already handles database updates from the main thread
     # The notify_research_completed() method is called at the end of this function
@@ -1821,19 +1922,22 @@ def cleanup_research_resources(research_id, username=None, user_password=None):
     try:
         # Send a final message to any remaining subscribers with explicit status
         # Use the proper status message based on database status
-        if current_status in (
-            ResearchStatus.SUSPENDED,
-            ResearchStatus.FAILED,
-        ):
+        if current_status == ResearchStatus.SUSPENDED:
             final_message = {
                 "status": current_status,
-                "message": f"Research was {current_status}",
-                "progress": 0,  # For suspended research, show 0% not 100%
+                "message": _("Research cancelled by user."),
+                "progress": 0,
+            }
+        elif current_status == ResearchStatus.FAILED:
+            final_message = {
+                "status": current_status,
+                "message": _("Research failed due to an error."),
+                "progress": 0,
             }
         else:
             final_message = {
                 "status": ResearchStatus.COMPLETED,
-                "message": "Research process has ended and resources have been cleaned up",
+                "message": _("Research process has ended and resources have been cleaned up"),
                 "progress": 100,
             }
 
@@ -1890,7 +1994,9 @@ def handle_termination(research_id, username=None):
         )
 
     # Clean up resources (this already handles things properly)
-    cleanup_research_resources(research_id, username)
+    cleanup_research_resources(
+        research_id, username, final_status=ResearchStatus.SUSPENDED
+    )
 
 
 def cancel_research(research_id, username):

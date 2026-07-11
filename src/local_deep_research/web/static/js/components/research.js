@@ -2324,12 +2324,12 @@
         startBtn.disabled = true;
 
       // Use centralized security utilities for button update
-        window.safeUpdateButton(startBtn, 'fa-spinner', ' Starting...', true);
+        window.safeUpdateButton(startBtn, 'fa-spinner', ' ' + i18n.t('Starting...'), true);
 
         // Show loading overlay for better feedback using centralized utility
         const loadingOverlay = window.createSafeLoadingOverlay({
             title: i18n.t('Preparing your research...'),
-            description: 'Securing settings and initializing search engines'
+            description: i18n.t('Securing settings and initializing search engines')
         });
         loadingOverlay.style.cssText = `
             position: fixed;

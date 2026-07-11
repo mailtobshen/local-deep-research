@@ -195,7 +195,11 @@ class TestHandleTermination:
         call_kwargs = mock_qp.queue_error_update.call_args
         assert call_kwargs.kwargs["research_id"] == "res-1"
         assert call_kwargs.kwargs["status"] == "suspended"
-        mock_cleanup.assert_called_once_with("res-1", "testuser")
+        from local_deep_research.constants import ResearchStatus
+
+        mock_cleanup.assert_called_once_with(
+            "res-1", "testuser", final_status=ResearchStatus.SUSPENDED
+        )
 
     def test_queue_processor_exception_still_cleans_up(self):
         """Queue processor error → swallowed, cleanup still runs."""
@@ -212,7 +216,11 @@ class TestHandleTermination:
         ):
             handle_termination("res-1", "testuser")
 
-        mock_cleanup.assert_called_once_with("res-1", "testuser")
+        from local_deep_research.constants import ResearchStatus
+
+        mock_cleanup.assert_called_once_with(
+            "res-1", "testuser", final_status=ResearchStatus.SUSPENDED
+        )
 
 
 # ---------------------------------------------------------------------------

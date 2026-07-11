@@ -1029,9 +1029,15 @@
      * Organize settings to avoid duplicate group names and improve organization
      * @param {Array} settings - The settings array
      * @param {string} tab - The current tab
+     * @param {string[]} [tabPrefixes] - Optional list of key prefixes
+     *   the current tab is allowed to display (besides `<tab>.`). When
+     *   provided, used by the inner filter to keep settings whose
+     *   `prefix` doesn't match `tab` but whose key starts with one of
+     *   these prefixes (e.g. `general.*` showing up under the Reports
+     *   tab).
      * @returns {Object} - The organized settings
      */
-    function organizeSettings(settings, tab) {
+    function organizeSettings(settings, tab, tabPrefixes) {
         // Create a mapping of types
         const typeMap = {
             'app': 'Application',
@@ -1060,7 +1066,6 @@
                 'questions_per_iteration',
                 'region',
                 'search_engine',
-                'searches_per_section',
                 'skip_relevance_filter',
                 'safe_search',
                 'search_language',
@@ -1068,10 +1073,7 @@
                 'tool',
                 'snippets_only'
             ],
-            'report': [
-                'knowledge_accumulation',
-                'knowledge_accumulation_context_limit'
-            ],
+            'report': [],
             'app': [
                 'debug',
                 'host',
@@ -1109,11 +1111,6 @@
                 return false;
             }
 
-            // Filter out knowledge_accumulation duplicates - only keep in report tab
-            if (prefix !== 'report' && (subKey === 'knowledge_accumulation' || subKey === 'knowledge_accumulation_context_limit')) {
-                return false;
-            }
-
             // Filter out settings that are not marked as visible.
             if (!setting.visible) {
                 return false;
@@ -1121,8 +1118,14 @@
 
             // If we're on a specific tab, only show settings for that tab
             if (tab !== 'all') {
-                // Only show settings in tab-specific lists for that tab
-                if (tab === prefix) {
+                // Accept the setting if its key prefix matches the tab
+                // (e.g. `report.foo` for the Reports tab) OR its prefix
+                // is in the extra tabPrefixes list (e.g. `general.foo`
+                // for the Reports tab via the tabKeyPrefixes mapping).
+                const matchesTabPrefix = tab === prefix;
+                const matchesExtraPrefix = Array.isArray(tabPrefixes)
+                    && tabPrefixes.some(p => p !== (tab + '.') && setting.key.startsWith(p));
+                if (matchesTabPrefix || matchesExtraPrefix) {
                     // For tab-specific settings, make sure they're in the list
                     if (tabSpecificSettings[tab] && tabSpecificSettings[tab].includes(subKey)) {
                         return true;
@@ -1168,8 +1171,11 @@
             // Format the category name to be user-friendly
             category = formatCategoryName(prefix, category);
 
-            // For duplicate "general" categories, prefix with the type
-            if (category.toLowerCase() === 'general') {
+            // For duplicate "general" categories, prefix with the type to
+            // disambiguate (e.g. "LLM General" vs "Search General"). Skip
+            // when the prefix is already "general" — re-prefixing would
+            // produce "General General".
+            if (category.toLowerCase() === 'general' && prefix !== 'general') {
                 category = `${typeMap[prefix] || prefix.charAt(0).toUpperCase() + prefix.slice(1)} General`;
             }
 
@@ -1840,15 +1846,35 @@
         window.modelDropdownsInitialized = false;
         window.searchEngineDropdownInitialized = false;
 
-        // Filter settings by tab
-        let filteredSettings = allSettings;
+        // Filter settings by tab.
+        //
+        // Each tab normally shows settings whose key starts with `<tab>.`
+        // (e.g. the "llm" tab shows `llm.*`). Some settings are stored
+        // under a different key prefix but logically belong to a tab
+        // (e.g. `general.output_instructions` is about report output,
+        // `rate_limiting.*` belongs to LLM, `web.*`/`focused_iteration.*`/
+        // `langgraph_agent.*` belong to Search). The mapping below lets
+        // those orphan settings surface under the right tab while still
+        // showing in the "all" tab.
+        const tabKeyPrefixes = {
+            'all': null,
+            'llm': ['llm.', 'rate_limiting.'],
+            'search': ['search.', 'web.', 'focused_iteration.', 'langgraph_agent.'],
+            'report': ['report.', 'general.'],
+            'app': ['app.', 'mcp.', 'research_library.', 'backup.', 'benchmark.'],
+            'notifications': ['notifications.', 'news.'],
+        };
+        const allowedPrefixes = tabKeyPrefixes[tab];
 
-        if (tab !== 'all') {
-            filteredSettings = allSettings.filter(setting => setting.key.startsWith(tab + '.'));
+        let filteredSettings = allSettings;
+        if (allowedPrefixes !== null && allowedPrefixes !== undefined) {
+            filteredSettings = allSettings.filter(setting =>
+                allowedPrefixes.some(prefix => setting.key.startsWith(prefix))
+            );
         }
 
         // Organize settings to avoid duplicate groups
-        const groupedSettings = organizeSettings(filteredSettings, tab);
+        const groupedSettings = organizeSettings(filteredSettings, tab, allowedPrefixes || undefined);
 
         // Build HTML
         let html = '';
@@ -1885,7 +1911,15 @@
 
         // For each type (app, llm, search, etc.)
         for (const type of prefixTypes) {
-            if (tab !== 'all' && type !== tab) continue;
+            // For a specific tab, only render prefixes that match the tab
+            // OR are part of its extra-prefix mapping (e.g. `general`
+            // for the Reports tab). Otherwise settings for non-tab
+            // prefixes that snuck in would render in the wrong tab.
+            if (tab !== 'all' && type !== tab) {
+                const typeIsExtra = Array.isArray(allowedPrefixes)
+                    && allowedPrefixes.some(p => p === type + '.');
+                if (!typeIsExtra) continue;
+            }
 
             // For each category in this type
             for (const category in groupedSettings[type]) {
@@ -2168,6 +2202,14 @@
             settingName = formatCategoryName('', settingName);
         }
 
+        // Translate description via i18n if a Chinese translation exists.
+        // Falls back to the original English text when no translation
+        // entry is found (so missing translations don't blank out the
+        // description).
+        const translatedDescription = setting.description
+            ? i18n.t(setting.description)
+            : '';
+
         // For checkboxes, we've already handled the label in the inputElement
         if (setting.ui_element === 'checkbox') {
             return `
@@ -2175,7 +2217,7 @@
                     ${inputElement}
                     ${setting.description ? `
                     <div class="ldr-input-help">
-                        ${escapeHtml(setting.description)}
+                        ${escapeHtml(translatedDescription)}
                     </div>
                     ` : ''}
                 </div>
@@ -2184,7 +2226,7 @@
 
         // For non-checkbox elements, use the standard layout without info icons
         // Ensure help text is appended correctly AFTER the input element is generated
-        const helpTextHTML = setting.description ? `<div class="ldr-input-help">${escapeHtml(setting.description)}</div>` : '';
+        const helpTextHTML = setting.description ? `<div class="ldr-input-help">${escapeHtml(translatedDescription)}</div>` : '';
 
         return `
             <div class="ldr-settings-item form-group" data-key="${setting.key}">
@@ -2309,7 +2351,7 @@
             </div>
             ${setting.description ? `
             <div class="ldr-input-help">
-                ${escapeHtml(setting.description)}
+                ${escapeHtml(translatedDescription)}
             </div>
             ` : ''}
         </div>
@@ -2351,7 +2393,13 @@
 
             if (input.name) {
                 // Check if value is a JSON object (textarea)
-                if (input.tagName === 'TEXTAREA' && input.classList.contains('ldr-settings-textarea')) {
+                // Only treat as JSON if the textarea carries the
+                // `ldr-json-content` class — plain textareas (e.g.
+                // `ui_element: "textarea"` like general.output_instructions)
+                // must be saved as-is, not JSON-parsed.
+                if (input.tagName === 'TEXTAREA'
+                    && input.classList.contains('ldr-settings-textarea')
+                    && input.classList.contains('ldr-json-content')) {
                     try {
                         const jsonValue = JSON.parse(input.value);
                         formData[input.name] = jsonValue;

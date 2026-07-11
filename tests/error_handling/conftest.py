@@ -4,6 +4,27 @@ import pytest
 from unittest.mock import MagicMock
 
 
+@pytest.fixture(autouse=True)
+def force_english_locale(monkeypatch):
+    """Force the translator to English for error_handling tests.
+
+    The ErrorReportGenerator wraps its user-visible strings in _(), which
+    resolves to Simplified Chinese by default (the app's default
+    language). These tests assert on the English wording of those
+    strings, so pin the locale to ``en`` for the duration of each test
+    instead of rewriting every assertion.
+    """
+    from local_deep_research.web import translations
+
+    # ``current_language`` is a read-only property; override the getter
+    # on the class so every resolution returns "en" for the test.
+    monkeypatch.setattr(
+        type(translations.translator),
+        "current_language",
+        property(lambda self: "en"),
+    )
+
+
 @pytest.fixture
 def error_reporter():
     """Create ErrorReporter instance."""

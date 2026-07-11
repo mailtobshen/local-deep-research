@@ -438,6 +438,9 @@ function updateFavicon(status) {
 
         if (ResearchStates.isCompleted(status)) {
             bgColor = successColor;
+        } else if (ResearchStates.isPartialSuccess(status)) {
+            // Partial: borrow warning palette (same family as suspended)
+            bgColor = style.getPropertyValue('--warning-color').trim() || '#ffc107';
         } else if (ResearchStates.isFailed(status)) {
             bgColor = errorColor;
         } else if (ResearchStates.isCancelled(status)) {

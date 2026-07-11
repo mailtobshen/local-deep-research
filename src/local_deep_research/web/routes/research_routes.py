@@ -827,6 +827,15 @@ def terminate_research(research_id):
                     }
                 )
 
+            # Set the termination flag BEFORE any other state checks so
+            # that a still-running research thread (which may be between
+            # progress_callback calls during a long LLM/search operation)
+            # sees the flag on its next check and aborts. Without this,
+            # the cancel silently no-ops whenever the research is not
+            # currently in the _active_research dict, leaving the user
+            # with no visible feedback that the task is still running.
+            set_termination_flag(research_id)
+
             # Check if it's in the active_research dict
             if not is_research_active(research_id):
                 # Update the status in the database
@@ -835,9 +844,6 @@ def terminate_research(research_id):
                 return jsonify(
                     {"status": "success", "message": "Research terminated"}
                 )
-
-            # Set the termination flag
-            set_termination_flag(research_id)
 
             # Log the termination request - using UTC timestamp
             timestamp = datetime.now(UTC).isoformat()

@@ -6,6 +6,7 @@ from typing import Any, Dict, Optional
 
 from loguru import logger
 
+from ..web.translations import _
 from .error_reporter import ErrorReporter
 
 
@@ -69,27 +70,27 @@ class ErrorReportGenerator:
             )
             category_title = error_analysis.get("title", "Error")
 
-            report_parts.append("# ⚠️ Research Failed")
-            report_parts.append(f"\n**Error Type:** {category_title}")
-            report_parts.append(f"\n**What happened:** {user_friendly_message}")
+            report_parts.append(_("# ⚠️ Research Failed"))
+            report_parts.append(_("\n**Error Type:** {category}").format(category=category_title))
+            report_parts.append(_("\n**What happened:** {message}").format(message=user_friendly_message))
             report_parts.append(
-                '\n*For detailed error information, scroll down to the research logs and select "Errors" from the filter.*'
+                _('\n*For detailed error information, scroll down to the research logs and select "Errors" from the filter.*')
             )
 
             # Support links - moved up for better visibility
-            report_parts.append("\n## 💬 Get Help")
-            report_parts.append("We're here to help you get this working:")
+            report_parts.append(_("\n## 💬 Get Help"))
+            report_parts.append(_("We're here to help you get this working:"))
             report_parts.append(
-                "- 📖 **Documentation & guides:** [Wiki](https://github.com/LearningCircuit/local-deep-research/wiki)"
+                _("- 📖 **Documentation & guides:** [Wiki](https://github.com/LearningCircuit/local-deep-research/wiki)")
             )
             report_parts.append(
-                "- 💬 **Chat with the community:** [Discord #help-and-support](https://discord.gg/ttcqQeFcJ3)"
+                _("- 💬 **Chat with the community:** [Discord #help-and-support](https://discord.gg/ttcqQeFcJ3)")
             )
             report_parts.append(
-                "- 🐛 **Report bugs or get help:** [GitHub Issues](https://github.com/LearningCircuit/local-deep-research/issues) *(don't hesitate to ask if you're stuck!)*"
+                _("- 🐛 **Report bugs or get help:** [GitHub Issues](https://github.com/LearningCircuit/local-deep-research/issues) *(don't hesitate to ask if you're stuck!)*")
             )
             report_parts.append(
-                "- 💭 **Join discussions:** [Reddit r/LocalDeepResearch](https://www.reddit.com/r/LocalDeepResearch/) *(checked less frequently)*"
+                _("- 💭 **Join discussions:** [Reddit r/LocalDeepResearch](https://www.reddit.com/r/LocalDeepResearch/) *(checked less frequently)*")
             )
 
             # Show partial results if available (in expandable section)
@@ -97,7 +98,7 @@ class ErrorReportGenerator:
                 partial_content = self._format_partial_results(partial_results)
                 if partial_content:
                     report_parts.append(
-                        f"\n<details>\n<summary>📊 Partial Results Available</summary>\n\n{partial_content}\n</details>"
+                        _("\n<details>\n<summary>📊 Partial Results Available</summary>\n\n{content}\n</details>").format(content=partial_content)
                     )
 
             return "\n".join(report_parts)
@@ -105,7 +106,7 @@ class ErrorReportGenerator:
         except Exception:
             # Fallback: always return something, even if error report generation fails
             logger.exception("Failed to generate error report")
-            return f"""# ⚠️ Research Failed
+            return _("""# ⚠️ Research Failed
 
 **What happened:** {error_message}
 
@@ -115,7 +116,7 @@ We're here to help you get this working:
 - 💬 **Chat with the community:** [Discord #help-and-support](https://discord.gg/ttcqQeFcJ3)
 - 🐛 **Report bugs or get help:** [GitHub Issues](https://github.com/LearningCircuit/local-deep-research/issues) *(don't hesitate to ask if you're stuck!)*
 
-*Note: Error report generation failed - showing basic error information.*"""
+*Note: Error report generation failed - showing basic error information.*""").format(error_message=error_message)
 
     def _format_partial_results(
         self, partial_results: Optional[Dict[str, Any]]
@@ -138,7 +139,7 @@ We're here to help you get this working:
         if "current_knowledge" in partial_results:
             knowledge = partial_results["current_knowledge"]
             if knowledge and len(knowledge.strip()) > 50:
-                formatted_parts.append("### Research Summary\n")
+                formatted_parts.append(_("### Research Summary\n"))
                 formatted_parts.append(
                     knowledge[:1000] + "..."
                     if len(knowledge) > 1000
@@ -150,24 +151,24 @@ We're here to help you get this working:
         if "search_results" in partial_results:
             results = partial_results["search_results"]
             if results:
-                formatted_parts.append("### Search Results Found\n")
+                formatted_parts.append(_("### Search Results Found\n"))
                 for i, result in enumerate(results[:5], 1):  # Show top 5
-                    title = result.get("title", "Untitled")
+                    title = result.get("title", _("Untitled"))
                     url = result.get("url", "")
                     formatted_parts.append(f"{i}. **{title}**")
                     if url:
-                        formatted_parts.append(f"   - URL: {url}")
+                        formatted_parts.append(_("   - URL: {url}").format(url=url))
                 formatted_parts.append("")
 
         # Findings
         if "findings" in partial_results:
             findings = partial_results["findings"]
             if findings:
-                formatted_parts.append("### Research Findings\n")
+                formatted_parts.append(_("### Research Findings\n"))
                 for i, finding in enumerate(findings[:3], 1):  # Show top 3
                     content = finding.get("content", "")
                     if content and not content.startswith("Error:"):
-                        phase = finding.get("phase", f"Finding {i}")
+                        phase = finding.get("phase", _("Finding {n}").format(n=i))
                         formatted_parts.append(f"**{phase}:**")
                         formatted_parts.append(
                             content[:500] + "..."
@@ -178,7 +179,7 @@ We're here to help you get this working:
 
         if formatted_parts:
             formatted_parts.append(
-                "*Note: The above results were successfully collected before the error occurred.*"
+                _("*Note: The above results were successfully collected before the error occurred.*")
             )
 
         return "\n".join(formatted_parts) if formatted_parts else ""
@@ -426,7 +427,9 @@ We're here to help you get this working:
             import re
 
             if re.search(pattern, error_message, re.IGNORECASE):
-                return f"{replacement}\n\nTechnical error: {error_message}"
+                return _("{replacement}\n\nTechnical error: {error_message}").format(
+                    replacement=_(replacement), error_message=error_message
+                )
 
         # If no specific replacement found, return original message
         return error_message

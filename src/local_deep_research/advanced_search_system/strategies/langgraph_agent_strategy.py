@@ -20,6 +20,7 @@ from langgraph.errors import GraphRecursionError
 from loguru import logger
 
 from ...citation_handler import CitationHandler
+from ...exceptions import ResearchTerminatedException
 from ...utilities.search_utilities import (
     extract_links_from_search_results,
     format_links_to_markdown,
@@ -686,8 +687,23 @@ class LangGraphAgentStrategy(BaseSearchStrategy):
             )
             if not final_content:
                 final_content = self._synthesize_from_collector(query)
+        except ResearchTerminatedException:
+            # User clicked cancel — let the termination exception
+            # propagate up so the research is marked SUSPENDED (not
+            # FAILED) and the thread exits cleanly.
+            raise
         except Exception as exc:
             logger.exception("LangGraph agent error")
+            # If the user clicked Cancel while we were in the middle of
+            # an LLM call (which is now raising), the cancel flag is
+            # set but the cooperative check inside progress_callback
+            # never got a chance to run. Re-check it here so the user
+            # gets a clean SUSPENDED state instead of a confusing
+            # FAILED with the bad-model/whatever error.
+            try:
+                self.check_termination()
+            except ResearchTerminatedException:
+                raise
             if not final_content:
                 if self.collector.results:
                     final_content = self._synthesize_from_collector(query)
@@ -713,6 +729,14 @@ class LangGraphAgentStrategy(BaseSearchStrategy):
         results = self.collector.results
         if not results:
             return "Research could not be completed within the iteration limit."
+        # Re-check the cancel flag before issuing another LLM call so
+        # a user-cancelled research doesn't sit in this direct
+        # ``self.model.invoke`` (which bypasses progress_callback) for
+        # the full synthesis round-trip.
+        try:
+            self.check_termination()
+        except ResearchTerminatedException:
+            raise
         summaries = []
         for r in results[:20]:
             summaries.append(

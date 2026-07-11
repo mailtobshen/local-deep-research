@@ -175,6 +175,28 @@ class TestTerminateResearch:
         assert resp.status_code == 200
         assert research.status == "suspended"
 
+    def test_terminate_not_active_still_sets_termination_flag(self, client):
+        """Termination flag is set even when research is not in globals.
+
+        A running research thread checks the flag in progress_callback.
+        Setting it unconditionally ensures the thread stops as soon as
+        the next callback fires, even if the active-research dict has
+        already been cleaned up (e.g. by a prior error path).
+        """
+        research = _make_research(status="in_progress")
+        ms = _mock_db_session()
+        ms.query.return_value.filter_by.return_value.first.return_value = (
+            research
+        )
+        with (
+            patch(f"{MODULE}.get_user_db_session", return_value=_ctx(ms)),
+            patch(f"{MODULE}.is_research_active", return_value=False),
+            patch(f"{MODULE}.set_termination_flag") as mock_set_flag,
+        ):
+            resp = client.post("/api/terminate/res-1")
+        assert resp.status_code == 200
+        mock_set_flag.assert_called_once_with("res-1")
+
     def test_terminate_active_string_progress_log(self, client):
         """Handles progress_log stored as a JSON string."""
         research = _make_research(

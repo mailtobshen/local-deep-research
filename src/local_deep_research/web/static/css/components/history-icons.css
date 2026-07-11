@@ -74,6 +74,23 @@
     color: var(--accent-secondary);
 }
 
+/* Copy-query button specific styling */
+.ldr-history-item-actions .ldr-copy-query-btn {
+    color: var(--text-secondary);
+    border-color: var(--text-secondary);
+}
+
+.ldr-history-item-actions .ldr-copy-query-btn:hover {
+    background-color: rgba(var(--text-secondary-rgb, 128, 128, 128), 0.1);
+    color: var(--text-primary);
+}
+
+.ldr-history-item-actions .ldr-copy-query-btn.ldr-copy-success {
+    color: var(--success-color);
+    border-color: var(--success-color);
+    background-color: rgba(var(--success-color-rgb), 0.1);
+}
+
 /* Delete button specific styling */
 .ldr-history-item-actions .ldr-delete-item-btn {
     color: var(--error-color);

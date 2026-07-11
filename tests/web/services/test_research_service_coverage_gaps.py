@@ -139,7 +139,11 @@ class TestRunResearchEarlyTermination:
                 p.stop()
 
         # cleanup_research_resources must have been called
-        mock_cleanup.assert_called_once_with(1, "testuser", user_password=None)
+        from local_deep_research.constants import ResearchStatus
+
+        mock_cleanup.assert_called_once_with(
+            1, "testuser", user_password=None, final_status=ResearchStatus.SUSPENDED
+        )
         # AdvancedSearchSystem should not have been created
         patches[f"{MODULE}.AdvancedSearchSystem"].assert_not_called()
 
@@ -636,7 +640,11 @@ class TestHandleTerminationExceptionPath:
             handle_termination(99, username="user1")
 
         # cleanup_research_resources must still be called despite the error
-        mock_cleanup.assert_called_once_with(99, "user1")
+        from local_deep_research.constants import ResearchStatus
+
+        mock_cleanup.assert_called_once_with(
+            99, "user1", final_status=ResearchStatus.SUSPENDED
+        )
 
     @patch(f"{MODULE}.cleanup_research_resources")
     def test_successful_termination_queues_suspended_status(self, mock_cleanup):
@@ -656,7 +664,9 @@ class TestHandleTerminationExceptionPath:
         assert call_kwargs["status"] == ResearchStatus.SUSPENDED
         assert call_kwargs["username"] == "user1"
         assert call_kwargs["research_id"] == 55
-        mock_cleanup.assert_called_once_with(55, "user1")
+        mock_cleanup.assert_called_once_with(
+            55, "user1", final_status=ResearchStatus.SUSPENDED
+        )
 
 
 # ---------------------------------------------------------------------------

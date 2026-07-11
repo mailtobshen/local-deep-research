@@ -529,7 +529,7 @@
             // If no message but we have a status, generate a more descriptive message
             // BUT ONLY if we don't already have a meaningful message displayed
             if (!specificProgressMessage && data.status &&
-                (!currentTaskText.dataset.lastMessage || currentTaskText.textContent === i18n.t('In Progress')) {
+                (!currentTaskText.dataset.lastMessage || currentTaskText.textContent === i18n.t('In Progress'))) {
                 let statusMsg;
                 switch (data.status) {
                     case 'starting':
@@ -616,9 +616,14 @@
         }
 
         // Update UI for completion
-        if (ResearchStates.isCompleted(data.status)) {
-            // Show view results button
+        if (ResearchStates.isCompleted(data.status) || ResearchStates.isPartialSuccess(data.status)) {
+            // Show view results button — PARTIAL_SUCCESS also has a
+            // viewable report (fallback content saved by the synthesis
+            // error path).
             if (viewResultsButton) {
+                if (ResearchStates.isPartialSuccess(data.status)) {
+                    viewResultsButton.textContent = i18n.t('View Partial Report');
+                }
                 viewResultsButton.style.display = 'inline-block';
                 URLValidator.safeAssign(viewResultsButton, 'href', URLBuilder.resultsPage(currentResearchId));
             }
@@ -712,6 +717,35 @@
             }
 
             await window.api.terminateResearch(currentResearchId);
+
+            // Re-fetch the actual current status. The research may have
+            // already been moved to a terminal state (FAILED/ERROR) by
+            // the error path while the user was clicking cancel, in
+            // which case the optimistic "Cancelled" UI would be
+            // misleading — we should show the real state instead.
+            try {
+                const status = await window.api.getResearchStatus(currentResearchId);
+                if (status && ResearchStates.isTerminal(status.status)) {
+                    // The actual terminal state — let the standard
+                    // completion handler render the right UI.
+                    handleResearchCompletion(status);
+                    if (ResearchStates.isFailed(status.status)) {
+                        if (window.ui) {
+                            window.ui.showError(
+                                i18n.t('Research already failed; nothing to cancel.')
+                            );
+                        }
+                    }
+                    return;
+                }
+            } catch (statusErr) {
+                SafeLogger.warn(
+                    'Could not re-fetch research status after cancel:',
+                    statusErr
+                );
+                // Fall through to the optimistic UI if the re-fetch
+                // fails (e.g. socket blip).
+            }
 
             // Update status manually (in case socket fails)
             if (statusText) {

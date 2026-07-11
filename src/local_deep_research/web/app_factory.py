@@ -515,6 +515,7 @@ def apply_middleware(app):
     def inject_frontend_constants():
         terminal = [
             ResearchStatus.COMPLETED,
+            ResearchStatus.PARTIAL_SUCCESS,
             ResearchStatus.SUSPENDED,
             ResearchStatus.FAILED,
             ResearchStatus.ERROR,

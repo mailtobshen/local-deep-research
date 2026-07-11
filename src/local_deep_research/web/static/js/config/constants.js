@@ -52,6 +52,12 @@ window.ResearchStates = Object.freeze({
         return status === window.RESEARCH_STATUS.COMPLETED;
     },
 
+    /** True for partially-successful research — synthesis errored
+     *  but fallback recovered enough findings to produce a report. */
+    isPartialSuccess(status) {
+        return status === window.RESEARCH_STATUS.PARTIAL_SUCCESS;
+    },
+
     /** True for failed research (unrecoverable error, includes legacy 'error' status) */
     isFailed(status) {
         return status === window.RESEARCH_STATUS.FAILED
@@ -82,6 +88,7 @@ window.ResearchStates = Object.freeze({
         const labels = {};
         labels[RS.IN_PROGRESS] = i18n.t('In Progress');
         labels[RS.COMPLETED] = i18n.t('Completed');
+        labels[RS.PARTIAL_SUCCESS] = i18n.t('Partial Success');
         labels[RS.FAILED] = i18n.t('Failed');
         labels[RS.SUSPENDED] = i18n.t('Cancelled');
         labels[RS.CANCELLED] = i18n.t('Cancelled');

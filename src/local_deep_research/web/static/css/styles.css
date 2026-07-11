@@ -1170,6 +1170,12 @@ textarea:focus, input[type="text"]:focus {
   color: var(--success-color);
 }
 
+.ldr-status-partial-success,
+.ldr-status-partial_success {
+  background-color: rgba(var(--warning-color-rgb), 0.15);
+  color: var(--warning-color);
+}
+
 .ldr-status-in-progress {
   background-color: rgba(var(--accent-tertiary-rgb), 0.15);
   color: var(--accent-tertiary);
