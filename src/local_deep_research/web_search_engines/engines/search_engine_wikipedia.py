@@ -52,6 +52,15 @@ class WikipediaSearchEngine(BaseSearchEngine):
         # Set the Wikipedia language
         wikipedia.set_lang(language)
 
+        # Wikimedia requires a descriptive User-Agent for API access; the
+        # library's default UA triggers 429 Too Many Requests, which surfaces
+        # as a JSONDecodeError (empty body) and gets swallowed into the
+        # "Error getting Wikipedia previews" log line.
+        wikipedia.set_user_agent(
+            "LocalDeepResearch/1.0 "
+            "(https://github.com/local-deep-research/local-deep-research)"
+        )
+
     def _get_previews(self, query: str) -> List[Dict[str, Any]]:
         """
         Get preview information (titles and summaries) for Wikipedia pages.
