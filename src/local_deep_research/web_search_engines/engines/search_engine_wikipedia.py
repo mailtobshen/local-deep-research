@@ -61,6 +61,15 @@ class WikipediaSearchEngine(BaseSearchEngine):
             "(https://github.com/local-deep-research/local-deep-research)"
         )
 
+        # The wikipedia PyPI library has no proxy API — it calls a bare
+        # requests.get() which honors HTTP_PROXY/HTTPS_PROXY/NO_PROXY env.
+        # When the operator has enabled the network proxy, populate those env
+        # vars so Wikipedia API requests (and previews) egress through the
+        # proxy instead of timing out on direct connection.
+        from ...security.proxy_config import apply_proxy_to_wikipedia_env
+
+        apply_proxy_to_wikipedia_env()
+
     def _get_previews(self, query: str) -> List[Dict[str, Any]]:
         """
         Get preview information (titles and summaries) for Wikipedia pages.

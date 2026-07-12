@@ -211,6 +211,48 @@
         "value": "",
         "visible": true
     },
+    "app.network.proxy_enabled": {
+        "category": "app_network",
+        "description": "Enable to route ALL outbound HTTP/HTTPS requests (web/HTML and PDF downloads, Wikipedia API, SearXNG backends) through the proxy URL below. Local/private services (Ollama, SearXNG, LMStudio on loopback/RFC1918) are auto-bypassed. Env override: LDR_APP_NETWORK_PROXY_ENABLED. Container/local deployments both honor this setting.",
+        "editable": true,
+        "max_value": null,
+        "min_value": null,
+        "name": "Enable Network Proxy",
+        "options": null,
+        "step": null,
+        "type": "APP",
+        "ui_element": "checkbox",
+        "value": false,
+        "visible": true
+    },
+    "app.network.proxy_url": {
+        "category": "app_network",
+        "description": "Proxy URL used when the network proxy is enabled. Supports http://host:port, https://host:port, and socks5h://host:port (socks5h does DNS via the proxy). Example: http://172.25.128.1:10888 . Env override: LDR_APP_NETWORK_PROXY_URL. This is the single source of truth — SearXNG outgoing proxy and all LDR downloaders read this value.",
+        "editable": true,
+        "max_value": null,
+        "min_value": null,
+        "name": "Proxy URL",
+        "options": null,
+        "step": null,
+        "type": "APP",
+        "ui_element": "text",
+        "value": "",
+        "visible": true
+    },
+    "app.network.allow_insecure_tls": {
+        "category": "app_network",
+        "description": "Last-resort fallback for sites whose TLS chain is incomplete (server sends only the leaf cert, no intermediate CA — e.g. some academic .edu.tw hosts). When enabled, after auto-fetching the intermediate CA fails, the downloader retries once with certificate verification disabled for that request. Security risk: disabled verification enables MITM. Leave OFF unless you trust the network path. Env override: LDR_APP_NETWORK_ALLOW_INSECURE_TLS.",
+        "editable": true,
+        "max_value": null,
+        "min_value": null,
+        "name": "Allow Insecure TLS (Fallback)",
+        "options": null,
+        "step": null,
+        "type": "APP",
+        "ui_element": "checkbox",
+        "value": false,
+        "visible": true
+    },
     "app.theme": {
         "category": "app_interface",
         "description": "User interface color theme. Choose from 20 themes including popular developer themes.",

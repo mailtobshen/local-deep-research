@@ -222,8 +222,12 @@ class BaseDownloader(ABC):
                 else:
                     request_headers = dict(self.session.headers)
 
-                # Make the request
-                response = self.session.get(
+                # Make the request (with two-stage TLS certificate fallback
+                # for sites whose chain omits the intermediate CA).
+                from ...security.proxy_config import fetch_with_cert_fallback
+
+                response = fetch_with_cert_fallback(
+                    self.session,
                     url,
                     headers=request_headers,
                     timeout=self.timeout,
@@ -313,6 +317,24 @@ class BaseDownloader(ABC):
                     f"Attempt {attempt}/{max_attempts} - {type(e).__name__} downloading from {url}"
                 )
                 continue  # Retry with adaptive wait
+            except requests.exceptions.SSLError as e:
+                # TLS verification failed and the cert-fallback in
+                # fetch_with_cert_fallback could not recover (insecure toggle
+                # off). Record and stop — retrying won't help.
+                logger.warning(
+                    f"SSLError downloading from {url}: certificate chain "
+                    f"could not be verified. Enable "
+                    f"app.network.allow_insecure_tls to retry without "
+                    f"verification if you trust the network path."
+                )
+                self.rate_tracker.record_outcome(
+                    engine_type=engine_type,
+                    wait_time=wait_time,
+                    success=False,
+                    retry_count=attempt,
+                    error_type="SSLError",
+                )
+                return None
             except requests.exceptions.RequestException as e:
                 logger.exception(f"Request error downloading from {url}")
                 # Record failure but don't retry

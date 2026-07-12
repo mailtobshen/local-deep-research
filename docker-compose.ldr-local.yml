@@ -12,7 +12,13 @@
 #   - 端口 5000 不变
 #   - 容器名加 -ldr 后缀, 避免与已存在的 searxng 容器冲突
 #
-# 启动: docker compose -f docker-compose.ldr-local.yml up -d
+# 网络代理归口 (统一到 WebUI「设置-配置-网络代理 PROXY」):
+#   - 宿主 shell/.env 导出 LDR_APP_NETWORK_PROXY_URL (例: http://172.25.128.1:10888)
+#   - LDR 容器: 读 LDR_APP_NETWORK_PROXY_ENABLED/URL, 下载器与 wikipedia 库走此代理
+#   - SearXNG 容器: 同一 URL 注入其 settings.yml 的 outgoing.proxies (httpx 不读 env)
+#   - 该值须与 WebUI「设置-配置-网络代理 PROXY URL」一致, 实现单源归口管理
+#
+# 启动: LDR_APP_NETWORK_PROXY_URL=http://172.25.128.1:10888 docker compose -f docker-compose.ldr-local.yml up -d
 # 停止: docker compose -f docker-compose.ldr-local.yml down
 # 日志: docker compose -f docker-compose.ldr-local.yml logs -f ldr-local
 # =============================================================================
@@ -42,6 +48,12 @@ services:
       - LDR_LLM_OLLAMA_URL=http://172.25.128.1:11434
       # --- SearXNG: 同网络容器名 + 8080 (容器内解析) ---
       - LDR_SEARCH_ENGINE_WEB_SEARXNG_DEFAULT_PARAMS_INSTANCE_URL=http://searxng-ldr:8080
+
+      # --- 网络代理归口 (与 WebUI「设置-配置-网络代理 PROXY」同源) ---
+      # LDR 自身下载器 (HTML/PDF) 与 wikipedia 库经此代理出网。
+      # 本地服务 (Ollama/SearXNG on 私有网段) 自动豁免, 不走代理。
+      - LDR_APP_NETWORK_PROXY_ENABLED=${LDR_APP_NETWORK_PROXY_ENABLED:-true}
+      - LDR_APP_NETWORK_PROXY_URL=${LDR_APP_NETWORK_PROXY_URL:-http://172.25.128.1:10888}
 
     volumes:
       - ldr_local_data:/data
@@ -91,8 +103,9 @@ services:
       # IPv4 超时), 必须经宿主代理 172.25.128.1:10888 出网。
       # SearXNG 的 httpx 不读 HTTPS_PROXY 环境变量, 必须写入 settings.yml 的
       # outgoing.proxies (见下方 entrypoint 注入)。否则所有后端引擎超时 -> 0 结果。
+      # 代理 URL 统一引用 LDR_APP_NETWORK_PROXY_URL, 与 WebUI「设置-网络代理」归口。
       # ---------------------------------------------------------------------
-      - SEARXNG_OUTGOING_PROXY=http://172.25.128.1:10888
+      - SEARXNG_OUTGOING_PROXY=${LDR_APP_NETWORK_PROXY_URL:-http://172.25.128.1:10888}
     # entrypoint 先确保 settings.yml 存在 (首次从模板生成), 再追加 json format 与代理
     entrypoint: /bin/sh
     command:

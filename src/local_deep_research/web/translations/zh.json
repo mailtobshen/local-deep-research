@@ -199,6 +199,7 @@
   "Any overdue subscriptions will run shortly after login": "任何逾期的订阅将在登录后不久运行",
   "App Interface": "应用界面",
   "App Parameters": "应用参数",
+  "Network": "网络代理",
   "Application": "应用",
   "Apply": "应用",
   "ArXiv is a shared resource containing only academic papers - benchmarking with SimpleQA is useless as it will find zero relevant results for general knowledge questions. Should not be used for this test. Use Tavily instead.": "ArXiv 是仅包含学术论文的共享资源 - 使用 SimpleQA 进行基准测试毫无用处，因为对于一般知识问题它将找不到任何相关结果。不应在此测试中使用。请改用 Tavily。",

@@ -195,6 +195,7 @@
   "Any overdue subscriptions will run shortly after login": "Any overdue subscriptions will run shortly after login",
   "App Interface": "App Interface",
   "App Parameters": "App Parameters",
+  "Network": "Network",
   "Application": "Application",
   "Apply": "Apply",
   "ArXiv is a shared resource containing only academic papers - benchmarking with SimpleQA is useless as it will find zero relevant results for general knowledge questions. Should not be used for this test. Use Tavily instead.": "ArXiv is a shared resource containing only academic papers - benchmarking with SimpleQA is useless as it will find zero relevant results for general knowledge questions. Should not be used for this test. Use Tavily instead.",

@@ -1006,6 +1006,7 @@
         // Special cases for known categories
         if (category === 'app_interface') return i18n.t('App Interface');
         if (category === 'app_parameters') return i18n.t('App Parameters');
+        if (category === 'app_network') return i18n.t('Network');
         if (category === 'llm_general') return i18n.t('LLM General');
         if (category === 'llm_parameters') return i18n.t('LLM Parameters');
         if (category === 'report_parameters') return i18n.t('Report Parameters');

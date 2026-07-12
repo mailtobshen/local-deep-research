@@ -13,6 +13,7 @@ from bs4 import BeautifulSoup
 from .base import BaseDownloader, ContentType, DownloadResult
 from .extraction.pipeline import extract_content_with_metadata
 from ...constants import BROWSER_USER_AGENT
+from ...security.proxy_config import fetch_with_cert_fallback
 
 
 class HTMLDownloader(BaseDownloader):
@@ -117,7 +118,8 @@ class HTMLDownloader(BaseDownloader):
         wait_time = self.rate_tracker.apply_rate_limit(engine_type)
 
         try:
-            response = self.session.get(
+            response = fetch_with_cert_fallback(
+                self.session,
                 url,
                 timeout=self.timeout,
                 allow_redirects=True,
