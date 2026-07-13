@@ -118,6 +118,8 @@ services:
           sed -i "s/ultrasecretkey/$${SECRET}/g" /etc/searxng/settings.yml
         fi
         grep -q 'json' /etc/searxng/settings.yml || printf '\nsearch:\n  formats:\n    - html\n    - json\n' >> /etc/searxng/settings.yml
+        # 启用 /healthz 端点供 healthcheck 探测 (默认未开启, 否则 wget exit 4 -> unhealthy)
+        grep -q 'healthz_enabled' /etc/searxng/settings.yml || sed -i '/^server:/a\  healthz_enabled: true' /etc/searxng/settings.yml
         # 注入出网代理 (SearXNG httpx 不读环境变量, 必须写 outgoing.proxies)
         # .onion 引擎 (ahmia/torch) 走 Tor sidecar (容器名 tor, SOCKS5 9050);
         # ahmia/torch 需 using_tor_proxy: true 才会被判为 active, 且引擎级 proxies 只走 tor
