@@ -319,13 +319,13 @@ class BaseDownloader(ABC):
                 continue  # Retry with adaptive wait
             except requests.exceptions.SSLError as e:
                 # TLS verification failed and the cert-fallback in
-                # fetch_with_cert_fallback could not recover (insecure toggle
-                # off). Record and stop — retrying won't help.
+                # fetch_with_cert_fallback could not recover — the
+                # verify=False one-off retry also failed (connection-layer
+                # error, not a chain issue). Retry won't help; stop.
                 logger.warning(
-                    f"SSLError downloading from {url}: certificate chain "
-                    f"could not be verified. Enable "
-                    f"app.network.allow_insecure_tls to retry without "
-                    f"verification if you trust the network path."
+                    f"SSLError downloading from {url}: TLS verification "
+                    f"failed and the verify=False one-off retry did not "
+                    f"succeed."
                 )
                 self.rate_tracker.record_outcome(
                     engine_type=engine_type,

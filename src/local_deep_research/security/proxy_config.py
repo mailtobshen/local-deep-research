@@ -11,9 +11,12 @@ This module is the single source of truth for the ``app.network.*`` settings
 - :func:`apply_proxy_to_wikipedia_env` — the ``wikipedia`` PyPI library has no
   proxy API but honors ``HTTP_PROXY``/``HTTPS_PROXY``/``NO_PROXY`` env via its
   bare ``requests.get``; this writes those env vars when a proxy is configured.
-- :func:`get_allow_insecure_tls` — read the insecure-TLS fallback toggle.
-- :func:`fetch_with_cert_fallback` — two-stage SSL fallback for downloaders:
-  verify → AIA intermediate-CA fetch → optional ``verify=False`` retry.
+- :func:`get_allow_insecure_tls` — read the insecure-TLS fallback toggle
+  (kept for backward compatibility; no longer gates Stage 3).
+- :func:`fetch_with_cert_fallback` — TLS fallback for downloaders:
+  verify → AIA intermediate-CA fetch → unconditional one-off ``verify=False``
+  retry on any remaining SSLError. ``verify=True`` remains the default for all
+  other requests; nothing "insecure" is persisted.
 
 Why this exists: WSL2/container environments cannot reach the public internet
 directly (zh.wikipedia.org, etc. time out) and must egress through a forward
@@ -366,14 +369,16 @@ def _maybe_der_to_pem(body: bytes) -> Optional[str]:
 
 
 def fetch_with_cert_fallback(session, url: str, **kwargs):
-    """Run ``session.get`` with a two-stage TLS certificate fallback.
+    """Run ``session.get`` with a TLS certificate fallback chain.
 
     Stage 1: normal request (verify=True, the default).
     Stage 2: on :class:`requests.exceptions.SSLError`, try fetching the missing
         intermediate CA via AIA and retry with a combined trust bundle.
-    Stage 3: if stage 2 also fails with SSLError and
-        :func:`get_allow_insecure_tls` is True, retry once with verify=False
-        and log a warning. If the toggle is False, re-raise the SSLError.
+    Stage 3: unconditional one-off retry with ``verify=False``. This applies
+        ONLY to this single ``session.get`` call — ``session.verify`` is never
+        mutated, so the next request to any URL still defaults to verify=True.
+        ``get_allow_insecure_tls`` no longer gates this stage (the toggle is
+        retained only for backward compatibility).
 
     Non-SSL exceptions are never caught here — they propagate to the caller's
     existing error handling.
@@ -402,18 +407,15 @@ def fetch_with_cert_fallback(session, url: str, **kwargs):
             except OSError:
                 pass
 
-    # Stage 3: insecure fallback
-    if get_allow_insecure_tls():
-        logger.warning(
-            "TLS verification skipped for {} per app.network.allow_insecure_tls "
-            "(server certificate chain could not be completed).",
-            url,
-        )
-        return session.get(url, verify=False, **kwargs)
-
-    # Re-raise a fresh SSLError so the caller's existing handler logs it.
-    raise requests.exceptions.SSLError(
-        f"SSL verification failed for {url}: server certificate chain incomplete "
-        "(no intermediate CA). Enable app.network.allow_insecure_tls to retry "
-        "without verification if you trust the network path."
+    # Stage 3: per-request insecure fallback.
+    # verify=False applies ONLY to this one retry; the next request to any URL
+    # still defaults to verify=True. We do not persist any "insecure" state.
+    # SSRF protection is unaffected: SafeSession.send validates the host on
+    # every request regardless of verify.
+    logger.warning(
+        "TLS verification skipped for {} as a one-off retry: server certificate "
+        "chain could not be completed (AIA intermediate-CA fetch also failed). "
+        "verify=True is restored for subsequent requests.",
+        url,
     )
+    return session.get(url, verify=False, **kwargs)
