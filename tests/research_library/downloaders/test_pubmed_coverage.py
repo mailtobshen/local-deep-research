@@ -287,20 +287,32 @@ class TestDownloadPdfWithResult:
 
     def test_pmc_url_europe_pmc_success(self, downloader):
         """PMC URL: Europe PMC succeeds on first try."""
-        with patch.object(
-            downloader, "_download_via_europe_pmc", return_value=b"%PDF"
+        with (
+            patch.object(
+                downloader, "_is_in_europe_pmc", return_value=True
+            ),
+            patch.object(
+                downloader,
+                "_fetch_fulltext_xml_from_europe_pmc",
+                return_value="full text",
+            ),
         ):
             result = downloader._download_pdf_with_result(
                 "https://ncbi.nlm.nih.gov/pmc/articles/PMC1234567/"
             )
         assert result.is_success is True
-        assert result.content == b"%PDF"
+        assert result.content == b"full text"
 
     def test_pmc_url_fallback_to_ncbi(self, downloader):
         """PMC URL: Europe PMC fails, NCBI PMC succeeds."""
         with (
             patch.object(
-                downloader, "_download_via_europe_pmc", return_value=None
+                downloader, "_is_in_europe_pmc", return_value=True
+            ),
+            patch.object(
+                downloader,
+                "_fetch_fulltext_xml_from_europe_pmc",
+                return_value=None,
             ),
             patch.object(
                 downloader, "_download_via_ncbi_pmc", return_value=b"%PDF-ncbi"
@@ -316,7 +328,12 @@ class TestDownloadPdfWithResult:
         """PMC URL: both sources fail gives descriptive skip reason."""
         with (
             patch.object(
-                downloader, "_download_via_europe_pmc", return_value=None
+                downloader, "_is_in_europe_pmc", return_value=True
+            ),
+            patch.object(
+                downloader,
+                "_fetch_fulltext_xml_from_europe_pmc",
+                return_value=None,
             ),
             patch.object(
                 downloader, "_download_via_ncbi_pmc", return_value=None
@@ -403,14 +420,16 @@ class TestDownloadPdfWithResult:
         with (
             patch.object(downloader.session, "get", return_value=api_resp),
             patch.object(
-                downloader, "_download_via_europe_pmc", return_value=b"%PDF-ok"
+                downloader,
+                "_fetch_fulltext_xml_from_europe_pmc",
+                return_value="ok text",
             ),
         ):
             result = downloader._download_pdf_with_result(
                 "https://pubmed.ncbi.nlm.nih.gov/99999999/"
             )
         assert result.is_success is True
-        assert result.content == b"%PDF-ok"
+        assert result.content == b"ok text"
 
     def test_pubmed_url_not_found_in_europe_pmc(self, downloader):
         """PMID not found in Europe PMC database."""
@@ -440,7 +459,9 @@ class TestDownloadPdfWithResult:
                 downloader, "_get_pmc_id_from_pmid", return_value="PMC777"
             ),
             patch.object(
-                downloader, "_download_via_europe_pmc", return_value=b"%PDF-fb"
+                downloader,
+                "_fetch_fulltext_xml_from_europe_pmc",
+                return_value="fb text",
             ),
         ):
             result = downloader._download_pdf_with_result(
@@ -458,7 +479,9 @@ class TestDownloadPdfWithResult:
                 downloader, "_get_pmc_id_from_pmid", return_value="PMC888"
             ),
             patch.object(
-                downloader, "_download_via_europe_pmc", return_value=None
+                downloader,
+                "_fetch_fulltext_xml_from_europe_pmc",
+                return_value=None,
             ),
             patch.object(
                 downloader, "_download_via_ncbi_pmc", return_value=None
@@ -491,18 +514,22 @@ class TestDownloadPdfWithResult:
     def test_europe_pmc_url_success(self, downloader):
         """Europe PMC URL with valid PMC ID succeeds."""
         with patch.object(
-            downloader, "_download_via_europe_pmc", return_value=b"%PDF-eu"
+            downloader,
+            "_fetch_fulltext_xml_from_europe_pmc",
+            return_value="eu text",
         ):
             result = downloader._download_pdf_with_result(
                 "https://europepmc.org/article/PMC7654321"
             )
         assert result.is_success is True
-        assert result.content == b"%PDF-eu"
+        assert result.content == b"eu text"
 
     def test_europe_pmc_url_download_fails(self, downloader):
         """Europe PMC URL with valid PMC ID but download fails."""
         with patch.object(
-            downloader, "_download_via_europe_pmc", return_value=None
+            downloader,
+            "_fetch_fulltext_xml_from_europe_pmc",
+            return_value=None,
         ):
             result = downloader._download_pdf_with_result(
                 "https://europepmc.org/article/PMC7654321"
@@ -521,7 +548,9 @@ class TestDownloadPdfWithResult:
     def test_europe_pmc_subdomain_url(self, downloader):
         """Europe PMC with www subdomain."""
         with patch.object(
-            downloader, "_download_via_europe_pmc", return_value=b"%PDF"
+            downloader,
+            "_fetch_fulltext_xml_from_europe_pmc",
+            return_value="ok",
         ):
             result = downloader._download_pdf_with_result(
                 "https://www.europepmc.org/article/PMC1111"
@@ -673,7 +702,9 @@ class TestDownloadPmcDirect:
 
     def test_europe_pmc_succeeds(self, downloader):
         with patch.object(
-            downloader, "_download_via_europe_pmc", return_value=b"ok"
+            downloader,
+            "_fetch_fulltext_xml_from_europe_pmc",
+            return_value="ok",
         ):
             result = downloader._download_pmc_direct(
                 "https://ncbi.nlm.nih.gov/pmc/articles/PMC999/"
@@ -683,7 +714,9 @@ class TestDownloadPmcDirect:
     def test_europe_pmc_fails_ncbi_succeeds(self, downloader):
         with (
             patch.object(
-                downloader, "_download_via_europe_pmc", return_value=None
+                downloader,
+                "_fetch_fulltext_xml_from_europe_pmc",
+                return_value=None,
             ),
             patch.object(
                 downloader, "_download_via_ncbi_pmc", return_value=b"ncbi"
@@ -721,7 +754,9 @@ class TestDownloadPubmed:
                 downloader, "_get_pmc_id_from_pmid", return_value="PMC111"
             ),
             patch.object(
-                downloader, "_download_via_europe_pmc", return_value=b"via-eu"
+                downloader,
+                "_fetch_fulltext_xml_from_europe_pmc",
+                return_value="via-eu",
             ),
         ):
             result = downloader._download_pubmed(
@@ -761,12 +796,14 @@ class TestTryEuropePmcApi:
         with (
             patch.object(downloader.session, "get", return_value=api_resp),
             patch.object(
-                downloader, "_download_via_europe_pmc", return_value=b"ok"
-            ) as mock_dl,
+                downloader,
+                "_fetch_fulltext_xml_from_europe_pmc",
+                return_value="ok",
+            ) as mock_xml,
         ):
             result = downloader._try_europe_pmc_api("12345")
         assert result == b"ok"
-        mock_dl.assert_called_once_with("PMC42")
+        mock_xml.assert_called_once_with("PMC42")
 
     def test_not_open_access(self, downloader):
         api_resp = MagicMock()
@@ -902,15 +939,20 @@ class TestGetPmcIdFromPmid:
 
 class TestDownloadViaMethods:
     def test_europe_pmc_constructs_correct_url(self, downloader):
-        with patch.object(downloader, "_download_pdf") as mock_dl:
-            mock_dl.return_value = b"pdf"
+        """_download_via_europe_pmc fetches fullTextXML for the given PMC id."""
+        with patch.object(
+            downloader, "_fetch_fulltext_xml_from_europe_pmc"
+        ) as mock_xml:
+            mock_xml.return_value = "text"
             downloader._download_via_europe_pmc("PMC555")
-            mock_dl.assert_called_once_with(
-                "https://europepmc.org/backend/ptpmcrender.fcgi?accid=PMC555&blobtype=pdf"
-            )
+            mock_xml.assert_called_once_with("PMC555")
 
     def test_europe_pmc_returns_none_on_failure(self, downloader):
-        with patch.object(downloader, "_download_pdf", return_value=None):
+        with patch.object(
+            downloader,
+            "_fetch_fulltext_xml_from_europe_pmc",
+            return_value=None,
+        ):
             assert downloader._download_via_europe_pmc("PMC555") is None
 
     def test_ncbi_pmc_tries_two_urls(self, downloader):
@@ -933,6 +975,49 @@ class TestDownloadViaMethods:
     def test_ncbi_pmc_both_fail(self, downloader):
         with patch.object(downloader, "_download_pdf", return_value=None):
             assert downloader._download_via_ncbi_pmc("PMC999") is None
+
+    def test_ncbi_pmc_uses_new_host_pattern(self, downloader):
+        """NCBI PMC tries the new pmc.ncbi.nlm.nih.gov host first."""
+        with patch.object(
+            downloader, "_download_pdf", side_effect=[None, None]
+        ) as mock_dl:
+            downloader._download_via_ncbi_pmc("PMC999")
+        first_url = mock_dl.call_args_list[0].args[0]
+        assert first_url == "https://pmc.ncbi.nlm.nih.gov/articles/PMC999/pdf/"
+
+    def test_fetch_fulltext_xml_rejects_pdf_only_stub(self, downloader):
+        """An advert 'available as a PDF' stub is not usable full text."""
+        stub = (
+            '<?xml version="1.0"?><article article-type="advert">'
+            "<body><p>The content is available as a PDF (937.3 KB).</p></body>"
+            "</article>"
+        )
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.text = stub
+        with patch.object(downloader.session, "get", return_value=resp):
+            assert downloader._fetch_fulltext_xml_from_europe_pmc("PMC1") is None
+
+    def test_fetch_fulltext_xml_extracts_real_text(self, downloader):
+        real = (
+            '<?xml version="1.0"?><article article-type="research-article">'
+            "<body><sec><p>Real article body text.</p></sec></body></article>"
+        )
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.text = real
+        with patch.object(downloader.session, "get", return_value=resp):
+            text = downloader._fetch_fulltext_xml_from_europe_pmc("PMC2")
+        assert text is not None and "Real article body text." in text
+
+    def test_is_in_europe_pmc_uses_exact_pmcid_field(self, downloader):
+        """The index lookup queries the exact pmcid: field, not loose PMC:."""
+        with patch.object(downloader.session, "get") as mock_get:
+            mock_get.return_value.json.return_value = {"hitCount": 0}
+            mock_get.return_value.status_code = 200
+            downloader._is_in_europe_pmc("PMC9999999")
+        sent_query = mock_get.call_args.kwargs["params"]["query"]
+        assert sent_query == "pmcid:PMC9999999"
 
 
 # ---------------------------------------------------------------------------

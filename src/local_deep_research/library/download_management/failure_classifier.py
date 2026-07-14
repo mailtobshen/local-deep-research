@@ -154,7 +154,32 @@ class FailureClassifier:
                     "Content returned HTML instead of PDF",
                 )
 
-        # Login/subscription/paywall errors — these are permanent
+        # Common timeout and network errors — check these BEFORE paywall
+        # detection, because transient connection/proxy errors can land in a
+        # skip_reason that also happens to contain the word "subscription"
+        # (e.g. when a PubMed downloader's paywall check ran but the actual
+        # failure was a proxy/network drop). A network failure is never a
+        # permanent paywall.
+        if "timeout" in error_lower or "timed out" in details_lower:
+            return TemporaryFailure(
+                "timeout", "Request timed out", timedelta(minutes=30)
+            )
+        if (
+            "proxyerror" in error_lower
+            or "proxy" in details_lower
+            or "remotedisconnected" in error_lower
+            or "empty reply" in details_lower
+            or "connection" in error_lower
+            or "network" in error_lower
+        ):
+            return TemporaryFailure(
+                "network_error",
+                "Network connectivity issue",
+                timedelta(minutes=5),
+            )
+
+        # Login/subscription/paywall errors — these are permanent.
+        # Reached only after we've ruled out network/proxy failures above.
         if any(
             pattern in details_lower
             for pattern in [
@@ -189,16 +214,14 @@ class FailureClassifier:
                 "forbidden", "Access denied based on error message"
             )
 
-        # Common timeout and network errors
-        if "timeout" in error_lower or "timed out" in details_lower:
-            return TemporaryFailure(
-                "timeout", "Request timed out", timedelta(minutes=30)
-            )
-        if "connection" in error_lower or "network" in error_lower:
-            return TemporaryFailure(
-                "network_error",
-                "Network connectivity issue",
-                timedelta(minutes=5),
+        # "Not in Europe PMC" is a definitive open-access miss — the article is
+        # only in NCBI's paywalled/embargoed side. This is permanent for our
+        # purposes (retrying Europe PMC will never help), so classify as a
+        # paywall rather than leaving it as an unknown temporary failure.
+        if "not in europe pmc" in details_lower:
+            return PermanentFailure(
+                "paywall",
+                "Article not in Europe PMC open-access index",
             )
 
         # Default to temporary failure with 1-hour cooldown

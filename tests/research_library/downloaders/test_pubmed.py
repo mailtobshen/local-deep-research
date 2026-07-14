@@ -422,21 +422,20 @@ class TestDownloadViaMethods:
 
     @patch("requests.Session.get")
     def test_download_via_europe_pmc_success(self, mock_get):
-        """Test successful download from Europe PMC."""
+        """Test successful download from Europe PMC (fullTextXML -> text)."""
         from local_deep_research.research_library.downloaders.pubmed import (
             PubMedDownloader,
         )
 
         mock_response = MagicMock()
         mock_response.status_code = 200
-        mock_response.content = b"%PDF-1.4 Europe PMC content"
-        mock_response.headers = {"Content-Type": "application/pdf"}
+        mock_response.text = "<article><body>Europe PMC full text</body></article>"
         mock_get.return_value = mock_response
 
         downloader = PubMedDownloader()
         result = downloader._download_via_europe_pmc("PMC1234567")
 
-        assert result == b"%PDF-1.4 Europe PMC content"
+        assert result == b"Europe PMC full text"
 
     @patch("requests.Session.get")
     def test_download_via_europe_pmc_failure(self, mock_get):
@@ -544,18 +543,17 @@ class TestTryEuropePmcApi:
             }
         }
 
-        # Second call - PDF download
-        pdf_response = MagicMock()
-        pdf_response.status_code = 200
-        pdf_response.content = b"%PDF-1.4 content"
-        pdf_response.headers = {"Content-Type": "application/pdf"}
+        # Second call - fullTextXML download (returns XML text, not PDF bytes)
+        xml_response = MagicMock()
+        xml_response.status_code = 200
+        xml_response.text = "<article><body>full text content</body></article>"
 
-        mock_get.side_effect = [api_response, pdf_response]
+        mock_get.side_effect = [api_response, xml_response]
 
         downloader = PubMedDownloader()
         result = downloader._try_europe_pmc_api("12345678")
 
-        assert result == b"%PDF-1.4 content"
+        assert result == b"full text content"
 
     @patch("requests.Session.get")
     def test_api_returns_no_results(self, mock_get):

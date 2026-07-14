@@ -208,6 +208,24 @@ class TestClassifyFailurePatterns:
         assert isinstance(f, TemporaryFailure)
         assert f.retry_after == timedelta(hours=1)
 
+    def test_network_failure_checked_before_paywall(self):
+        """A network drop must never be classified as a permanent paywall,
+        even when the details also contain the word 'subscription'."""
+        f = self.classifier.classify_failure(
+            "connection", details="proxy dropped while fetching subscription page"
+        )
+        assert isinstance(f, TemporaryFailure)
+        assert f.error_type == "network_error"
+
+    def test_not_in_europe_pmc_is_permanent(self):
+        """'not in Europe PMC' is a definitive OA miss — permanent, not retried."""
+        f = self.classifier.classify_failure(
+            "download_error",
+            details="PMC article PMC9999999 not in Europe PMC - not accessible via open access",
+        )
+        assert isinstance(f, PermanentFailure)
+        assert f.error_type == "paywall"
+
 
 # ---------------------------------------------------------------------------
 # classify_from_exception()

@@ -273,11 +273,12 @@ class TestPubMedEuropePmcDownload:
     def test_download_via_europe_pmc_success(
         self, downloader, mocker, mock_pdf_content
     ):
-        """Successfully downloads from Europe PMC."""
+        """Successfully downloads from Europe PMC (fullTextXML -> text)."""
         mock_response = mocker.Mock()
         mock_response.status_code = 200
-        mock_response.content = mock_pdf_content
-        mock_response.headers = {"content-type": "application/pdf"}
+        mock_response.text = (
+            "<article><body><p>Europe PMC full text</p></body></article>"
+        )
 
         mocker.patch.object(
             downloader.session, "get", return_value=mock_response
@@ -289,16 +290,17 @@ class TestPubMedEuropePmcDownload:
 
         content = downloader._download_via_europe_pmc("PMC1234567")
         assert content is not None
-        assert content == mock_pdf_content
+        assert content == b"Europe PMC full text"
 
     def test_download_via_europe_pmc_constructs_correct_url(
         self, downloader, mocker, mock_pdf_content
     ):
-        """Constructs correct Europe PMC URL."""
+        """Constructs correct Europe PMC fullTextXML URL."""
         mock_response = mocker.Mock()
         mock_response.status_code = 200
-        mock_response.content = mock_pdf_content
-        mock_response.headers = {"content-type": "application/pdf"}
+        mock_response.text = (
+            "<article><body><p>Europe PMC full text</p></body></article>"
+        )
 
         mock_get = mocker.patch.object(
             downloader.session, "get", return_value=mock_response
@@ -310,9 +312,10 @@ class TestPubMedEuropePmcDownload:
 
         downloader._download_via_europe_pmc("PMC1234567")
 
-        # Verify correct URL was called
+        # Verify the fullTextXML REST URL was called
         call_args = str(mock_get.call_args)
-        assert "europepmc.org" in call_args
+        assert "europepmc" in call_args
+        assert "fullTextXML" in call_args
         assert "PMC1234567" in call_args
 
 
