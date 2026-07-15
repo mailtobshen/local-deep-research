@@ -11,6 +11,8 @@ Tests cover:
 
 from unittest.mock import Mock, patch
 
+import pytest
+
 
 class TestWikipediaSearchEngineInit:
     """Tests for WikipediaSearchEngine initialization."""
@@ -183,6 +185,120 @@ class TestGetPreviews:
                     # Only valid result should be returned
                     assert len(previews) == 1
                     assert previews[0]["title"] == "Valid"
+
+
+class TestSummaryRetry:
+    """Proxy-jitter retry behaviour for the summary fetch.
+
+    The ``wikipedia`` library calls a bare ``requests.get`` honoring the proxy
+    env vars, so under a flaky proxy we see ``ConnectionError`` /
+    ``Timeout`` / ``JSONDecodeError`` (empty body on a 429/5xx). These must be
+    retried with backoff; deterministic ``DisambiguationError`` /
+    ``PageError`` must NOT be retried.
+    """
+
+    def test_transient_connection_error_is_retried_then_succeeds(self):
+        """A transient ConnectionError is retried; success on a later attempt."""
+        from local_deep_research.web_search_engines.engines import (
+            search_engine_wikipedia as mod,
+        )
+        import requests
+
+        with patch("wikipedia.set_lang"):
+            attempts = {"n": 0}
+
+            def flaky(title, sentences=0, auto_suggest=True):
+                attempts["n"] += 1
+                if attempts["n"] < 3:
+                    raise requests.ConnectionError("proxy reset")
+                return "recovered summary"
+
+            with patch("wikipedia.summary", side_effect=flaky):
+                engine = mod.WikipediaSearchEngine()
+                result = engine.get_summary("Foo")
+
+            assert result == "recovered summary"
+            assert attempts["n"] == 3, (
+                f"expected 3 attempts (initial + 2 retries), got {attempts['n']}"
+            )
+
+    def test_disambiguation_error_is_not_retried(self):
+        """DisambiguationError is deterministic and must surface immediately."""
+        from local_deep_research.web_search_engines.engines import (
+            search_engine_wikipedia as mod,
+        )
+        import wikipedia
+
+        with patch("wikipedia.set_lang"):
+            attempts = {"n": 0}
+
+            def disambig(title, sentences=0, auto_suggest=True):
+                attempts["n"] += 1
+                raise wikipedia.exceptions.DisambiguationError(
+                    "Foo", ["Foo (bar)", "Foo (baz)"]
+                )
+
+            with patch("wikipedia.summary", side_effect=disambig):
+                engine = mod.WikipediaSearchEngine()
+                # get_summary catches DisambiguationError and retries the first
+                # option — which here also raises DisambiguationError, so the
+                # whole thing should raise after exactly 2 calls (original +
+                # first option), NOT be retried for transient reasons.
+                with pytest.raises(wikipedia.exceptions.DisambiguationError):
+                    engine.get_summary("Foo")
+
+            assert attempts["n"] == 2, (
+                f"DisambiguationError must not trigger transient-retry; "
+                f"expected 2 calls (title + first option), got {attempts['n']}"
+            )
+
+    def test_persistent_timeout_exhausts_retries_and_reraises(self):
+        """A persistent Timeout exhausts retries and reraises the last error."""
+        from local_deep_research.web_search_engines.engines import (
+            search_engine_wikipedia as mod,
+        )
+        import requests
+
+        with patch("wikipedia.set_lang"):
+            attempts = {"n": 0}
+
+            def always_timeout(title, sentences=0, auto_suggest=True):
+                attempts["n"] += 1
+                raise requests.Timeout("connect timeout")
+
+            with patch("wikipedia.summary", side_effect=always_timeout):
+                engine = mod.WikipediaSearchEngine()
+                with pytest.raises(requests.Timeout):
+                    engine.get_summary("Foo")
+
+            assert attempts["n"] == 3, (
+                f"expected 3 attempts before giving up, got {attempts['n']}"
+            )
+
+    def test_get_previews_recovers_from_transient_summary_failure(self):
+        """A transient summary failure mid-_get_previews is retried, not skipped."""
+        from local_deep_research.web_search_engines.engines import (
+            search_engine_wikipedia as mod,
+        )
+        import requests
+
+        with patch("wikipedia.set_lang"):
+            with patch("wikipedia.search", return_value=["Python"]):
+                attempts = {"n": 0}
+
+                def flaky(title, sentences=0, auto_suggest=True):
+                    attempts["n"] += 1
+                    if attempts["n"] == 1:
+                        raise requests.ConnectionError("proxy reset")
+                    return "Python is a language"
+
+                with patch("wikipedia.summary", side_effect=flaky):
+                    engine = mod.WikipediaSearchEngine()
+                    previews = engine._get_previews("programming")
+
+            assert len(previews) == 1
+            assert previews[0]["snippet"] == "Python is a language"
+            assert attempts["n"] == 2  # first failed (retried), second succeeded
 
     def test_get_previews_handles_exception(self):
         """Get previews handles unexpected exceptions."""

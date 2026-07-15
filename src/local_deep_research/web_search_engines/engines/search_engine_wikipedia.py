@@ -1,11 +1,60 @@
+import json
 from typing import Any, Dict, List, Optional
 
+import requests
 import wikipedia
 from langchain_core.language_models import BaseLLM
 from loguru import logger
+from tenacity import (
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential_jitter,
+)
 
 from ...config import search_config
 from ..search_engine_base import BaseSearchEngine
+
+# Transient failure modes from the underlying ``wikipedia`` library. The
+# library calls a bare ``requests.get`` (honoring the proxy env vars set in
+# ``__init__``), so under a flaky proxy we see:
+#   * requests.ConnectionError / requests.Timeout — proxy reset, connect timeout
+#   * requests.exceptions.JSONDecodeError — empty body returned when the
+#     upstream 429/5xx drops content (the library raises this *before* its own
+#     HTTPTimeoutError, so it bypasses the library's status handling)
+#   * wikipedia.exceptions.HTTPTimeoutError — the library's wrapped read timeout
+# DisambiguationError / PageError are NOT here — those are deterministic
+# content-level outcomes and must surface immediately, not be retried.
+_RETRYABLE = (
+    requests.ConnectionError,
+    requests.Timeout,
+    requests.exceptions.JSONDecodeError,
+    wikipedia.exceptions.HTTPTimeoutError,
+    json.JSONDecodeError,
+)
+
+
+# Bounded retry with exponential backoff + jitter for the proxy-jitter case.
+# 3 attempts total (initial + 2 retries), 0.5s -> ~1s -> ~2s before jitter.
+# reraise=True so the final attempt's exception propagates to the existing
+# try/except handlers (DisambiguationError / PageError pass straight through
+# because they aren't in _RETRYABLE).
+_summary_retry = retry(
+    retry=retry_if_exception_type(_RETRYABLE),
+    stop=stop_after_attempt(3),
+    wait=wait_exponential_jitter(initial=0.5, exp_base=2, jitter=0.3, max=5.0),
+    reraise=True,
+)
+
+
+@_summary_retry
+def _summary_with_retry(title: str, sentences: int) -> str:
+    """``wikipedia.summary`` with bounded retry on transient proxy errors.
+
+    DisambiguationError / PageError are NOT retryable and propagate
+    immediately — only connection/timeout/empty-body failures are retried.
+    """
+    return wikipedia.summary(title, sentences=sentences, auto_suggest=False)
 
 
 class WikipediaSearchEngine(BaseSearchEngine):
@@ -120,8 +169,8 @@ class WikipediaSearchEngine(BaseSearchEngine):
                             self.rate_tracker.apply_rate_limit(self.engine_type)
                         )
 
-                        summary = wikipedia.summary(
-                            title, sentences=self.sentences, auto_suggest=False
+                        summary = _summary_with_retry(
+                            title, self.sentences
                         )
                     except wikipedia.exceptions.DisambiguationError as e:
                         # If disambiguation error, try the first option
@@ -130,10 +179,8 @@ class WikipediaSearchEngine(BaseSearchEngine):
                                 f"Disambiguation for '{title}', trying first option: {e.options[0]}"
                             )
                             try:
-                                summary = wikipedia.summary(
-                                    e.options[0],
-                                    sentences=self.sentences,
-                                    auto_suggest=False,
+                                summary = _summary_with_retry(
+                                    e.options[0], self.sentences
                                 )
                                 title = e.options[0]  # Use the new title
                             except Exception as inner_e:
@@ -267,18 +314,10 @@ class WikipediaSearchEngine(BaseSearchEngine):
         """
         sentences = sentences or self.sentences
         try:
-            return str(
-                wikipedia.summary(
-                    title, sentences=sentences, auto_suggest=False
-                )
-            )
+            return str(_summary_with_retry(title, sentences))
         except wikipedia.exceptions.DisambiguationError as e:
             if e.options and len(e.options) > 0:
-                return str(
-                    wikipedia.summary(
-                        e.options[0], sentences=sentences, auto_suggest=False
-                    )
-                )
+                return str(_summary_with_retry(e.options[0], sentences))
             raise
 
     def get_page(self, title: str) -> Dict[str, Any]:
