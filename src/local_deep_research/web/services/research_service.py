@@ -1547,11 +1547,18 @@ def run_research_process(research_id, query, mode, **kwargs):
             )
 
             # Clean up resources
+            # Full-report success path: the DB status was already committed
+            # as COMPLETED at line ~1501, so do NOT pass final_status here.
+            # Passing SUSPENDED would override the real status in the final
+            # socket message, mislabeling a completed research as "Cancelled"
+            # in the UI. Pass None to let cleanup_research_resources read the
+            # committed COMPLETED status from the DB (same behaviour as the
+            # quick-summary success path).
             cleanup_research_resources(
                 research_id,
                 username,
                 user_password=user_password,
-                final_status=ResearchStatus.SUSPENDED,
+                final_status=None,
             )
 
     except ResearchTerminatedException:

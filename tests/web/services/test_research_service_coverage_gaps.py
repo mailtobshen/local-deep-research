@@ -149,6 +149,101 @@ class TestRunResearchEarlyTermination:
 
 
 # ---------------------------------------------------------------------------
+# 1b. Full-report success path — final_status must NOT be SUSPENDED
+#     (regression: detailed mode used to hard-code final_status=SUSPENDED
+#      in the cleanup call, mislabeling completed research as "Cancelled")
+# ---------------------------------------------------------------------------
+
+
+class TestFullReportSuccessCleanupStatus:
+    """On the Full Report (detailed) success path the DB status is already
+    committed as COMPLETED before cleanup runs, so cleanup_research_resources
+    must be invoked with final_status=None (letting it read COMPLETED from
+    the DB) — NOT final_status=SUSPENDED, which would emit a "cancelled"
+    socket message and mislabel the completed research in the UI."""
+
+    def test_detailed_success_passes_none_final_status(self):
+        """run_research_process('detailed') on a successful run must call
+        cleanup_research_resources(..., final_status=None)."""
+        from local_deep_research.constants import ResearchStatus
+
+        func = _get_raw_run_research_process()
+        mock_cleanup = MagicMock()
+
+        # Full-report path requires a populated findings dict so the
+        # `else: # Full Report` branch is taken instead of quick summary.
+        mock_research = _make_mock_research(research_meta={})
+        mock_session = MagicMock()
+        mock_session.query.return_value.filter_by.return_value.first.return_value = mock_research
+
+        mock_system = MagicMock()
+        mock_system.analyze_topic.return_value = {
+            "search_system": mock_system,
+            "iterations": 1,
+            "findings": [{"title": "t", "content": "c", "search_results": []}],
+        }
+
+        # IntegratedReportGenerator.generate_report returns a report dict;
+        # metadata is read off it later.
+        mock_report = {
+            "content": "# Report",
+            "metadata": {"iterations": 1},
+        }
+        mock_generator = MagicMock()
+        mock_generator.generate_report.return_value = mock_report
+
+        patches = _base_run_patches(mock_session)
+        patches[f"{MODULE}.AdvancedSearchSystem"] = MagicMock(
+            return_value=mock_system
+        )
+        patches[f"{MODULE}.IntegratedReportGenerator"] = MagicMock(
+            return_value=mock_generator
+        )
+        patches[f"{MODULE}.get_citation_formatter"] = MagicMock(
+            return_value=MagicMock(
+                format_document=MagicMock(return_value="formatted")
+            )
+        )
+        # ResearchSourcesService is imported lazily inside the function
+        # (from .research_sources_service import ...). Patch the source
+        # module instead of the (non-existent) module-level attribute.
+        patches[
+            "local_deep_research.web.services.research_sources_service.ResearchSourcesService"
+        ] = MagicMock(
+            return_value=MagicMock(save_research_sources=MagicMock(return_value=0))
+        )
+        # _parse_research_metadata is module-private; make it a no-op dict.
+        patches[f"{MODULE}._parse_research_metadata"] = MagicMock(
+            return_value={"iterations": 1}
+        )
+        patches[f"{MODULE}.cleanup_research_resources"] = mock_cleanup
+
+        stack = []
+        for target, mock_obj in patches.items():
+            p = patch(target, mock_obj)
+            stack.append(p)
+            p.start()
+        try:
+            func(1, "test query", "detailed", username="testuser")
+        finally:
+            for p in stack:
+                p.stop()
+
+        mock_cleanup.assert_called_once()
+        call_kwargs = mock_cleanup.call_args
+        assert call_kwargs.kwargs.get("final_status") is None, (
+            "Full-report success path must call cleanup_research_resources "
+            "with final_status=None so the committed COMPLETED status is "
+            "used for the final socket message — got "
+            f"{call_kwargs.kwargs.get('final_status')!r} instead"
+        )
+        # Belt-and-braces: never SUSPENDED on the success path.
+        assert (
+            call_kwargs.kwargs.get("final_status") is not ResearchStatus.SUSPENDED
+        ), "Completed research must not be labelled SUSPENDED/cancelled"
+
+
+# ---------------------------------------------------------------------------
 # 2. SettingsContext inner class (lines 358-380)
 # ---------------------------------------------------------------------------
 
