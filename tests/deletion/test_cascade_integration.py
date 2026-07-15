@@ -18,11 +18,16 @@ from local_deep_research.database.models.library import (
     DocumentCollection,
     Collection,
     CollectionFolder,
+    DownloadQueue,
     SourceType,
     RAGIndex,
     EmbeddingProvider,
 )
 from local_deep_research.database.models.base import Base
+from local_deep_research.database.models.research import (
+    ResearchHistory,
+    ResearchResource,
+)
 
 
 @pytest.fixture
@@ -542,3 +547,49 @@ class TestOrphanDetection:
 
         # Document should still exist
         assert test_session.query(Document).get(doc.id) is not None
+
+
+class TestResearchDeleteCascade:
+    """Regression tests for deleting research history with related rows."""
+
+    def test_delete_research_with_queued_download(self, test_session):
+        """Deleting research whose resource is in download_queue must not
+        fail with NOT NULL constraint on download_queue.resource_id.
+
+        Regression: ORM delete emitted UPDATE download_queue SET
+        resource_id=NULL (resource_id is NOT NULL) because the
+        ResearchResource->download_queue backref lacked passive_deletes,
+        blocking the history "Delete" button whenever a queued download
+        existed. With PRAGMA foreign_keys=ON and passive_deletes, the DDL
+        ON DELETE CASCADE handles removal.
+        """
+        history = ResearchHistory(
+            id=str(uuid.uuid4()),
+            query="queued download research",
+            mode="quick",
+            status="completed",
+            created_at="2024-01-01T10:00:00",
+        )
+        test_session.add(history)
+        test_session.commit()
+
+        resource = ResearchResource(
+            research_id=history.id,
+            title="queued resource",
+            url="https://example.com/queued",
+            created_at="2024-01-01T10:30:00",
+        )
+        test_session.add(resource)
+        test_session.commit()
+
+        queue_item = DownloadQueue(resource_id=resource.id, research_id=history.id)
+        test_session.add(queue_item)
+        test_session.commit()
+
+        # This used to raise IntegrityError
+        test_session.delete(history)
+        test_session.commit()
+
+        assert test_session.query(ResearchHistory).count() == 0
+        assert test_session.query(ResearchResource).count() == 0
+        assert test_session.query(DownloadQueue).count() == 0

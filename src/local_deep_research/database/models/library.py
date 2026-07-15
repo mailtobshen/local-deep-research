@@ -613,7 +613,16 @@ class DownloadQueue(Base):
     completed_at = Column(UtcDateTime, nullable=True)
 
     # Relationships
-    resource = relationship("ResearchResource", backref="download_queue")
+    # passive_deletes=True lets the DB's ON DELETE CASCADE on
+    # download_queue.resource_id handle row removal. Without it, SQLAlchemy
+    # emits UPDATE download_queue SET resource_id=NULL on parent delete,
+    # which fails because resource_id is NOT NULL — this blocked deleting
+    # any research whose resources had been queued for download.
+    resource = relationship(
+        "ResearchResource",
+        backref=backref("download_queue", passive_deletes=True),
+        passive_deletes=True,
+    )
     collection = relationship("Collection", backref="download_queue_items")
 
     def __repr__(self):
