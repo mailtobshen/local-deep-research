@@ -230,6 +230,98 @@ def apply_proxy_to_wikipedia_env() -> None:
     )
 
 
+def apply_timeout_to_wikipedia_requests(
+    timeout: tuple = (10, 30),
+) -> None:
+    """Bound every ``wikipedia`` library API call to a connect/read ``timeout``.
+
+    The ``wikipedia`` PyPI library's ``_wiki_request`` calls
+    ``requests.get(API_URL, ...)`` with **no** ``timeout=`` argument. When
+    egress goes through a flaky forward proxy that accepts the connection but
+    never responds, ``requests.get`` blocks indefinitely — there is no read
+    timeout, no socket timeout, and no outer deadline. This stalls the
+    research thread on a single hung Wikipedia summary/search call (observed
+    20+ minute gaps, eventually requiring a container restart).
+
+    This is a one-time, idempotent monkeypatch of
+    ``wikipedia.wikipedia._wiki_request`` — the single module-global function
+    every library network call (``search``, ``summary``, ``page``,
+    ``__load``, ``__continued_query``, ``html``) routes through. It
+    reimplements that function verbatim, adding only ``timeout=`` to the
+    ``requests.get``. A timed-out call now raises ``requests.Timeout``, which
+    the engine's existing ``_summary_with_retry`` tenacity guard (3 attempts)
+    retries; on final failure the per-title ``except`` in ``_get_previews``
+    ``continue``s past the failed title instead of hanging forever.
+
+    Args:
+        timeout: ``(connect_seconds, read_seconds)`` passed to
+            ``requests.get``. Defaults to ``(10, 30)`` — generous enough for
+            a slow proxy, short enough that a dead connection is abandoned
+            within one retry window instead of stalling the whole research.
+    """
+    try:
+        from wikipedia import wikipedia as _wp_mod
+    except ImportError:
+        # No wikipedia library installed — nothing to patch.
+        return
+
+    if getattr(_wp_mod._wiki_request, "_ldr_timeout_patched", False):
+        return
+
+    # Snapshot the originals at patch time. The library reads these as module
+    # globals on each call, but the patched function must not re-resolve them
+    # through the (now-replaced) module attribute.
+    _orig_request = _wp_mod._wiki_request
+    _requests = _wp_mod.requests
+    _datetime = _wp_mod.datetime
+    _time = _wp_mod.time
+
+    def _patched_wiki_request(params):  # type: ignore[no-untyped-def]
+        # Verbatim reimplementation of wikipedia.wikipedia._wiki_request,
+        # with timeout= added to requests.get. See upstream lines 712-742.
+        global_rate_limit = _wp_mod.RATE_LIMIT
+        rate_limit_last_call = _wp_mod.RATE_LIMIT_LAST_CALL
+        rate_limit_min_wait = _wp_mod.RATE_LIMIT_MIN_WAIT
+
+        params["format"] = "json"
+        if "action" not in params:
+            params["action"] = "query"
+
+        headers = {"User-Agent": _wp_mod.USER_AGENT}
+
+        if (
+            global_rate_limit
+            and rate_limit_last_call
+            and rate_limit_last_call + rate_limit_min_wait > _datetime.now()
+        ):
+            wait_time = (
+                rate_limit_last_call + rate_limit_min_wait
+            ) - _datetime.now()
+            _time.sleep(int(wait_time.total_seconds()))
+
+        r = _requests.get(
+            _wp_mod.API_URL,
+            params=params,
+            headers=headers,
+            timeout=timeout,
+        )
+
+        if global_rate_limit:
+            _wp_mod.RATE_LIMIT_LAST_CALL = _datetime.now()
+
+        return r.json()
+
+    _patched_wiki_request._ldr_timeout_patched = True  # type: ignore[attr-defined]
+    _patched_wiki_request._ldr_orig = _orig_request  # type: ignore[attr-defined]
+    _wp_mod._wiki_request = _patched_wiki_request
+    logger.info(
+        "Wikipedia API calls bounded to timeout=({}s connect, {}s read) to "
+        "prevent indefinite stalls on a flaky proxy.",
+        timeout[0],
+        timeout[1],
+    )
+
+
 # ---------------------------------------------------------------------------
 # SSL / TLS certificate fallback
 # ---------------------------------------------------------------------------

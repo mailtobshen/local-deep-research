@@ -115,9 +115,16 @@ class WikipediaSearchEngine(BaseSearchEngine):
         # When the operator has enabled the network proxy, populate those env
         # vars so Wikipedia API requests (and previews) egress through the
         # proxy instead of timing out on direct connection.
-        from ...security.proxy_config import apply_proxy_to_wikipedia_env
+        from ...security.proxy_config import (
+            apply_proxy_to_wikipedia_env,
+            apply_timeout_to_wikipedia_requests,
+        )
 
         apply_proxy_to_wikipedia_env()
+        # Bound every wikipedia library API call to a connect/read timeout so
+        # a flaky proxy that accepts the connection but never responds cannot
+        # stall the research thread indefinitely. See proxy_config docstring.
+        apply_timeout_to_wikipedia_requests()
 
     def _get_previews(self, query: str) -> List[Dict[str, Any]]:
         """

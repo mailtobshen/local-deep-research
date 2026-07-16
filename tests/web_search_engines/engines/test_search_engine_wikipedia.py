@@ -7,11 +7,13 @@ Tests cover:
 - Full content retrieval
 - Summary and page methods
 - Error handling
+- Bounded-timeout monkeypatch preventing indefinite proxy stalls
 """
 
 from unittest.mock import Mock, patch
 
 import pytest
+import requests
 
 
 class TestWikipediaSearchEngineInit:
@@ -616,3 +618,81 @@ class TestRun:
                 results = engine.run("nonexistent query")
 
                 assert results == []
+
+
+class TestWikipediaTimeoutPatch:
+    """Tests for the bounded-timeout monkeypatch on the wikipedia library.
+
+    The wikipedia PyPI library calls ``requests.get`` with no ``timeout=``,
+    so a flaky proxy that never responds blocks forever. The engine init
+    patches ``wikipedia.wikipedia._wiki_request`` to inject a timeout so a
+    dead connection raises ``requests.Timeout`` (retried by tenacity, then
+    skipped) instead of stalling the research thread.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _restore_wiki_request(self):
+        """Restore the original ``_wiki_request`` after each test."""
+        from wikipedia import wikipedia as _wp_mod
+
+        original = _wp_mod._wiki_request
+        try:
+            yield
+        finally:
+            _wp_mod._wiki_request = original
+
+    def test_init_applies_wikipedia_timeout_patch(self):
+        """Constructing the engine patches ``_wiki_request`` with a timeout."""
+        from local_deep_research.web_search_engines.engines.search_engine_wikipedia import (
+            WikipediaSearchEngine,
+        )
+
+        with patch("wikipedia.set_lang"):
+            WikipediaSearchEngine()
+
+        from wikipedia import wikipedia as _wp_mod
+
+        assert getattr(
+            _wp_mod._wiki_request, "_ldr_timeout_patched", False
+        ), "init must patch wikipedia._wiki_request with a bounded timeout"
+
+    def test_summary_timeout_raises_instead_of_hanging(self):
+        """A timed-out wikipedia call raises within bounded wall-clock.
+
+        Regression for the indefinite-stall bug: before the patch,
+        ``requests.get`` had no timeout and blocked forever on a dead proxy.
+        After the patch, the inner ``requests.get`` raises
+        ``requests.Timeout`` which propagates through
+        ``_summary_with_retry`` (tenacity exhausts its 3 attempts quickly
+        because a timeout is immediate, not a long wait) and surfaces as a
+        ``requests.Timeout``/``ConnectionError`` rather than hanging.
+        """
+        import time
+
+        from local_deep_research.security.proxy_config import (
+            apply_timeout_to_wikipedia_requests,
+        )
+        from local_deep_research.web_search_engines.engines.search_engine_wikipedia import (
+            _summary_with_retry,
+        )
+
+        apply_timeout_to_wikipedia_requests(timeout=(1, 1))
+
+        # The patched _wiki_request calls requests.get; force it to raise a
+        # timeout so we verify the exception propagates instead of blocking.
+        with patch(
+            "wikipedia.wikipedia.requests.get",
+            side_effect=requests.Timeout("simulated read timeout"),
+        ):
+            start = time.monotonic()
+            with pytest.raises((requests.Timeout, requests.ConnectionError)):
+                _summary_with_retry("Pain", 5)
+            elapsed = time.monotonic() - start
+
+        # 3 tenacity attempts with short backoff (initial=0.5, max=5.0) must
+        # finish well under the old "hang forever" behavior. Generous upper
+        # bound to avoid CI flakiness; the point is it terminates.
+        assert elapsed < 30, (
+            f"summary call took {elapsed:.1f}s — timeout did not propagate "
+            "and may be hanging again"
+        )
