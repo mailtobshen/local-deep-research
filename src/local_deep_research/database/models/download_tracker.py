@@ -35,8 +35,16 @@ class DownloadTracker(Base):
     )  # SHA256 of normalized URL — UNIQUE backing comes from __table_args__
 
     # Resource tracking (can be multiple resources with same URL)
+    # ondelete="CASCADE": a tracker is derived from its first resource and is
+    # meaningless once that resource is gone. The column is NOT NULL, so
+    # SET NULL is not an option. CASCADE keeps delete_research() working:
+    # deleting ResearchHistory cascades to research_resources, which then
+    # cascades to these tracker rows instead of raising
+    # "FOREIGN KEY constraint failed". See migration 0010.
     first_resource_id = Column(
-        Integer, ForeignKey("research_resources.id"), nullable=False
+        Integer,
+        ForeignKey("research_resources.id", ondelete="CASCADE"),
+        nullable=False,
     )
 
     # File tracking
@@ -91,14 +99,20 @@ class DownloadDuplicates(Base):
     __tablename__ = "download_duplicates"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+    # ondelete="CASCADE": duplicates are children of both the tracker and the
+    # resource; deleting either should remove the duplicate row. See 0010.
     url_hash = Column(
         String(64),
-        ForeignKey("download_tracker.url_hash"),
+        ForeignKey("download_tracker.url_hash", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
+    # ondelete="CASCADE": a duplicate is meaningless once its resource is
+    # deleted. See migration 0010.
     resource_id = Column(
-        Integer, ForeignKey("research_resources.id"), nullable=False
+        Integer,
+        ForeignKey("research_resources.id", ondelete="CASCADE"),
+        nullable=False,
     )
     research_id = Column(String(36), nullable=False, index=True)
 
@@ -121,9 +135,12 @@ class DownloadAttempt(Base):
     __tablename__ = "download_attempts"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+    # ondelete="CASCADE": an attempt is a child of its tracker; deleting the
+    # tracker (e.g. via resource CASCADE during research deletion) removes the
+    # attempt too. See migration 0010.
     url_hash = Column(
         String(64),
-        ForeignKey("download_tracker.url_hash"),
+        ForeignKey("download_tracker.url_hash", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
