@@ -64,7 +64,16 @@ class TestSearXNGSearchEngineInit:
             assert engine.max_results == 10
 
     def test_init_with_inaccessible_instance(self):
-        """Initialize with inaccessible SearXNG instance."""
+        """A 5xx probe response keeps the engine available.
+
+        SearXNG's landing/search page can transiently return 5xx when one of
+        its *backend* engines is rate-limited, even though the instance itself
+        can still answer /search for other engines. A non-200 HTTP response
+        means the instance is reachable, so is_available stays True and run()
+        still attempts the real per-query search. Only a connection-level
+        failure (timeout/refused/DNS) marks the engine unavailable — that
+        case is covered by test_init_with_connection_error.
+        """
         from local_deep_research.web_search_engines.engines.search_engine_searxng import (
             SearXNGSearchEngine,
         )
@@ -80,7 +89,7 @@ class TestSearXNGSearchEngineInit:
                 instance_url="http://localhost:8080",
             )
 
-            assert engine.is_available is False
+            assert engine.is_available is True
 
     def test_init_with_connection_error(self):
         """Initialize handles connection errors gracefully."""
@@ -101,6 +110,40 @@ class TestSearXNGSearchEngineInit:
             )
 
             assert engine.is_available is False
+
+    def test_init_probe_retries_on_transient_timeout(self):
+        """A single transient probe failure does not mark the engine unavailable.
+
+        Regression for the empty-report bug: a 5s cold-start timeout flipped
+        is_available to False, making run() short-circuit to empty for the
+        whole research. The probe now retries once; only a second consecutive
+        connection-level failure marks the engine unavailable. Here the first
+        attempt raises (cold connection) but the retry succeeds, so the engine
+        must remain available.
+        """
+        from local_deep_research.web_search_engines.engines.search_engine_searxng import (
+            SearXNGSearchEngine,
+        )
+        import requests
+
+        ok_response = Mock()
+        ok_response.status_code = 200
+
+        with patch(
+            "local_deep_research.web_search_engines.engines.search_engine_searxng.safe_get"
+        ) as mock_get:
+            # First attempt: transient timeout. Retry: success.
+            mock_get.side_effect = [
+                requests.RequestException("simulated cold-start timeout"),
+                ok_response,
+            ]
+
+            engine = SearXNGSearchEngine(
+                instance_url="http://localhost:8080",
+            )
+
+            assert engine.is_available is True
+            assert mock_get.call_count == 2  # initial + 1 retry
 
     def test_init_strips_trailing_slash(self):
         """Initialize strips trailing slash from instance URL."""
