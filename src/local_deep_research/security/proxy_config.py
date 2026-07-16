@@ -206,10 +206,19 @@ def apply_proxy_to_wikipedia_env() -> None:
         "192.168.0.0/16",
         "100.64.0.0/10",
         "169.254.0.0/16",
-        "::1",
-        "fc00::/7",
-        "fe80::/10",
     }
+    # NOTE: bare IPv6 entries ("::1", "fc00::/7", "fe80::/10") are deliberately
+    # OMITTED. httpx parses each NO_PROXY entry as a URLPattern, and a bare
+    # IPv6 literal like "::1" is misparsed — the second ":" is treated as a
+    # host:port separator, so int(":") raises and httpx raises
+    # ``InvalidURL: Invalid port: ':'``. This crashes any httpx-based client
+    # constructed while these env vars are set, most critically the ``ollama``
+    # library, whose ``__init__`` eagerly builds ``Client()`` (and thus an
+    # ``httpx.Client``) at import time — so merely importing ChatOllama during
+    # a research task fails before any network call. Bracketed forms
+    # ("[::1]") are also rejected by httpx's URLPattern. IPv6 loopback/private
+    # mirrors are rare; if one is ever needed it must be added as a hostname,
+    # not a bare IPv6 literal.
     if existing_no_proxy:
         no_proxy_parts.update(
             p.strip() for p in existing_no_proxy.split(",") if p.strip()
