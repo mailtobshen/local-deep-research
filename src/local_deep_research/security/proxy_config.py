@@ -155,6 +155,34 @@ def _host_is_private(host: str) -> bool:
     return False
 
 
+def _host_of_url(url: str) -> Optional[str]:
+    """Return the bare hostname/IP of ``url``, or ``None`` if not parseable.
+
+    Used to build plain-host ``NO_PROXY`` entries that ``httpx`` (unlike
+    ``requests``) can match — it cannot match CIDR ranges, only literal hosts.
+    """
+    if not url:
+        return None
+    try:
+        parsed = urlparse(url)
+    except (ValueError, TypeError):
+        return None
+    host = parsed.hostname
+    return host or None
+
+
+def _is_bare_ipv6(entry: str) -> bool:
+    """True if ``entry`` is a bare IPv6 literal/CIDR (no scheme, no brackets).
+
+    Such entries crash httpx when present in NO_PROXY (URLPattern raises
+    ``InvalidURL: Invalid port: ':'``), so they must be filtered out. A bare
+    IPv6 literal contains two or more colons and no ``://`` and no ``[``.
+    """
+    if not entry or "://" in entry or "[" in entry:
+        return False
+    return entry.count(":") >= 2
+
+
 def should_bypass_proxy(url: str) -> bool:
     """Whether ``url`` should skip the configured proxy.
 
@@ -198,7 +226,28 @@ def apply_proxy_to_wikipedia_env() -> None:
     existing_no_proxy = os.environ.get("NO_PROXY", "") or os.environ.get(
         "no_proxy", ""
     )
+    # NO_PROXY has two audiences with DIFFERENT matching semantics:
+    #
+    # 1. ``requests`` / ``urllib`` (used by the ``wikipedia`` lib) honor CIDR
+    #    notation, so ``172.16.0.0/12`` correctly exempts every RFC1918 host.
+    #
+    # 2. ``httpx`` (used by the ``ollama`` / ``openai`` / ``langchain_*`` LLM
+    #    clients, all built with ``trust_env=True``) does NOT honor CIDR — a
+    #    ``NO_PROXY`` entry of ``172.16.0.0/12`` is parsed as the literal
+    #    hostname "172.16.0.0", so it never matches a real private host like
+    #    the Ollama gateway ``172.25.128.1``. The Ollama call is then tunneled
+    #    through the forward proxy, which returns a ``500 Internal Privoxy
+    #    Error`` HTML page that the ``ollama`` lib surfaces as a
+    #    ``ResponseError`` — crashing the LangGraph agent strategy.
+    #
+    # We therefore emit BOTH the CIDR ranges (for requests/urllib) AND a set of
+    # plain IPs/hostnames for the concrete local services LDR talks to
+    # (Ollama/SearXNG/LMStudio), which httpx CAN match. CIDR ranges are too
+    # large to enumerate, so we add the literal hosts pulled from the configured
+    # local-service URLs instead. This keeps LLM calls direct while leaving the
+    # wikipedia CIDR bypass intact.
     no_proxy_parts = {
+        # CIDR ranges — honored by requests/urllib (wikipedia lib).
         "localhost",
         "127.0.0.0/8",
         "10.0.0.0/8",
@@ -206,7 +255,26 @@ def apply_proxy_to_wikipedia_env() -> None:
         "192.168.0.0/16",
         "100.64.0.0/10",
         "169.254.0.0/16",
+        # Plain IPs/hostnames — honored by httpx (ollama/openai LLM clients).
+        # These are the concrete local-service targets LDR reaches directly;
+        # without them httpx tunnels LLM calls through the forward proxy and
+        # the proxy returns a 500 Privoxy error that kills the agent run.
+        "localhost",
+        "127.0.0.1",
+        "searxng-ldr",
+        "ldr-local",
     }
+    # Add any IP/hostname embedded in configured local-service URLs
+    # (Ollama/LMStudio/llama.cpp/SearXNG base URLs), so httpx bypasses the
+    # proxy for the very hosts that must not be proxied.
+    for candidate in (
+        os.environ.get("LDR_LLM_OLLAMA_URL", ""),
+        os.environ.get("OLLAMA_HOST", ""),
+        os.environ.get("LDR_SEARCH_ENGINE_WEB_SEARXNG_DEFAULT_PARAMS_INSTANCE_URL", ""),
+    ):
+        host = _host_of_url(candidate)
+        if host:
+            no_proxy_parts.add(host)
     # NOTE: bare IPv6 entries ("::1", "fc00::/7", "fe80::/10") are deliberately
     # OMITTED. httpx parses each NO_PROXY entry as a URLPattern, and a bare
     # IPv6 literal like "::1" is misparsed — the second ":" is treated as a
@@ -220,9 +288,28 @@ def apply_proxy_to_wikipedia_env() -> None:
     # mirrors are rare; if one is ever needed it must be added as a hostname,
     # not a bare IPv6 literal.
     if existing_no_proxy:
-        no_proxy_parts.update(
-            p.strip() for p in existing_no_proxy.split(",") if p.strip()
-        )
+        for p in existing_no_proxy.split(","):
+            p = p.strip()
+            if not p:
+                continue
+            # Drop bare IPv6 entries from a pre-existing NO_PROXY (e.g. a host
+            # shell that exported NO_PROXY=::1). httpx's get_environment_proxies
+            # wraps IPv6 hosts as ``all://[<host>]`` and URLPattern then chokes
+            # on the second ':' of a bare CIDR like ``fc00::/7`` (raises
+            # ``InvalidURL: Invalid port: ':'``), crashing every httpx client
+            # built with trust_env — most critically the ollama lib. A bare
+            # ``::1`` happens to parse, but CIDR IPv6 ranges do not; to be safe
+            # we drop ALL bare IPv6 literals here. IPv6 mirrors are rare; if one
+            # is needed it must be added as a bracketed URL-form entry
+            # (``all://[::1]``) upstream, not a bare literal in NO_PROXY.
+            if _is_bare_ipv6(p):
+                logger.debug(
+                    "Dropping bare IPv6 NO_PROXY entry {!r} — httpx cannot "
+                    "parse bare IPv6/CIDR literals and would crash LLM clients.",
+                    p,
+                )
+                continue
+            no_proxy_parts.add(p)
     no_proxy = ",".join(sorted(no_proxy_parts))
     os.environ["HTTP_PROXY"] = url
     os.environ["HTTPS_PROXY"] = url
