@@ -1221,6 +1221,25 @@ textarea:focus, input[type="text"]:focus {
   gap: 0.25rem;
 }
 
+.ldr-history-item-tips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  margin-bottom: 0.75rem;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.ldr-history-tip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.ldr-history-tip i {
+  opacity: 0.7;
+}
+
 .ldr-history-item-actions {
   display: flex;
   justify-content: flex-end;

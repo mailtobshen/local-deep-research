@@ -361,6 +361,50 @@
     }
 
     /**
+     * Format a duration in seconds to a readable string via the shared
+     * formatter (e.g. "3m 12s"). Every history page loads formatting.js,
+     * so the helper is always present.
+     */
+    function formatDuration(seconds) {
+        return window.formatting.formatDuration(seconds);
+    }
+
+    /**
+     * Build the timing tips row (start / completed / total duration) for a
+     * history item. Shown only when the research has started; completed
+     * research additionally shows the finish time and total elapsed time.
+     * @param {Object} item - The history item data
+     * @returns {string} HTML for the tips row, or '' if no timing info
+     */
+    function buildTimingTipsHtml(item) {
+        if (!item || !item.created_at) return '';
+
+        const started = formatDate(item.created_at);
+        const isDone = ResearchStates.isCompleted(item.status) ||
+            ResearchStates.isPartialSuccess(item.status);
+
+        const parts = [`<span class="ldr-history-tip"><i class="fas fa-play-circle"></i> ${esc(i18n.t('Started'))}: ${esc(started)}</span>`];
+
+        if (isDone && item.completed_at) {
+            parts.push(`<span class="ldr-history-tip"><i class="fas fa-check-circle"></i> ${esc(i18n.t('Completed'))}: ${esc(formatDate(item.completed_at))}</span>`);
+            // duration_seconds is best-effort — backend recalculates it when
+            // null but both timestamps exist, so fall back to the timestamps.
+            let secs = item.duration_seconds;
+            if ((secs === null || secs === undefined) &&
+                item.created_at && item.completed_at) {
+                const ms = new Date(item.completed_at).getTime() -
+                    new Date(item.created_at).getTime();
+                if (!isNaN(ms)) secs = Math.max(0, Math.round(ms / 1000));
+            }
+            if (secs !== null && secs !== undefined && !isNaN(secs)) {
+                parts.push(`<span class="ldr-history-tip"><i class="fas fa-stopwatch"></i> ${esc(i18n.t('Total time'))}: ${esc(formatDuration(secs))}</span>`);
+            }
+        }
+
+        return `<div class="ldr-history-item-tips">${parts.join('')}</div>`;
+    }
+
+    /**
      * Format status safely using ResearchStates helper
      */
     function formatStatus(status) {
@@ -429,6 +473,7 @@
                 <div class="ldr-history-item-mode">${esc(formatMode(item.mode))}</div>
                 ${isNewsItem ? '<span class="ldr-news-indicator"><i class="fas fa-newspaper"></i> News</span>' : ''}
             </div>
+            ${buildTimingTipsHtml(item)}
             <div class="ldr-history-item-actions">
                 ${(ResearchStates.isCompleted(item.status) || ResearchStates.isPartialSuccess(item.status)) ?
                     `<button class="btn btn-sm ldr-btn-outline ldr-view-btn">
