@@ -779,3 +779,48 @@ def test_fetch_content_firecrawl_down_full_fallback():
                 ["https://a.com"], settings_snapshot=snapshot
             )
     assert result == {"https://a.com": "legacy"}
+
+
+# ---------------------------------------------------------------------------
+# FullSearchResults integration — should route content fetch through
+# fetch_content (Firecrawl-aware dispatch) rather than batch_fetch_and_extract.
+# ---------------------------------------------------------------------------
+
+
+def test_full_search_results_uses_fetch_content():
+    """FullSearchResults.run should obtain page body via fetch_content."""
+    from local_deep_research.web_search_engines.engines.full_search import (
+        FullSearchResults,
+    )
+
+    fsr = FullSearchResults(
+        llm=None,
+        web_search=type(
+            "W",
+            (),
+            {
+                "invoke": staticmethod(
+                    lambda q: [{"link": "https://a.com", "title": "A"}]
+                )
+            },
+        )(),
+        settings_snapshot={
+            "search.engine.web.firecrawl.enable": {"value": False},
+            "search.engine.web.firecrawl.use_for_content_fetch": {"value": False},
+        },
+    )
+    with patch(
+        "local_deep_research.web_search_engines.engines.full_search.fetch_content",
+        return_value={"https://a.com": "md body"},
+    ) as mock_fc:
+        with patch(
+            "local_deep_research.web_search_engines.engines.full_search.QUALITY_CHECK_DDG_URLS",
+            False,
+        ):
+            with patch(
+                "local_deep_research.web_search_engines.engines.full_search.validate_url",
+                return_value=True,
+            ):
+                results = fsr.run("query")
+    mock_fc.assert_called_once()
+    assert any(r.get("full_content") == "md body" for r in results)

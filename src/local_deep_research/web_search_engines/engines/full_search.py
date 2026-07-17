@@ -5,9 +5,7 @@ from typing import Any, Dict, List, Optional, Protocol, runtime_checkable
 from langchain_core.language_models import BaseLLM
 
 from ...config.search_config import QUALITY_CHECK_DDG_URLS
-from ...research_library.downloaders.extraction import (
-    batch_fetch_and_extract,
-)
+from ...research_library.downloaders.extraction.pipeline import fetch_content
 from ...security.ssrf_validator import validate_url
 from ...utilities.js_rendering import (
     read_js_rendering_setting as _read_js_rendering_setting,
@@ -127,10 +125,11 @@ class FullSearchResults:
                 result["full_content"] = None
             return filtered_results
 
-        # Fetch and extract all pages — specialized downloaders (arXiv,
-        # PubMed, etc.) are tried first, with HTML crawling as fallback.
-        url_to_content = batch_fetch_and_extract(
+        # Fetch and extract all pages — Firecrawl-first when enabled,
+        # transparently falling back to specialized/HTML downloaders.
+        url_to_content = fetch_content(
             safe_urls,
+            settings_snapshot=self.settings_snapshot,
             language=self.language,
             enable_js_rendering=_read_js_rendering_setting(
                 self.settings_snapshot
@@ -165,8 +164,9 @@ class FullSearchResults:
             return relevant_items
 
         try:
-            url_to_content = batch_fetch_and_extract(
+            url_to_content = fetch_content(
                 urls,
+                settings_snapshot=self.settings_snapshot,
                 language=self.language,
                 enable_js_rendering=_read_js_rendering_setting(
                     self.settings_snapshot
