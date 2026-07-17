@@ -3,6 +3,7 @@
 Pure HTTP client, no LDR engine-layer dependencies. Shared by the
 fetch_content dispatch layer and the FirecrawlSearchEngine.
 """
+import time
 from typing import Any, Dict, List, Optional
 
 from loguru import logger
@@ -55,3 +56,61 @@ class FirecrawlClient:
         except Exception:
             logger.debug(f"Firecrawl scrape failed for {url}", exc_info=True)
             return None
+
+    def batch_scrape(
+        self,
+        urls: List[str],
+        max_wait: int = 60,
+        poll_interval: int = 2,
+    ) -> Dict[str, Optional[str]]:
+        """Batch-scrape URLs. Returns {url: markdown|None}.
+
+        Posts /v1/batch/scrape, polls /v1/batch/scrape/:jobId until
+        completed or max_wait elapsed. URLs absent from the completed
+        response are recorded as None. On any error returns all-None
+        so the caller can fall back to the legacy pipeline.
+        """
+        result: Dict[str, Optional[str]] = {u: None for u in urls}
+        if not urls:
+            return result
+        try:
+            resp = safe_post(
+                f"{self.api_url}/v1/batch/scrape",
+                json={"urls": urls, "formats": ["markdown"]},
+                headers=self._headers(),
+                timeout=self.timeout,
+                allow_private_ips=True,
+            )
+            resp.raise_for_status()
+            body = resp.json()
+            job_id = body.get("id")
+            if not job_id:
+                return result
+        except Exception:
+            logger.debug("Firecrawl batch_scrape create failed", exc_info=True)
+            return result
+
+        deadline = time.monotonic() + max_wait
+        while time.monotonic() < deadline:
+            try:
+                poll = safe_get(
+                    f"{self.api_url}/v1/batch/scrape/{job_id}",
+                    headers=self._headers(),
+                    timeout=self.timeout,
+                    allow_private_ips=True,
+                )
+                poll.raise_for_status()
+                pbody = poll.json()
+            except Exception:
+                logger.debug(f"Firecrawl batch poll failed for {job_id}", exc_info=True)
+                return result
+
+            if pbody.get("status") == "completed":
+                for item in pbody.get("data", []) or []:
+                    u = item.get("url")
+                    md = item.get("markdown")
+                    if u in result and isinstance(md, str) and md.strip():
+                        result[u] = md
+                return result
+            time.sleep(poll_interval)
+        return result

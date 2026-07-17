@@ -22,3 +22,93 @@ def test_scrape_success():
     ):
         result = client.scrape("https://example.com")
     assert result == "# Title\n\nbody text"
+
+
+def test_scrape_failure_returns_none():
+    client = FirecrawlClient(api_url="http://localhost:3002", api_key="fc-test")
+    with patch(
+        "local_deep_research.research_library.downloaders.extraction.firecrawl_client.safe_post",
+        return_value=_mock_response(500, {}),
+    ):
+        result = client.scrape("https://example.com")
+    assert result is None
+
+
+def test_batch_scrape_polls_until_complete():
+    client = FirecrawlClient(api_url="http://localhost:3002", api_key="fc-test")
+    create_resp = _mock_response(
+        200, {"id": "job-1", "status": "processing"}
+    )
+    poll_processing = _mock_response(200, {"status": "processing", "completed": 0})
+    poll_done = _mock_response(
+        200,
+        {
+            "status": "completed",
+            "completed": 2,
+            "data": [
+                {"url": "https://a.com", "markdown": "# A"},
+                {"url": "https://b.com", "markdown": "# B"},
+            ],
+        },
+    )
+    with patch(
+        "local_deep_research.research_library.downloaders.extraction.firecrawl_client.safe_post",
+        return_value=create_resp,
+    ):
+        with patch(
+            "local_deep_research.research_library.downloaders.extraction.firecrawl_client.safe_get",
+            side_effect=[poll_processing, poll_done],
+        ):
+            with patch("time.sleep"):  # 加速轮询
+                result = client.batch_scrape(
+                    ["https://a.com", "https://b.com"], max_wait=60, poll_interval=1
+                )
+    assert result == {"https://a.com": "# A", "https://b.com": "# B"}
+
+
+def test_batch_scrape_partial_failure():
+    """完成回调里缺失的 URL 记 None，不抛异常。"""
+    client = FirecrawlClient(api_url="http://localhost:3002", api_key="fc-test")
+    create_resp = _mock_response(200, {"id": "job-1", "status": "processing"})
+    poll_done = _mock_response(
+        200,
+        {
+            "status": "completed",
+            "completed": 1,
+            "data": [{"url": "https://a.com", "markdown": "# A"}],
+        },
+    )
+    with patch(
+        "local_deep_research.research_library.downloaders.extraction.firecrawl_client.safe_post",
+        return_value=create_resp,
+    ):
+        with patch(
+            "local_deep_research.research_library.downloaders.extraction.firecrawl_client.safe_get",
+            return_value=poll_done,
+        ):
+            with patch("time.sleep"):
+                result = client.batch_scrape(
+                    ["https://a.com", "https://b.com"], max_wait=60, poll_interval=1
+                )
+    assert result["https://a.com"] == "# A"
+    assert result["https://b.com"] is None
+
+
+def test_batch_scrape_timeout_returns_all_none():
+    """超过 max_wait 仍未完成 -> 返回全 None（触发上层回落）。"""
+    client = FirecrawlClient(api_url="http://localhost:3002", api_key="fc-test")
+    create_resp = _mock_response(200, {"id": "job-1", "status": "processing"})
+    poll_processing = _mock_response(200, {"status": "processing", "completed": 0})
+    with patch(
+        "local_deep_research.research_library.downloaders.extraction.firecrawl_client.safe_post",
+        return_value=create_resp,
+    ):
+        with patch(
+            "local_deep_research.research_library.downloaders.extraction.firecrawl_client.safe_get",
+            return_value=poll_processing,
+        ):
+            with patch("time.sleep"):
+                result = client.batch_scrape(
+                    ["https://a.com", "https://b.com"], max_wait=0, poll_interval=1
+                )
+    assert result == {"https://a.com": None, "https://b.com": None}
