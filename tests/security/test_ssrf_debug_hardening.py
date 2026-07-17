@@ -124,7 +124,7 @@ class TestFullSearchSSRFValidation:
                 return_value=[(2, 1, 6, "", ("93.184.216.34", 0))],
             ),
             patch(
-                "local_deep_research.web_search_engines.engines.full_search.batch_fetch_and_extract"
+                "local_deep_research.web_search_engines.engines.full_search.fetch_content"
             ) as mock_batch,
         ):
             mock_batch.return_value = {
@@ -169,7 +169,7 @@ class TestFullSearchSSRFValidation:
                 return_value=[(2, 1, 6, "", ("93.184.216.34", 0))],
             ),
             patch(
-                "local_deep_research.web_search_engines.engines.full_search.batch_fetch_and_extract"
+                "local_deep_research.web_search_engines.engines.full_search.fetch_content"
             ) as mock_batch,
         ):
             mock_batch.return_value = {
