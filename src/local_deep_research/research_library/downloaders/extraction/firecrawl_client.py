@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional
 from loguru import logger
 
 from ....security.safe_requests import safe_get, safe_post
+from ....web_search_engines.rate_limiting import RateLimitError
 
 DEFAULT_API_URL = "http://localhost:3002"
 DEFAULT_TIMEOUT = 30
@@ -39,7 +40,10 @@ class FirecrawlClient:
         return h
 
     def scrape(self, url: str) -> Optional[str]:
-        """Scrape a single URL, return markdown body or None on failure."""
+        """Scrape a single URL, return markdown body or None on failure.
+
+        Raises RateLimitError on HTTP 429 so the engine layer can propagate it.
+        """
         payload = {"url": url, "formats": ["markdown"]}
         try:
             resp = safe_post(
@@ -49,12 +53,22 @@ class FirecrawlClient:
                 timeout=self.timeout,
                 allow_private_ips=True,
             )
-            resp.raise_for_status()
+        except Exception:
+            logger.debug(f"Firecrawl scrape request failed for {url}", exc_info=True)
+            return None
+        if resp.status_code == 429:
+            raise RateLimitError("Firecrawl scrape rate limited")
+        if resp.status_code >= 400:
+            logger.debug(
+                f"Firecrawl scrape failed for {url}: HTTP {resp.status_code}"
+            )
+            return None
+        try:
             data = resp.json().get("data", {})
             md = data.get("markdown")
             return md if isinstance(md, str) and md.strip() else None
         except Exception:
-            logger.debug(f"Firecrawl scrape failed for {url}", exc_info=True)
+            logger.debug(f"Firecrawl scrape parse failed for {url}", exc_info=True)
             return None
 
     def batch_scrape(
@@ -81,13 +95,23 @@ class FirecrawlClient:
                 timeout=self.timeout,
                 allow_private_ips=True,
             )
-            resp.raise_for_status()
+        except Exception:
+            logger.debug("Firecrawl batch_scrape create failed", exc_info=True)
+            return result
+        if resp.status_code == 429:
+            raise RateLimitError("Firecrawl batch_scrape rate limited")
+        if resp.status_code >= 400:
+            logger.debug(
+                f"Firecrawl batch_scrape create failed: HTTP {resp.status_code}"
+            )
+            return result
+        try:
             body = resp.json()
             job_id = body.get("id")
             if not job_id:
                 return result
         except Exception:
-            logger.debug("Firecrawl batch_scrape create failed", exc_info=True)
+            logger.debug("Firecrawl batch_scrape parse failed", exc_info=True)
             return result
 
         deadline = time.monotonic() + max_wait
@@ -99,10 +123,22 @@ class FirecrawlClient:
                     timeout=self.timeout,
                     allow_private_ips=True,
                 )
-                poll.raise_for_status()
-                pbody = poll.json()
             except Exception:
                 logger.debug(f"Firecrawl batch poll failed for {job_id}", exc_info=True)
+                return result
+            if poll.status_code == 429:
+                raise RateLimitError("Firecrawl batch_scrape poll rate limited")
+            if poll.status_code >= 400:
+                logger.debug(
+                    f"Firecrawl batch poll failed for {job_id}: HTTP {poll.status_code}"
+                )
+                return result
+            try:
+                pbody = poll.json()
+            except Exception:
+                logger.debug(
+                    f"Firecrawl batch poll parse failed for {job_id}", exc_info=True
+                )
                 return result
 
             if pbody.get("status") == "completed":
@@ -116,7 +152,10 @@ class FirecrawlClient:
         return result
 
     def search(self, query: str, limit: int = 10) -> List[Dict[str, Any]]:
-        """Search via /v1/search. Returns list of {title,url,description,markdown}."""
+        """Search via /v1/search. Returns list of {title,url,description,markdown}.
+
+        Raises RateLimitError on HTTP 429 so the engine layer can propagate it.
+        """
         try:
             resp = safe_post(
                 f"{self.api_url}/v1/search",
@@ -125,20 +164,30 @@ class FirecrawlClient:
                 timeout=self.timeout,
                 allow_private_ips=True,
             )
-            resp.raise_for_status()
-            data = resp.json().get("data", []) or []
-            out: List[Dict[str, Any]] = []
-            for item in data:
-                md = item.get("markdown")
-                out.append(
-                    {
-                        "title": item.get("title", ""),
-                        "url": item.get("url", ""),
-                        "description": item.get("description", ""),
-                        "markdown": md if isinstance(md, str) and md.strip() else None,
-                    }
-                )
-            return out
         except Exception:
-            logger.debug(f"Firecrawl search failed for {query!r}", exc_info=True)
+            logger.debug(f"Firecrawl search request failed for {query!r}", exc_info=True)
             return []
+        if resp.status_code == 429:
+            raise RateLimitError("Firecrawl search rate limited")
+        if resp.status_code >= 400:
+            logger.debug(
+                f"Firecrawl search failed for {query!r}: HTTP {resp.status_code}"
+            )
+            return []
+        try:
+            data = resp.json().get("data", []) or []
+        except Exception:
+            logger.debug(f"Firecrawl search parse failed for {query!r}", exc_info=True)
+            return []
+        out: List[Dict[str, Any]] = []
+        for item in data:
+            md = item.get("markdown")
+            out.append(
+                {
+                    "title": item.get("title", ""),
+                    "url": item.get("url", ""),
+                    "description": item.get("description", ""),
+                    "markdown": md if isinstance(md, str) and md.strip() else None,
+                }
+            )
+        return out

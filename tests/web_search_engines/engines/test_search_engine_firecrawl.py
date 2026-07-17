@@ -78,3 +78,108 @@ def test_full_content_falls_back_to_scrape():
         engine._search_results = [item]
         results = engine._get_full_content([item])
     assert results[0]["content"] == "# Scraped"
+
+
+def test_previews_ldr_search_mode_delegates():
+    """ldr_search 模式委托 preview fetcher。"""
+    engine = _make_engine(search_mode="ldr_search")
+    fake_fetcher = MagicMock()
+    fake_fetcher._get_previews.return_value = [
+        {"id": "u1", "title": "T1", "link": "https://a.com", "snippet": "s"}
+    ]
+    with patch.object(
+        engine, "_build_ldr_preview_fetcher", return_value=fake_fetcher
+    ):
+        previews = engine._get_previews("query")
+    fake_fetcher._get_previews.assert_called_once_with("query")
+    assert previews[0]["link"] == "https://a.com"
+
+
+def test_previews_ldr_search_no_source_returns_empty():
+    engine = _make_engine(search_mode="ldr_search")
+    with patch.object(engine, "_build_ldr_preview_fetcher", return_value=None):
+        previews = engine._get_previews("query")
+    assert previews == []
+
+
+def test_rate_limit_reraised():
+    """client.search 抛 RateLimitError 时引擎层应重抛，而非吞成 []。"""
+    from local_deep_research.web_search_engines.rate_limiting import RateLimitError
+
+    with patch(
+        "local_deep_research.web_search_engines.engines.search_engine_firecrawl.FirecrawlClient"
+    ) as MockFC:
+        MockFC.return_value.search.side_effect = RateLimitError("limited")
+        engine = _make_engine()
+        raised = False
+        try:
+            engine._get_previews("q")
+        except RateLimitError:
+            raised = True
+    assert raised
+
+
+def test_client_search_raises_rate_limit_on_429():
+    """FirecrawlClient.search 收到 429 时应抛 RateLimitError。"""
+    from local_deep_research.research_library.downloaders.extraction.firecrawl_client import (
+        FirecrawlClient,
+    )
+    from local_deep_research.web_search_engines.rate_limiting import RateLimitError
+
+    client = FirecrawlClient(api_url="http://localhost:3002", api_key="fc-test")
+    resp = MagicMock()
+    resp.status_code = 429
+    with patch(
+        "local_deep_research.research_library.downloaders.extraction.firecrawl_client.safe_post",
+        return_value=resp,
+    ):
+        raised = False
+        try:
+            client.search("q")
+        except RateLimitError:
+            raised = True
+    assert raised
+
+
+def test_client_scrape_raises_rate_limit_on_429():
+    """FirecrawlClient.scrape 收到 429 时应抛 RateLimitError。"""
+    from local_deep_research.research_library.downloaders.extraction.firecrawl_client import (
+        FirecrawlClient,
+    )
+    from local_deep_research.web_search_engines.rate_limiting import RateLimitError
+
+    client = FirecrawlClient(api_url="http://localhost:3002", api_key="fc-test")
+    resp = MagicMock()
+    resp.status_code = 429
+    with patch(
+        "local_deep_research.research_library.downloaders.extraction.firecrawl_client.safe_post",
+        return_value=resp,
+    ):
+        raised = False
+        try:
+            client.scrape("https://a.com")
+        except RateLimitError:
+            raised = True
+    assert raised
+
+
+def test_client_batch_scrape_raises_rate_limit_on_429():
+    """FirecrawlClient.batch_scrape 创建请求收到 429 时应抛 RateLimitError。"""
+    from local_deep_research.research_library.downloaders.extraction.firecrawl_client import (
+        FirecrawlClient,
+    )
+    from local_deep_research.web_search_engines.rate_limiting import RateLimitError
+
+    client = FirecrawlClient(api_url="http://localhost:3002", api_key="fc-test")
+    resp = MagicMock()
+    resp.status_code = 429
+    with patch(
+        "local_deep_research.research_library.downloaders.extraction.firecrawl_client.safe_post",
+        return_value=resp,
+    ):
+        raised = False
+        try:
+            client.batch_scrape(["https://a.com"])
+        except RateLimitError:
+            raised = True
+    assert raised
