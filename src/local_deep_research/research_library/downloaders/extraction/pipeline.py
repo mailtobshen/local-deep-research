@@ -23,6 +23,11 @@ from .readability_extractor import ReadabilityExtractor
 from .justext_extractor import JustextExtractor
 from .newspaper_extractor import NewspaperExtractor
 from .metadata_extractor import extract_metadata, metadata_to_text
+from .firecrawl_client import FirecrawlClient
+from ....config.thread_settings import (
+    get_bool_setting_from_snapshot,
+    get_setting_from_snapshot,
+)
 
 
 # --- Pipeline thresholds ---
@@ -448,6 +453,95 @@ def fetch_and_extract(
             downloader.close()
         except Exception:
             logger.debug("Failed to close downloader in fetch_and_extract")
+
+
+def _firecrawl_enabled(settings_snapshot: Optional[dict]) -> bool:
+    """Both the master switch and the content-fetch switch must be on."""
+    enable = get_bool_setting_from_snapshot(
+        "search.engine.web.firecrawl.enable",
+        default=False,
+        settings_snapshot=settings_snapshot,
+    )
+    use_for_content = get_bool_setting_from_snapshot(
+        "search.engine.web.firecrawl.use_for_content_fetch",
+        default=False,
+        settings_snapshot=settings_snapshot,
+    )
+    return bool(enable and use_for_content)
+
+
+def _new_firecrawl_client_from_snapshot(
+    settings_snapshot: Optional[dict],
+) -> FirecrawlClient:
+    """Build a FirecrawlClient from settings (api_url / api_key)."""
+    api_url = get_setting_from_snapshot(
+        "search.engine.web.firecrawl.api_url",
+        default="http://localhost:3002",
+        settings_snapshot=settings_snapshot,
+    )
+    api_url = (
+        api_url
+        if isinstance(api_url, str) and api_url
+        else "http://localhost:3002"
+    )
+    # Use a non-None sentinel default so missing keys don't raise
+    # NoSettingsContextError (FirecrawlClient accepts None for api_key).
+    api_key = get_setting_from_snapshot(
+        "search.engine.web.firecrawl.api_key",
+        default="",
+        settings_snapshot=settings_snapshot,
+    )
+    api_key = api_key if isinstance(api_key, str) and api_key else None
+    return FirecrawlClient(api_url=api_url, api_key=api_key)
+
+
+def fetch_content(
+    urls: List[str],
+    settings_snapshot: Optional[dict] = None,
+    language: str = "English",
+    enable_js_rendering: bool = False,
+) -> Dict[str, Optional[str]]:
+    """Fetch + extract content for urls, preferring Firecrawl when enabled.
+
+    When the Firecrawl content-fetch switch is off (or the service fails),
+    this is a transparent passthrough to batch_fetch_and_extract.
+    """
+    if not urls:
+        return {}
+
+    if not _firecrawl_enabled(settings_snapshot):
+        return batch_fetch_and_extract(
+            urls, language=language, enable_js_rendering=enable_js_rendering
+        )
+
+    try:
+        client = _new_firecrawl_client_from_snapshot(settings_snapshot)
+        fc_results = client.batch_scrape(urls)
+    except Exception:
+        logger.debug("Firecrawl dispatch failed; full fallback", exc_info=True)
+        fc_results = {u: None for u in urls}
+
+    final: Dict[str, Optional[str]] = {}
+    fallback_urls: List[str] = []
+    for u in urls:
+        if fc_results.get(u):
+            final[u] = fc_results[u]
+        else:
+            fallback_urls.append(u)
+
+    if fallback_urls:
+        legacy = batch_fetch_and_extract(
+            fallback_urls,
+            language=language,
+            enable_js_rendering=enable_js_rendering,
+        )
+        for u in fallback_urls:
+            final[u] = legacy.get(u)
+    else:
+        for u in urls:
+            final.setdefault(u, None)
+
+    return final
 
 
 def batch_fetch_and_extract(

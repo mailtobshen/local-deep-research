@@ -701,3 +701,81 @@ class TestFetchAndExtractJSRenderingPlumbing:
         )
         kwargs = mock_class.call_args.kwargs
         assert kwargs.get("enable_js_rendering") is True
+
+
+# ---------------------------------------------------------------------------
+# fetch_content — Firecrawl dispatch with legacy fallback
+# ---------------------------------------------------------------------------
+
+
+from unittest.mock import patch  # noqa: E402
+
+from local_deep_research.research_library.downloaders.extraction.pipeline import (  # noqa: E402
+    fetch_content,
+)
+
+
+def test_fetch_content_disabled_passthrough():
+    """两个开关都关 -> 直接走 batch_fetch_and_extract，firecrawl 不被调用。"""
+    snapshot = {
+        "search.engine.web.firecrawl.enable": {"value": False},
+        "search.engine.web.firecrawl.use_for_content_fetch": {"value": False},
+    }
+    with patch(
+        "local_deep_research.research_library.downloaders.extraction.pipeline.batch_fetch_and_extract",
+        return_value={"https://a.com": "legacy text"},
+    ) as mock_legacy:
+        with patch(
+            "local_deep_research.research_library.downloaders.extraction.pipeline.FirecrawlClient"
+        ) as mock_fc:
+            result = fetch_content(
+                ["https://a.com"], settings_snapshot=snapshot
+            )
+    assert result == {"https://a.com": "legacy text"}
+    mock_fc.return_value.batch_scrape.assert_not_called()
+
+
+def test_fetch_content_partial_fallback():
+    """firecrawl 返回部分 None，None 的 URL 回落原管线。"""
+    snapshot = {
+        "search.engine.web.firecrawl.enable": {"value": True},
+        "search.engine.web.firecrawl.use_for_content_fetch": {"value": True},
+    }
+    fc_result = {"https://a.com": "# A", "https://b.com": None}
+    with patch(
+        "local_deep_research.research_library.downloaders.extraction.pipeline._new_firecrawl_client"
+        if False else "local_deep_research.research_library.downloaders.extraction.pipeline.FirecrawlClient"
+    ) as mock_fc:
+        mock_fc.return_value.batch_scrape.return_value = fc_result
+        with patch(
+            "local_deep_research.research_library.downloaders.extraction.pipeline.batch_fetch_and_extract",
+            return_value={"https://b.com": "legacy B"},
+        ) as mock_legacy:
+            result = fetch_content(
+                ["https://a.com", "https://b.com"], settings_snapshot=snapshot
+            )
+    assert result == {"https://a.com": "# A", "https://b.com": "legacy B"}
+    # 只回落失败的 URL
+    mock_legacy.assert_called_once()
+    called_urls = mock_legacy.call_args.args[0]
+    assert called_urls == ["https://b.com"]
+
+
+def test_fetch_content_firecrawl_down_full_fallback():
+    """client 抛异常 -> 全部回落原管线，结果不为空。"""
+    snapshot = {
+        "search.engine.web.firecrawl.enable": {"value": True},
+        "search.engine.web.firecrawl.use_for_content_fetch": {"value": True},
+    }
+    with patch(
+        "local_deep_research.research_library.downloaders.extraction.pipeline.FirecrawlClient"
+    ) as mock_fc:
+        mock_fc.return_value.batch_scrape.side_effect = Exception("boom")
+        with patch(
+            "local_deep_research.research_library.downloaders.extraction.pipeline.batch_fetch_and_extract",
+            return_value={"https://a.com": "legacy"},
+        ):
+            result = fetch_content(
+                ["https://a.com"], settings_snapshot=snapshot
+            )
+    assert result == {"https://a.com": "legacy"}
