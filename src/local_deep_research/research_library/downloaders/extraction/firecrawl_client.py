@@ -114,3 +114,31 @@ class FirecrawlClient:
                 return result
             time.sleep(poll_interval)
         return result
+
+    def search(self, query: str, limit: int = 10) -> List[Dict[str, Any]]:
+        """Search via /v1/search. Returns list of {title,url,description,markdown}."""
+        try:
+            resp = safe_post(
+                f"{self.api_url}/v1/search",
+                json={"query": query, "limit": limit},
+                headers=self._headers(),
+                timeout=self.timeout,
+                allow_private_ips=True,
+            )
+            resp.raise_for_status()
+            data = resp.json().get("data", []) or []
+            out: List[Dict[str, Any]] = []
+            for item in data:
+                md = item.get("markdown")
+                out.append(
+                    {
+                        "title": item.get("title", ""),
+                        "url": item.get("url", ""),
+                        "description": item.get("description", ""),
+                        "markdown": md if isinstance(md, str) and md.strip() else None,
+                    }
+                )
+            return out
+        except Exception:
+            logger.debug(f"Firecrawl search failed for {query!r}", exc_info=True)
+            return []

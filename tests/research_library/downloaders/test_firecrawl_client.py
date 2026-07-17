@@ -112,3 +112,44 @@ def test_batch_scrape_timeout_returns_all_none():
                     ["https://a.com", "https://b.com"], max_wait=0, poll_interval=1
                 )
     assert result == {"https://a.com": None, "https://b.com": None}
+
+
+def test_search_success():
+    client = FirecrawlClient(api_url="http://localhost:3002", api_key="fc-test")
+    body = {
+        "data": [
+            {"title": "A", "url": "https://a.com", "description": "desc a", "markdown": "# A"},
+            {"title": "B", "url": "https://b.com", "description": "desc b", "markdown": None},
+        ]
+    }
+    with patch(
+        "local_deep_research.research_library.downloaders.extraction.firecrawl_client.safe_post",
+        return_value=_mock_response(200, body),
+    ):
+        results = client.search("query", limit=5)
+    assert results == [
+        {"title": "A", "url": "https://a.com", "description": "desc a", "markdown": "# A"},
+        {"title": "B", "url": "https://b.com", "description": "desc b", "markdown": None},
+    ]
+
+
+def test_search_failure_returns_empty():
+    client = FirecrawlClient(api_url="http://localhost:3002", api_key="fc-test")
+    with patch(
+        "local_deep_research.research_library.downloaders.extraction.firecrawl_client.safe_post",
+        return_value=_mock_response(503, {}),
+    ):
+        results = client.search("query")
+    assert results == []
+
+
+def test_localhost_bypasses_proxy():
+    """断言 safe_post 收到 allow_private_ips=True，避免 ollama-privoxy 回归。"""
+    client = FirecrawlClient(api_url="http://localhost:3002", api_key="fc-test")
+    with patch(
+        "local_deep_research.research_library.downloaders.extraction.firecrawl_client.safe_post",
+        return_value=_mock_response(200, {"data": {"markdown": "x"}}),
+    ) as mock_post:
+        client.scrape("https://example.com")
+    _, kwargs = mock_post.call_args
+    assert kwargs.get("allow_private_ips") is True
