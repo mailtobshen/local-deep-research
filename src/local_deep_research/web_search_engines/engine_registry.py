@@ -76,6 +76,10 @@ ENGINE_REGISTRY: Dict[str, EngineEntry] = {
         module_path=".engines.search_engine_tavily",
         class_name="TavilySearchEngine",
     ),
+    "firecrawl": EngineEntry(
+        module_path=".engines.search_engine_firecrawl",
+        class_name="FirecrawlSearchEngine",
+    ),
     "wayback": EngineEntry(
         module_path=".engines.search_engine_wayback",
         class_name="WaybackSearchEngine",

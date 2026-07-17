@@ -1483,3 +1483,30 @@ class TestProgrammaticModeContract:
             f"per-instance AdaptiveRateLimitTracker, got "
             f"{type(result.rate_tracker).__name__}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Firecrawl engine registration + security whitelist
+# ---------------------------------------------------------------------------
+
+
+def test_firecrawl_registered():
+    from local_deep_research.web_search_engines.engine_registry import (
+        get_engine_entry,
+    )
+
+    entry = get_engine_entry("firecrawl")
+    assert entry is not None
+    assert entry.class_name == "FirecrawlSearchEngine"
+    assert "search_engine_firecrawl" in entry.module_path
+
+
+def test_firecrawl_whitelisted():
+    from local_deep_research.security.module_whitelist import (
+        ALLOWED_CLASS_NAMES,
+        ALLOWED_MODULE_PATHS,
+    )
+
+    assert "FirecrawlSearchEngine" in ALLOWED_CLASS_NAMES
+    assert ".engines.search_engine_firecrawl" in ALLOWED_MODULE_PATHS
+
