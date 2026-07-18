@@ -141,12 +141,21 @@ class FirecrawlClient:
                 )
                 return result
 
-            if pbody.get("status") == "completed":
-                for item in pbody.get("data", []) or []:
-                    u = item.get("url")
-                    md = item.get("markdown")
-                    if u in result and isinstance(md, str) and md.strip():
-                        result[u] = md
+            # Items can stream into `data` before status flips to "completed"
+            # (self-hosted Firecrawl serves partial results while status is
+            # still "scraping"), and the per-item url may live at the top
+            # level OR under metadata.url. Accumulate from every poll.
+            for item in pbody.get("data", []) or []:
+                u = item.get("url") or (item.get("metadata") or {}).get("url")
+                md = item.get("markdown")
+                if u in result and isinstance(md, str) and md.strip():
+                    result[u] = md
+
+            # Done once the server says completed, or once we've resolved every
+            # requested URL (defensive against servers that never set
+            # status="completed").
+            all_resolved = all(v is not None for v in result.values())
+            if pbody.get("status") == "completed" or all_resolved:
                 return result
             time.sleep(poll_interval)
         return result
