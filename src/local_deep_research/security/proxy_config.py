@@ -36,6 +36,7 @@ from urllib.parse import urlparse
 from loguru import logger
 
 from ..settings.manager import check_env_setting
+from .security_monitor import record_tls_fallback
 from .ssrf_validator import is_ip_blocked
 
 
@@ -576,19 +577,25 @@ def fetch_with_cert_fallback(session, url: str, **kwargs):
     """
     import requests
 
-    # Stage 1
+    # Stage 1: Normal request with certificate verification
     try:
-        return session.get(url, **kwargs)
-    except requests.exceptions.SSLError:
+        response = session.get(url, **kwargs)
+        record_tls_fallback(url, "stage1_normal", True)
+        return response
+    except requests.exceptions.SSLError as e:
         logger.debug(f"SSL verification failed for {url}; attempting AIA intermediate-CA fetch")
+        record_tls_fallback(url, "stage1_normal", False, str(e))
 
     # Stage 2: AIA intermediate-CA fetch
     bundle = _fetch_intermediate_ca_bundle(url)
     if bundle:
         try:
-            return session.get(url, verify=bundle, **kwargs)
-        except requests.exceptions.SSLError:
+            response = session.get(url, verify=bundle, **kwargs)
+            record_tls_fallback(url, "stage2_aia", True)
+            return response
+        except requests.exceptions.SSLError as e:
             logger.debug(f"AIA bundle retry still failed SSL for {url}")
+            record_tls_fallback(url, "stage2_aia", False, str(e))
         finally:
             try:
                 os.unlink(bundle)
@@ -606,4 +613,11 @@ def fetch_with_cert_fallback(session, url: str, **kwargs):
         "verify=True is restored for subsequent requests.",
         url,
     )
-    return session.get(url, verify=False, **kwargs)
+
+    try:
+        response = session.get(url, verify=False, **kwargs)
+        record_tls_fallback(url, "stage3_insecure", True)
+        return response
+    except Exception as e:
+        record_tls_fallback(url, "stage3_insecure", False, str(e))
+        raise
