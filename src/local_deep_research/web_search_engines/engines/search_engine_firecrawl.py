@@ -1,9 +1,9 @@
 from typing import Any, Dict, List, Optional
 
-import requests
 from langchain_core.language_models import BaseLLM
 from loguru import logger
 
+from ...config.thread_settings import get_setting_from_snapshot
 from ...research_library.downloaders.extraction.firecrawl_client import FirecrawlClient
 from ..rate_limiting import RateLimitError  # noqa: F401  (re-exported convention)
 from ..search_engine_base import BaseSearchEngine
@@ -24,9 +24,9 @@ class FirecrawlSearchEngine(BaseSearchEngine):
     def __init__(
         self,
         max_results: int = 10,
-        api_url: str = "http://localhost:3002",
+        api_url: Optional[str] = None,
         api_key: Optional[str] = None,
-        search_mode: str = "firecrawl_search",
+        search_mode: Optional[str] = None,
         llm: Optional[BaseLLM] = None,
         include_full_content: bool = True,
         max_filtered_results: Optional[int] = None,
@@ -38,16 +38,40 @@ class FirecrawlSearchEngine(BaseSearchEngine):
             max_filtered_results=max_filtered_results,
             max_results=max_results,
             include_full_content=include_full_content,
+            # For this engine, full content is fetched via Firecrawl scrape in
+            # _get_full_content, so snippet-only mode is the inverse of
+            # include_full_content. Without this, the base run() defaults
+            # search_snippets_only=True and never calls _get_full_content.
+            search_snippets_only=not include_full_content,
             settings_snapshot=settings_snapshot,
         )
-        self.search_mode = search_mode
-        self.api_url = api_url
-        self.api_key = self._resolve_api_key(
-            api_key,
-            "search.engine.web.firecrawl.api_key",
-            engine_name="Firecrawl",
+
+        # The factory does not thread engine-specific scalar keys from the
+        # settings snapshot into __init__, so read them here (same pattern as
+        # the Paperless engine). Explicit kwargs take precedence.
+        self.search_mode = search_mode or get_setting_from_snapshot(
+            "search.engine.web.firecrawl.search_mode",
+            default="firecrawl_search",
             settings_snapshot=settings_snapshot,
         )
+        self.api_url = api_url or get_setting_from_snapshot(
+            "search.engine.web.firecrawl.api_url",
+            default="http://localhost:3002",
+            settings_snapshot=settings_snapshot,
+        )
+
+        # Firecrawl is typically self-hosted, so an API key is optional.
+        # Resolve one if available, but fall back to "" (no auth) rather than
+        # raising — the self-hosted server may not require a bearer token.
+        try:
+            self.api_key = self._resolve_api_key(
+                api_key,
+                "search.engine.web.firecrawl.api_key",
+                engine_name="Firecrawl",
+                settings_snapshot=settings_snapshot,
+            )
+        except ValueError:
+            self.api_key = ""
         self._client = FirecrawlClient(api_url=self.api_url, api_key=self.api_key)
 
     def _get_previews(self, query: str) -> List[Dict[str, Any]]:

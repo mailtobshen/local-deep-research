@@ -18,6 +18,8 @@ from typing import Any, Dict, List, Optional
 from bs4 import BeautifulSoup
 from loguru import logger
 
+from ....web_search_engines.rate_limiting import RateLimitError
+
 from .trafilatura_extractor import TrafilaturaExtractor
 from .readability_extractor import ReadabilityExtractor
 from .justext_extractor import JustextExtractor
@@ -517,9 +519,13 @@ def fetch_content(
     try:
         client = _new_firecrawl_client_from_snapshot(settings_snapshot)
         fc_results = client.batch_scrape(urls)
+    except RateLimitError:
+        # 429s must propagate so callers can back off — don't swallow into
+        # the silent legacy fallback below.
+        raise
     except Exception:
         logger.debug("Firecrawl dispatch failed; full fallback", exc_info=True)
-        fc_results = {u: None for u in urls}
+        fc_results = dict.fromkeys(urls)
 
     final: Dict[str, Optional[str]] = {}
     fallback_urls: List[str] = []

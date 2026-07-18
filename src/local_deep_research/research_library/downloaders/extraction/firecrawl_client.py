@@ -84,7 +84,7 @@ class FirecrawlClient:
         response are recorded as None. On any error returns all-None
         so the caller can fall back to the legacy pipeline.
         """
-        result: Dict[str, Optional[str]] = {u: None for u in urls}
+        result: Dict[str, Optional[str]] = dict.fromkeys(urls)
         if not urls:
             return result
         try:
