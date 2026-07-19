@@ -713,6 +713,58 @@ def run_research_process(research_id, query, mode, **kwargs):
                 # For other errors, re-raise to avoid silent failures
                 raise
 
+        # === Pre-flight: search engine + service health check ===
+        # Probes each SearXNG backend (and Firecrawl if enabled) so the user can
+        # see which engines currently return results before iterations begin.
+        # Failures are advisory only — never block the research.
+        try:
+            progress_callback(
+                "预检: 正在测试搜索引擎健康状态...",
+                3,
+                {"phase": "preflight", "step": "start"},
+            )
+            from ...diagnostics.engine_health import (
+                format_status_table,
+                run_preflight_check,
+            )
+
+            statuses = run_preflight_check(settings_snapshot=settings_snapshot)
+            table = format_status_table(statuses)
+            ok_count = sum(1 for s in statuses if s.status == "ok")
+            active_count = sum(1 for s in statuses if s.status != "skipped")
+            if ok_count > 0:
+                progress_callback(
+                    f"预检完成: {ok_count}/{active_count} 个引擎/服务可用\n{table}",
+                    4,
+                    {
+                        "phase": "preflight",
+                        "step": "done",
+                        "status": "ok",
+                        "ok": ok_count,
+                        "total": active_count,
+                    },
+                )
+            else:
+                progress_callback(
+                    f"⚠ 预检警告: 无可用搜索引擎, 研究将仅凭模型知识生成\n{table}",
+                    4,
+                    {
+                        "phase": "preflight",
+                        "step": "done",
+                        "status": "warning",
+                        "ok": 0,
+                        "total": active_count,
+                    },
+                )
+        except Exception as preflight_err:  # noqa: BLE001
+            # A broken probe must never abort the research.
+            logger.debug(f"Pre-flight engine health check skipped: {preflight_err}")
+            progress_callback(
+                f"预检跳过: {preflight_err}",
+                4,
+                {"phase": "preflight", "step": "skipped"},
+            )
+
         # Set the progress callback in the system
         system = AdvancedSearchSystem(
             llm=use_llm,  # type: ignore[arg-type]

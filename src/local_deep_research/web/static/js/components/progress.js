@@ -1292,6 +1292,29 @@
                 label = '✅ COMPLETE';
                 stepContent = data.message || 'Research completed.';
                 break;
+            case 'preflight': {
+                // Search engine health pre-flight. Render in the step stream,
+                // and pop the standard notification toast when done so the
+                // result is unmissable (reuses showNotification — same toast
+                // used for "Research Completed").
+                stepType = data.status === 'warning' ? 'error' : 'info';
+                label = data.status === 'warning' ? '⚠ 预检警告' : '🔍 预检';
+                stepContent = data.message || '';
+                if (data.step === 'done') {
+                    const ok = data.ok ?? 0;
+                    const total = data.total ?? 0;
+                    const isWarning = data.status === 'warning';
+                    showNotification(
+                        isWarning
+                            ? i18n.t('搜索引擎预检警告')
+                            : i18n.t('搜索引擎预检完成'),
+                        i18n.tf('%s/%s 个引擎/服务可用', String(ok), String(total)),
+                        isWarning ? 'warning' : 'info',
+                        6000
+                    );
+                }
+                break;
+            }
             default:
                 stepType = 'info';
                 label = data.phase.toUpperCase();

@@ -25,10 +25,10 @@
 
 services:
   local-deep-research:
-    image: ldr-local:i18n
+    image: ldr-local:i18n-preflight
     container_name: ldr-local
     networks:
-      - ldr-net
+      - ldr-network
 
     # 注: 此环境的 host-gateway 解析到 docker0(172.17.0.1) 而非 Windows 宿主,
     # 故不用 host.docker.internal, 直接用 WSL 网关 IP 172.25.128.1 (与源码 .env 一致)
@@ -92,7 +92,7 @@ services:
     image: searxng/searxng:latest
     container_name: searxng-ldr
     networks:
-      - ldr-net
+      - ldr-network
     environment:
       - SEARXNG_LIMITER=false
       - SEARXNG_PUBLIC_INSTANCE=false
@@ -160,7 +160,7 @@ services:
     image: alpine:latest
     container_name: ldr-tor
     networks:
-      - ldr-net
+      - ldr-network
     entrypoint: /bin/sh
     command:
       - -c
@@ -191,5 +191,5 @@ volumes:
   searxng_ldr_data:
 
 networks:
-  ldr-net:
-    driver: bridge
+  ldr-network:
+    external: true
