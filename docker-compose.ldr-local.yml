@@ -25,7 +25,7 @@
 
 services:
   local-deep-research:
-    image: ldr-local:i18n-preflight
+    image: ldr-local:i18n
     container_name: ldr-local
     networks:
       - ldr-network
