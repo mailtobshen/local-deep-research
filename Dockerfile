@@ -334,6 +334,10 @@ VOLUME /data
 # Removed for correctness.
 COPY --chown=ldruser:ldruser scripts/ollama_entrypoint.sh /scripts/ollama_entrypoint.sh
 
+# Pre-flight engine health diagnostic CLI (run with the in-image venv):
+#   /install/.venv/bin/python /scripts/check_engines.py
+COPY --chown=ldruser:ldruser scripts/check_engines.py /scripts/check_engines.py
+
 # Copy LDR entrypoint script to handle volume permissions
 COPY scripts/ldr_entrypoint.sh /usr/local/bin/ldr_entrypoint.sh
 
