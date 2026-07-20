@@ -51,24 +51,29 @@
 新增一个与研究流程正交的"图片素材"子系统，分四个阶段：
 
 ```
-阶段 0 — 研究抓取期（随现有抓取流程）
-  scrape() → {markdown, html}
-  ImageExtractor.extract(html, src_url, src_title) → 图片清单（仅元数据，不下载）
-  ImageBank.add(research_id, 清单)   去重，记录每图来源 source_url
+阶段 0 — 研究抓取期（随现有抓取流程，仅 Firecrawl engine）
+  scrape() 返回结构改为 {markdown, html}
+  search_engine_firecrawl._get_full_content：
+    item["content"] = result["markdown"]   （现有行为不变）
+    item["html_content"] = result["html"]  （新增，随 SearchResult 落库）
 
-阶段 1 — 报告后处理增强（统一在 run_research_process，对所有 strategy 通用）
-  在 run_research_process 拿到 clean_markdown 之后、写库之前（research_service.py
-  formatter 格式化之前），插入一个独立的图片增强步骤：
-  ImageEnhancer.enhance(markdown, image_bank, vision_describer) → 带 ![](真实url) 的 markdown
+阶段 1 — 后处理：构建 ImageBank（统一在 run_research_process，对所有 strategy 通用）
+  在 run_research_process 拿到 clean_markdown 之后、formatter 之前：
+  遍历 results["findings"] 的 search_results，对每个含 html_content 的结果：
+    ImageExtractor.extract(html_content, url, title) → 图片清单
+    ImageBank.add(清单)   去重
+  （bank 是纯后处理局部对象，不跨层、不需线程上下文）
+
+阶段 2 — 后处理：报告增强
+  ImageEnhancer.enhance(clean_markdown, image_bank, vision_describer) → 带 ![](真实url) 的 markdown
     - 把 ImageBank.candidates_with_alt() 的图（url + alt + 源标题）连同报告 markdown
       一起喂给一次 LLM，让它在合适位置插图，只准用清单里的真实 url
   注：WebUI 报告不在 IntegratedReportGenerator 生成（那是 benchmarks 死码路径），
-  实际由各 strategy 产出 formatted_findings 后拼成；合成分散在多个 strategy 内，
-  因此图片注入走后处理（收敛一处、通用），而非在每个 strategy 的合成 prompt 改。
+  实际由各 strategy 产出 formatted_findings 后拼成；因此图片注入走后处理（收敛一处、通用）。
 
-阶段 2 — Vision 兜底（仅当 report.image_vision_model 已配）
+阶段 3 — Vision 兜底（仅当 report.image_vision_model 已配）
   若 ImageBank 有 alt 缺失的候选图：先下载（限质限量）→ VisionDescriber 生成 alt
-  → 回填 ImageBank → 把这些"刚补 alt 的图"加入清单，再跑一次阶段 1 的 LLM 增补选图
+  → 回填 ImageBank → 把这些"刚补 alt 的图"加入清单，再跑一次阶段 2 的 LLM 增补选图
 
 阶段 3 — 落盘选中图
   解析最终报告 markdown 里的 ![](url)
@@ -230,20 +235,34 @@ class Image(Base):
     created_at = Column(UtcDateTime, default=utcnow())
 ```
 
-**迁移**：新增 alembic 迁移脚本 `0011_research_images.py`（最新为 `0010`）。外键 `ondelete="CASCADE"` 让 DB 层保证删 research 时级联删 image 行——但**本地文件**DB 管不到，需在应用层 `delete_research()` 加文件清理钩子（见 §8）。
+**迁移**：新增 alembic 迁移脚本 `0011_research_images.py`（最新为 `0010`），含两件事：
+1. 建 `research_images` 表。
+2. 给现有 `search_results` 表加 `html_content TEXT` 列（存 Firecrawl 抓回的原始 html，供后处理提取 `<img>`）。
+
+外键 `ondelete="CASCADE"` 让 DB 层保证删 research 时级联删 image 行——但**本地文件**DB 管不到，需在应用层 `delete_research()` 加文件清理钩子（见 §8）。
+
+**SearchResult 模型**（`database/models/research.py`）新增字段：
+
+```python
+html_content = Column(Text)  # Firecrawl 抓回的原始 html，供后处理提取 <img>；可空
+```
+
+引擎层只对 Firecrawl engine 填充此字段；其他引擎保持 None（后处理跳过无 html 的结果，等同该部分无图）。
 
 ## 7. 改动点（最小化）
 
 | 文件 | 改动 |
 |---|---|
-| `research_library/downloaders/extraction/firecrawl_client.py` | `scrape()` 的 `formats` 改为 `["markdown", "html"]`；返回类型从 `Optional[str]` 改为 `Optional[Dict]`（`{markdown, html}`）。同步改调用方 `web_search_engines/engines/search_engine_firecrawl.py:151`。 |
-| `web_search_engines/engines/search_engine_firecrawl.py` | scrape 调用点适配新返回结构（取 `result["markdown"]`），并把 `result["html"]` + source_url/title 喂给 ImageExtractor → ImageBank。 |
-| `web/services/research_service.py` | `run_research_process` 中拿到 `clean_markdown` 后、formatter 格式化前（约 1085 行），插入后处理：`ImageEnhancer.enhance(clean_markdown, image_bank)` → `ImageStore.persist + rewrite_markdown`。由 `report.enable_images` 开关门控。 |
+| `research_library/downloaders/extraction/firecrawl_client.py` | `scrape()` 的 `formats` 改为 `["markdown", "html"]`；返回类型从 `Optional[str]` 改为 `Optional[Dict]`（`{markdown, html}`）。 |
+| `web_search_engines/engines/search_engine_firecrawl.py` | `_get_full_content`（148 行）适配新返回：`item["content"] = result["markdown"]`，新增 `item["html_content"] = result["html"]`。 |
+| `database/models/research.py` | `SearchResult` 新增 `html_content = Column(Text)`。 |
+| `web/services/research_service.py` | `run_research_process` 中拿到 `clean_markdown` 后、formatter 格式化前（约 1085 行），插入后处理三步：① 遍历 findings.search_results 的 html_content 提取图片建 ImageBank；② `ImageEnhancer.enhance` 插图；③ `ImageStore.persist + rewrite_markdown` 落盘。由 `report.enable_images` 开关门控。 |
 | `web/routes/research_routes.py` | `delete_research()`（915 行）增加级联删图：删本地 `/data/images/<research_id>/` 目录（DB 行靠外键 CASCADE）。 |
 | `web/routes/` | 新增 `GET /images/<research_id>/<filename>` 路由（路径穿越防护 + 正确 content-type）。新增 `GET /api/research/<id>/images`（列出该研究图片）。 |
 | `defaults/default_settings.json` | 新增 2 个 setting（见 §9）。 |
 | `database/models/images.py` | 新增 Image 模型。 |
-| `database/migrations/versions/0011_research_images.py` | 新增建表迁移。 |
+| `database/models/__init__.py` | 导出 Image。 |
+| `database/migrations/versions/0011_research_images.py` | 新增：建 `research_images` 表 + 给 `search_results` 加 `html_content` 列。 |
 | `security/security_headers.py` | 已改：`img-src 'self' data: https:`（保留；本地路由走 'self'，https 留作直链兜底）。 |
 | `images/` 新目录 | extractor.py、bank.py、vision.py、enhancer.py、store.py、`__init__.py`。 |
 
