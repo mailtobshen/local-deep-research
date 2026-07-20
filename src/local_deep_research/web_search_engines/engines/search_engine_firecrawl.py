@@ -144,15 +144,22 @@ class FirecrawlSearchEngine(BaseSearchEngine):
         for item in relevant_items:
             full = item.get("_full_result") or {}
             md = full.get("markdown")
+            html = full.get("html")
             if not (isinstance(md, str) and md.strip()):
                 link = item.get("link")
                 if link:
                     try:
-                        md = self._client.scrape(link)
+                        scraped = self._client.scrape(link)
                     except Exception:
-                        logger.debug(f"Firecrawl scrape failed for {link}", exc_info=True)
-                        md = None
+                        logger.debug(
+                            f"Firecrawl scrape failed for {link}", exc_info=True
+                        )
+                        scraped = None
+                    if isinstance(scraped, dict):
+                        md = scraped.get("markdown")
+                        html = scraped.get("html")
             item = dict(item)
             item["content"] = md or item.get("content", "")
+            item["html_content"] = html  # may be None; consumed in post-processing
             results.append(item)
         return results

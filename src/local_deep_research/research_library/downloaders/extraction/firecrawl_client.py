@@ -39,12 +39,12 @@ class FirecrawlClient:
             h["Authorization"] = f"Bearer {self.api_key}"
         return h
 
-    def scrape(self, url: str) -> Optional[str]:
-        """Scrape a single URL, return markdown body or None on failure.
+    def scrape(self, url: str) -> Optional[Dict[str, Any]]:
+        """Scrape a single URL; return {markdown, html} or None on failure.
 
         Raises RateLimitError on HTTP 429 so the engine layer can propagate it.
         """
-        payload = {"url": url, "formats": ["markdown"]}
+        payload = {"url": url, "formats": ["markdown", "html"]}
         try:
             resp = safe_post(
                 f"{self.api_url}/v1/scrape",
@@ -66,7 +66,10 @@ class FirecrawlClient:
         try:
             data = resp.json().get("data", {})
             md = data.get("markdown")
-            return md if isinstance(md, str) and md.strip() else None
+            if not (isinstance(md, str) and md.strip()):
+                return None
+            html = data.get("html")
+            return {"markdown": md, "html": html if isinstance(html, str) else None}
         except Exception:
             logger.debug(f"Firecrawl scrape parse failed for {url}", exc_info=True)
             return None
