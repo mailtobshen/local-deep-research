@@ -1084,6 +1084,45 @@ def run_research_process(research_id, query, mode, **kwargs):
                         len(clean_markdown),
                     )
 
+                    # === Image post-processing (gated by report.enable_images) ===
+                    try:
+                        from ...images.postprocessing import (
+                            enhance_report_with_images,
+                        )
+                        from ...config.thread_settings import (
+                            get_setting_from_snapshot,
+                        )
+
+                        enable_images = get_setting_from_snapshot(
+                            "report.enable_images",
+                            False,
+                            settings_snapshot=settings_snapshot,
+                        )
+                        vision_model = get_setting_from_snapshot(
+                            "report.image_vision_model",
+                            "",
+                            settings_snapshot=settings_snapshot,
+                        )
+                        if enable_images:
+                            progress_callback(
+                                "Enhancing report with real images...",
+                                92,
+                                {"phase": "image_enhancement"},
+                            )
+                            with get_user_db_session(username) as img_db_session:
+                                clean_markdown = enhance_report_with_images(
+                                    research_id=research_id,
+                                    clean_markdown=clean_markdown,
+                                    results=results,
+                                    db_session=img_db_session,
+                                    enable_images=True,
+                                    vision_model=vision_model,
+                                )
+                    except Exception:
+                        logger.exception(
+                            "Image enhancement step failed; continuing with text-only report"
+                        )
+
                     # First send a progress update for generating the summary
                     progress_callback(
                         "Generating clean summary from research data...",
