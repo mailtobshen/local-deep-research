@@ -1,10 +1,41 @@
 # 恢复状态：报告图片提取功能实现
 
-**最后更新**：2026-07-20
+**状态**：✅ 全部完成（Task 1~10），2026-07-21
 **分支**：`i18n-zh-translation`
-**执行方式**：内联执行（executing-plans skill）
-**计划文件**：`docs/superpowers/plans/2026-07-20-report-image-extraction.md`（10 个任务）
-**设计文件**：`docs/superpowers/specs/2026-07-20-report-image-extraction-design.md`
+
+## ✅ 完成总结
+
+10 个任务全部实现、测试通过、已提交。单元测试 32 passed + 集成测试 1 passed。
+
+| Task | Commit | 测试 |
+|---|---|---|
+| 1 ImageExtractor | 77d4a5a7 | 7 |
+| 2 ImageBank | 4962ab8b | 4 |
+| 3 VisionDescriber | e508629d | 4 |
+| 4 Model+migration 0011 | 573d7d73 | 3 |
+| 5 ImageEnhancer | 95928b8a | 4 |
+| 6 ImageStore | dde70ad5 | 4 |
+| 7 Firecrawl HTML | 531a9147 | 2 |
+| 8 后处理接入 | c6e85df6 | 2 |
+| 9 路由+API+级联删 | bebfe904 | 2 |
+| 10 集成验证 | a07f4034 | 1 |
+
+**关键计划偏差修正**（实现时现场核实后改的）：
+- SSRF HTTP：`security.safe_requests.safe_get/safe_post`（模块级函数），非计划假设的 `proxy_config.safe_requests` 对象
+- `UtcDateTime/utcnow` 来自 `sqlalchemy_utc`，非 `.common`
+- 设置用 `category=report_parameters` + `type=REPORT`（真实约定），非计划的 APP
+- list API 用 `get_user_db_session` context manager，非未验证的 `db_manager.get_session`
+- serve route traversal 返回 (json,404) tuple 便于单测，非 abort()
+- `scrape()` 仅一个调用点，str→dict 改动安全
+
+**迁移已在真实加密 DB 应用**：rev==head==0011，research_images 表 + search_results.html_content 均存在。
+
+## 剩余人工验收（需 WebUI + 真实 Firecrawl，非自动）
+计划 Task 10 Step 3-6：在 WebUI 开启 `report.enable_images` → 跑一次源页面含图的 research → 查报告含 `/images/` 路由 → 删研究验证 `/data/images/<rid>/` 被清除。
+
+---
+
+## （历史）原恢复指令
 
 ---
 
