@@ -1,5 +1,6 @@
 import io
 import json
+import shutil
 from datetime import datetime, UTC
 from pathlib import Path
 
@@ -76,6 +77,70 @@ research_bp = Blueprint("research", __name__)
 # NOTE: Routes use session["username"] (not .get()) intentionally.
 # @login_required guarantees the key exists; direct access fails fast
 # if the decorator is ever removed.
+
+
+# === Local research-image mirror (report.enable_images feature) ===
+_IMAGES_BASE_DIR = Path("/data/images")
+
+
+def _cleanup_image_dir(research_id: str) -> None:
+    """Remove the local image mirror for a research (idempotent)."""
+    try:
+        d = _IMAGES_BASE_DIR / Path(research_id).name
+        if d.is_dir():
+            shutil.rmtree(d, ignore_errors=True)
+    except Exception:
+        logger.exception("Error removing image dir for %s", research_id)
+
+
+@research_bp.route("/images/<research_id>/<path:filename>")
+def serve_research_image(research_id, filename):
+    """Serve a locally-mirrored research image with path-traversal protection."""
+    from flask import send_from_directory
+
+    # Reject anything that escapes the research's directory.
+    rid_safe = Path(research_id).name
+    fname_safe = Path(filename).name
+    if research_id != rid_safe or filename != fname_safe:
+        return jsonify({"status": "error", "message": "Not found"}), 404
+    directory = _IMAGES_BASE_DIR / rid_safe
+    target = directory / fname_safe
+    try:
+        target.resolve().relative_to(directory.resolve())
+    except (ValueError, OSError):
+        return jsonify({"status": "error", "message": "Not found"}), 404
+    if not target.is_file():
+        return jsonify({"status": "error", "message": "Not found"}), 404
+    return send_from_directory(directory, fname_safe)
+
+
+@research_bp.route("/api/research/<string:research_id>/images")
+def list_research_images(research_id):
+    """List all mirrored images for a research."""
+    from ...database.models import Image
+
+    username = session["username"]
+    with get_user_db_session(username) as db_session:
+        rows = (
+            db_session.query(Image)
+            .filter_by(research_id=research_id)
+            .all()
+        )
+        return jsonify(
+            {
+                "status": "success",
+                "images": [
+                    {
+                        "local_route": r.local_route,
+                        "original_url": r.original_url,
+                        "alt": r.alt,
+                        "source_url": r.source_url,
+                        "source_title": r.source_title,
+                    }
+                    for r in rows
+                ],
+            }
+        )
 
 
 # Add static route at the root level
@@ -954,6 +1019,7 @@ def delete_research(research_id):
                     logger.exception("Error removing report file")
 
             # Delete the database record
+            _cleanup_image_dir(research_id)
             db_session.delete(research)
             db_session.commit()
 
