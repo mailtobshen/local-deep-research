@@ -56,16 +56,21 @@
   ImageExtractor.extract(html, src_url, src_title) → 图片清单（仅元数据，不下载）
   ImageBank.add(research_id, 清单)   去重，记录每图来源 source_url
 
-阶段 1 — 报告生成期（现有 _research_and_generate_sections）
-  section prompt 追加「可选图片清单」：仅含 alt 的图（url + alt + 源标题）
-  报告 LLM 选图，写出 ![](真实url)
+阶段 1 — 报告后处理增强（统一在 run_research_process，对所有 strategy 通用）
+  在 run_research_process 拿到 clean_markdown 之后、写库之前（research_service.py
+  formatter 格式化之前），插入一个独立的图片增强步骤：
+  ImageEnhancer.enhance(markdown, image_bank, vision_describer) → 带 ![](真实url) 的 markdown
+    - 把 ImageBank.candidates_with_alt() 的图（url + alt + 源标题）连同报告 markdown
+      一起喂给一次 LLM，让它在合适位置插图，只准用清单里的真实 url
+  注：WebUI 报告不在 IntegratedReportGenerator 生成（那是 benchmarks 死码路径），
+  实际由各 strategy 产出 formatted_findings 后拼成；合成分散在多个 strategy 内，
+  因此图片注入走后处理（收敛一处、通用），而非在每个 strategy 的合成 prompt 改。
 
-阶段 2a — Vision 兜底（仅当 report.image_vision_model 已配）
-  扫 ImageBank 中 alt 缺失的候选图
-  下载这些图（限质限量）→ VisionDescriber → 生成 alt → 回填 ImageBank
-  把"刚补 alt 的图"重新喂报告 LLM 做一轮增补选图
+阶段 2 — Vision 兜底（仅当 report.image_vision_model 已配）
+  若 ImageBank 有 alt 缺失的候选图：先下载（限质限量）→ VisionDescriber 生成 alt
+  → 回填 ImageBank → 把这些"刚补 alt 的图"加入清单，再跑一次阶段 1 的 LLM 增补选图
 
-阶段 2b — 落盘选中图
+阶段 3 — 落盘选中图
   解析最终报告 markdown 里的 ![](url)
   这些 url 对应的图：下载到 /data/images/<research_id>/<hash>.<ext>
   写 Image 表；markdown 内 url 改写为 /images/<hash>
@@ -77,6 +82,8 @@ WebUI 渲染
   GET  /api/research/<id>/images   列出该研究所有图
   DELETE research                  级联删 Image 行 + 删本地文件目录
 ```
+
+**为什么是后处理而非 strategy 内注入**：探索代码发现 WebUI 报告由 `run_research_process`（`research_service.py:300`）驱动，最终内容 = 各 strategy 产出的 `formatted_findings`。LLM 合成分散在 `parallel_search_strategy`、`focused_iteration_strategy` 等多个 strategy 的 "Final synthesis" phase，逐个改注入点既发散又易漏、且 vision 二轮调用难统一挂载。改为在 `run_research_process` 的后处理位置统一增强，一次 LLM 调用、所有 strategy 通用。
 
 ## 5. 组件设计
 
@@ -160,7 +167,29 @@ class VisionDescriber:
 
 **注意**：vision LLM 的实例化复用 `config.llm_config.get_llm()`，但需要支持 vision 的模型；`model_name` 来自 setting。LDR 目前无 vision 配置位，这是首个。
 
-### 5.4 ImageStore（落盘 + DB）
+### 5.4 ImageEnhancer（后处理增强，阶段 1+2 的编排者）
+
+**职责**：编排整个后处理增强流程——一次 LLM 调用把图片清单插入报告；vision 启用时先补 alt 再增补一轮。这是 `run_research_process` 后处理位置的单一入口。
+
+```python
+# src/local_deep_research/images/enhancer.py
+class ImageEnhancer:
+    def __init__(self, llm, vision: VisionDescriber) -> None: ...
+    def enhance(self, markdown: str, bank: ImageBank) -> str:
+        """
+        阶段 1：把 bank.candidates_with_alt()（url + alt + 源标题）连同 markdown 喂一次 LLM，
+                prompt 强约束：只能在合适位置插入清单内已有的真实 url，禁止编造新 url、
+                禁止改写正文事实。返回带 ![](真实url) 的 markdown。
+        阶段 2（vision.enabled 且 bank 有 alt 缺失图）：
+                对 candidates_without_alt() 逐个 vision.describe → set_alt 回填；
+                把新补 alt 的图加入清单，再跑一次阶段 1 的 LLM 增补选图。
+        任一阶段失败：返回原 markdown 不报错（降级为纯文本报告）。
+        """
+```
+
+**LLM prompt 关键约束**：明确告知模型"只能使用下面清单中的图片 URL，不得编造、不得修改 URL"，从源头杜绝幻觉图链（本次 bug 的根因）。
+
+### 5.5 ImageStore（落盘 + DB）
 
 **职责**：把选中的图下载到本地、写 DB、改写报告 markdown 内的 url。
 
@@ -201,25 +230,26 @@ class Image(Base):
     created_at = Column(UtcDateTime, default=utcnow())
 ```
 
-**迁移**：新增 alembic 迁移脚本建表（参考现有 `database/migrations/versions/` 编号规则，下一个版本号）。外键 `ondelete="CASCADE"` 让 DB 层保证删 research 时级联删 image 行——但**本地文件**DB 管不到，需在应用层 `delete_report()` 加文件清理钩子（见 §8）。
+**迁移**：新增 alembic 迁移脚本 `0011_research_images.py`（最新为 `0010`）。外键 `ondelete="CASCADE"` 让 DB 层保证删 research 时级联删 image 行——但**本地文件**DB 管不到，需在应用层 `delete_research()` 加文件清理钩子（见 §8）。
 
 ## 7. 改动点（最小化）
 
 | 文件 | 改动 |
 |---|---|
-| `research_library/downloaders/extraction/firecrawl_client.py` | `scrape()` 的 `formats` 改为 `["markdown", "html"]`；返回类型从 `Optional[str]` 改为 `Optional[Dict]`（`{markdown, html}`）。同步改所有调用方。 |
-| `report_generator.py` | `_research_and_generate_sections` 的 section prompt 拼装处，注入「可选图片清单」（来自 ImageBank.candidates_with_alt）。报告初稿后，若 vision 启用，跑兜底 + 增补二轮选图。最后调 ImageStore 落盘 + 改写 markdown。 |
-| `storage/database.py` | `delete_report()` 增加级联删图：删 DB Image 行（外键 CASCADE 已处理）+ 删本地 `/data/images/<research_id>/` 目录。 |
-| `web/routes/` | 新增 `GET /images/<filename>` 路由（从本地返回图字节，正确 content-type）。新增 `GET /api/research/<id>/images`（列出该研究图片）。 |
+| `research_library/downloaders/extraction/firecrawl_client.py` | `scrape()` 的 `formats` 改为 `["markdown", "html"]`；返回类型从 `Optional[str]` 改为 `Optional[Dict]`（`{markdown, html}`）。同步改调用方 `web_search_engines/engines/search_engine_firecrawl.py:151`。 |
+| `web_search_engines/engines/search_engine_firecrawl.py` | scrape 调用点适配新返回结构（取 `result["markdown"]`），并把 `result["html"]` + source_url/title 喂给 ImageExtractor → ImageBank。 |
+| `web/services/research_service.py` | `run_research_process` 中拿到 `clean_markdown` 后、formatter 格式化前（约 1085 行），插入后处理：`ImageEnhancer.enhance(clean_markdown, image_bank)` → `ImageStore.persist + rewrite_markdown`。由 `report.enable_images` 开关门控。 |
+| `web/routes/research_routes.py` | `delete_research()`（915 行）增加级联删图：删本地 `/data/images/<research_id>/` 目录（DB 行靠外键 CASCADE）。 |
+| `web/routes/` | 新增 `GET /images/<research_id>/<filename>` 路由（路径穿越防护 + 正确 content-type）。新增 `GET /api/research/<id>/images`（列出该研究图片）。 |
 | `defaults/default_settings.json` | 新增 2 个 setting（见 §9）。 |
 | `database/models/images.py` | 新增 Image 模型。 |
-| `database/migrations/versions/` | 新增建表迁移。 |
+| `database/migrations/versions/0011_research_images.py` | 新增建表迁移。 |
 | `security/security_headers.py` | 已改：`img-src 'self' data: https:`（保留；本地路由走 'self'，https 留作直链兜底）。 |
-| `images/` 新目录 | extractor.py、bank.py、vision.py、store.py、`__init__.py`。 |
+| `images/` 新目录 | extractor.py、bank.py、vision.py、enhancer.py、store.py、`__init__.py`。 |
 
 ## 8. 级联删除细节
 
-`storage/database.py` 的 `delete_report(research_id, username)`：
+`web/routes/research_routes.py` 的 `delete_research(research_id)`（删整条 research，915 行）：
 
 1. 先查该 research 的 Image 行，收集 `local_path`。
 2. 删 research_history 行（现有逻辑）→ DB 外键 CASCADE 自动删 Image 行。
