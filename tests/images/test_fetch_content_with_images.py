@@ -53,3 +53,42 @@ def test_lazy_resolution_when_module_attr_is_none():
         assert out["https://x/page"]["text"] == "text"
     finally:
         pipeline.AutoHTMLDownloader = original
+
+
+def test_full_search_gate_on_sets_html_content():
+    from local_deep_research.web_search_engines.engines.full_search import (
+        FullSearchResults,
+    )
+    from local_deep_research.images.extractor import ExtractedImage
+
+    fs = FullSearchResults(llm=None, web_search=MagicMock(), settings_snapshot={})
+    items = [{"link": "https://src/p", "title": "P"}]
+    img = ExtractedImage(url="https://real/a.jpg", alt="a", source_url="s", source_title="P", width=None, height=None)
+
+    with patch("local_deep_research.web_search_engines.engines.full_search.get_bool_setting_from_snapshot", return_value=True), \
+         patch("local_deep_research.web_search_engines.engines.full_search.validate_url", return_value=True), \
+         patch("local_deep_research.web_search_engines.engines.full_search.fetch_content_with_images",
+               return_value={"https://src/p": {"text": "body", "images": [img]}}):
+        out = fs._get_full_content(items)
+    import json
+    parsed = json.loads(out[0]["html_content"])
+    assert parsed[0]["url"] == "https://real/a.jpg"
+    assert out[0]["full_content"] == "body"
+
+
+def test_full_search_gate_off_uses_plain_fetch_content():
+    from local_deep_research.web_search_engines.engines.full_search import (
+        FullSearchResults,
+    )
+
+    fs = FullSearchResults(llm=None, web_search=MagicMock(), settings_snapshot={})
+    items = [{"link": "https://src/p", "title": "P"}]
+    with patch("local_deep_research.web_search_engines.engines.full_search.get_bool_setting_from_snapshot", return_value=False), \
+         patch("local_deep_research.web_search_engines.engines.full_search.validate_url", return_value=True), \
+         patch("local_deep_research.web_search_engines.engines.full_search.fetch_content", return_value={"https://src/p": "body"}) as fc, \
+         patch("local_deep_research.web_search_engines.engines.full_search.fetch_content_with_images") as fcwi:
+        out = fs._get_full_content(items)
+    fc.assert_called_once()
+    fcwi.assert_not_called()
+    assert out[0]["full_content"] == "body"
+    assert "html_content" not in out[0]  # type: ignore[index]  # noqa: E501
