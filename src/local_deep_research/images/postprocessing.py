@@ -6,7 +6,7 @@ from typing import Any, Dict
 
 from .bank import ImageBank
 from .enhancer import ImageEnhancer
-from .extractor import extract_images
+from .serialize import loads_images
 from .store import ImageStore, _IMG_RE
 from .vision import VisionDescriber
 from ..config.llm_config import get_llm
@@ -33,13 +33,9 @@ def enhance_report_with_images(
         bank = ImageBank()
         for finding in results.get("findings", []):
             for sr in finding.get("search_results", []) or []:
-                html = sr.get("html_content")
-                if html:
-                    bank.add(
-                        extract_images(
-                            html, sr.get("url", ""), sr.get("title", "")
-                        )
-                    )
+                raw = sr.get("html_content")
+                if raw:
+                    bank.add(loads_images(raw))
         if not bank.all_urls():
             return clean_markdown
 
