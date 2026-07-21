@@ -511,51 +511,23 @@ def fetch_content(
     language: str = "English",
     enable_js_rendering: bool = False,
 ) -> Dict[str, Optional[str]]:
-    """Fetch + extract content for urls, preferring Firecrawl when enabled.
+    """Fetch + extract text for urls.
 
-    When the Firecrawl content-fetch switch is off (or the service fails),
-    this is a transparent passthrough to batch_fetch_and_extract.
+    Thin wrapper over `_fetch_content_dispatcher` with image extraction
+    disabled; returns only the `text` field per url. Behavior is the same
+    as `batch_fetch_and_extract` for default config, and uses Playwright
+    first / Firecrawl fallback when `firecrawl.use_for_content_fetch` is
+    on (per `_firecrawl_enabled`).
     """
-    if not urls:
-        return {}
-
-    if not _firecrawl_enabled(settings_snapshot):
-        return batch_fetch_and_extract(
-            urls, language=language, enable_js_rendering=enable_js_rendering
-        )
-
-    try:
-        client = _new_firecrawl_client_from_snapshot(settings_snapshot)
-        fc_results = client.batch_scrape(urls)
-    except RateLimitError:
-        # 429s must propagate so callers can back off — don't swallow into
-        # the silent legacy fallback below.
-        raise
-    except Exception:
-        logger.debug("Firecrawl dispatch failed; full fallback", exc_info=True)
-        fc_results = dict.fromkeys(urls)
-
-    final: Dict[str, Optional[str]] = {}
-    fallback_urls: List[str] = []
-    for u in urls:
-        if fc_results.get(u):
-            final[u] = fc_results[u]
-        else:
-            fallback_urls.append(u)
-
-    if fallback_urls:
-        legacy = batch_fetch_and_extract(
-            fallback_urls,
-            language=language,
-            enable_js_rendering=enable_js_rendering,
-        )
-        for u in fallback_urls:
-            final[u] = legacy.get(u)
-    else:
-        for u in urls:
-            final.setdefault(u, None)
-
-    return final
+    data = _fetch_content_dispatcher(
+        urls,
+        titles=None,
+        settings_snapshot=settings_snapshot,
+        language=language,
+        enable_js_rendering=enable_js_rendering,
+        enable_images=False,
+    )
+    return {url: (entry.get("text") if entry else None) for url, entry in data.items()}
 
 
 def fetch_content_with_images(

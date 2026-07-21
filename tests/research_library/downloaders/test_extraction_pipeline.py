@@ -716,69 +716,93 @@ from local_deep_research.research_library.downloaders.extraction.pipeline import
 
 
 def test_fetch_content_disabled_passthrough():
-    """两个开关都关 -> 直接走 batch_fetch_and_extract，firecrawl 不被调用。"""
+    """firecrawl 开关都关 -> 直接走 dispatcher，FirecrawlClient 不被构造。"""
     snapshot = {
         "search.engine.web.firecrawl.enable": {"value": False},
         "search.engine.web.firecrawl.use_for_content_fetch": {"value": False},
     }
+    dispatcher_out = {"https://a.com": {"text": "dispatcher text", "images": []}}
     with patch(
-        "local_deep_research.research_library.downloaders.extraction.pipeline.batch_fetch_and_extract",
-        return_value={"https://a.com": "legacy text"},
-    ) as mock_legacy:
+        "local_deep_research.research_library.downloaders.extraction.pipeline._fetch_content_dispatcher",
+        return_value=dispatcher_out,
+    ) as mock_d:
         with patch(
-            "local_deep_research.research_library.downloaders.extraction.pipeline.FirecrawlClient"
-        ) as mock_fc:
+            "local_deep_research.research_library.downloaders.extraction.pipeline._new_firecrawl_client_from_snapshot"
+        ) as mock_fc_build:
             result = fetch_content(
                 ["https://a.com"], settings_snapshot=snapshot
             )
-    assert result == {"https://a.com": "legacy text"}
-    mock_fc.return_value.batch_scrape.assert_not_called()
+    assert result == {"https://a.com": "dispatcher text"}
+    mock_d.assert_called_once()
+    assert mock_d.call_args.kwargs["enable_images"] is False
+    mock_fc_build.assert_not_called()
 
 
 def test_fetch_content_partial_fallback():
-    """firecrawl 返回部分 None，None 的 URL 回落原管线。"""
+    """dispatcher 返回 text=None 的 URL，wrapper 把它映射成 None。"""
     snapshot = {
         "search.engine.web.firecrawl.enable": {"value": True},
         "search.engine.web.firecrawl.use_for_content_fetch": {"value": True},
     }
-    fc_result = {"https://a.com": "# A", "https://b.com": None}
+    dispatcher_out = {
+        "https://a.com": {"text": "# A", "images": []},
+        "https://b.com": {"text": None, "images": []},
+    }
     with patch(
-        "local_deep_research.research_library.downloaders.extraction.pipeline._new_firecrawl_client"
-        if False else "local_deep_research.research_library.downloaders.extraction.pipeline.FirecrawlClient"
-    ) as mock_fc:
-        mock_fc.return_value.batch_scrape.return_value = fc_result
-        with patch(
-            "local_deep_research.research_library.downloaders.extraction.pipeline.batch_fetch_and_extract",
-            return_value={"https://b.com": "legacy B"},
-        ) as mock_legacy:
-            result = fetch_content(
-                ["https://a.com", "https://b.com"], settings_snapshot=snapshot
-            )
-    assert result == {"https://a.com": "# A", "https://b.com": "legacy B"}
-    # 只回落失败的 URL
-    mock_legacy.assert_called_once()
-    called_urls = mock_legacy.call_args.args[0]
-    assert called_urls == ["https://b.com"]
+        "local_deep_research.research_library.downloaders.extraction.pipeline._fetch_content_dispatcher",
+        return_value=dispatcher_out,
+    ) as mock_d:
+        result = fetch_content(
+            ["https://a.com", "https://b.com"], settings_snapshot=snapshot
+        )
+    assert result == {"https://a.com": "# A", "https://b.com": None}
+    mock_d.assert_called_once()
+    assert mock_d.call_args.args[0] == ["https://a.com", "https://b.com"]
 
 
 def test_fetch_content_firecrawl_down_full_fallback():
-    """client 抛异常 -> 全部回落原管线，结果不为空。"""
+    """dispatcher 内部 Firecrawl 失败 -> wrapper 仍返回 dispatcher 的结果。"""
     snapshot = {
         "search.engine.web.firecrawl.enable": {"value": True},
         "search.engine.web.firecrawl.use_for_content_fetch": {"value": True},
     }
+    dispatcher_out = {"https://a.com": {"text": "fallback text", "images": []}}
     with patch(
-        "local_deep_research.research_library.downloaders.extraction.pipeline.FirecrawlClient"
-    ) as mock_fc:
-        mock_fc.return_value.batch_scrape.side_effect = Exception("boom")
-        with patch(
-            "local_deep_research.research_library.downloaders.extraction.pipeline.batch_fetch_and_extract",
-            return_value={"https://a.com": "legacy"},
-        ):
-            result = fetch_content(
-                ["https://a.com"], settings_snapshot=snapshot
-            )
-    assert result == {"https://a.com": "legacy"}
+        "local_deep_research.research_library.downloaders.extraction.pipeline._fetch_content_dispatcher",
+        return_value=dispatcher_out,
+    ):
+        result = fetch_content(
+            ["https://a.com"], settings_snapshot=snapshot
+        )
+    assert result == {"https://a.com": "fallback text"}
+
+
+def test_fetch_content_delegates_to_dispatcher_text_only():
+    """fetch_content is a thin wrapper that delegates to the dispatcher
+    with enable_images=False and returns only the text field."""
+    from local_deep_research.research_library.downloaders.extraction import pipeline
+
+    fake_dispatcher_out = {
+        "https://src/p": {"text": "body", "images": ["ignored"]},
+    }
+    with patch.object(
+        pipeline, "_fetch_content_dispatcher", return_value=fake_dispatcher_out
+    ) as mock_d:
+        out = pipeline.fetch_content(
+            ["https://src/p"],
+            settings_snapshot={"k": "v"},
+            language="English",
+            enable_js_rendering=False,
+        )
+    mock_d.assert_called_once_with(
+        ["https://src/p"],
+        titles=None,
+        settings_snapshot={"k": "v"},
+        language="English",
+        enable_js_rendering=False,
+        enable_images=False,
+    )
+    assert out == {"https://src/p": "body"}
 
 
 # ---------------------------------------------------------------------------
