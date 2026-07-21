@@ -1983,6 +1983,16 @@
         // Also initialize the main setup which finds all dropdowns
         setupCustomDropdowns();
 
+        // Attach Test Connection button to vision URL field, if present.
+        if (typeof window.attachVisionTestButton === "function") {
+            const urlInput = document.querySelector(
+                "input[name='report.image_vision_url']"
+            );
+            if (urlInput) {
+                window.attachVisionTestButton(urlInput);
+            }
+        }
+
     }
 
     /**

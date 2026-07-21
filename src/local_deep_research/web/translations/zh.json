@@ -2875,5 +2875,11 @@
   "Extract real images from source pages and embed them in reports. When off, reports are text-only (no images). Requires Firecrawl as the content fetcher.": "从研究源页面提取真实图片并嵌入报告（关闭时报告无图）。",
   "Model name with vision capability (e.g. gpt-4o, qwen-vl-max) used to describe images that have no alt text. Leave empty to disable vision fallback (images without alt are skipped).": "用于给无 alt 文本的图片自动生成描述的视觉模型名称（如 gpt-4o、qwen-vl-max）。留空则禁用 vision 兜底——无 alt 的图片会被跳过，不会被选中。",
   "Vision-capable model name (e.g. gpt-4o, qwen-vl-max, llava) used to describe images that have no alt text. Must be supported by the same LLM provider configured under llm.provider — vision calls are routed there. Leave empty to disable vision fallback.": "具有视觉能力的模型名称（如 gpt-4o、qwen-vl-max、llava），用于给无 alt 文本的图片自动生成描述。必须与 llm.provider 配置的同一家服务商兼容——vision 调用会路由到该服务商。留空则禁用 vision 兜底。",
-  "e.g. gpt-4o, qwen-vl-max, llava": "例如：gpt-4o、qwen-vl-max、llava"
+  "e.g. gpt-4o, qwen-vl-max, llava": "例如：gpt-4o、qwen-vl-max、llava",
+  "Vision Model": "视觉模型",
+  "Vision Endpoint URL": "视觉模型 API 地址",
+  "Vision API Key": "视觉模型 API 密钥",
+  "Test Connection": "测试连接",
+  "Vision connected (%sms)": "视觉模型连接成功（%s 毫秒）",
+  "Vision connection failed: %s": "视觉模型连接失败：%s"
 }
