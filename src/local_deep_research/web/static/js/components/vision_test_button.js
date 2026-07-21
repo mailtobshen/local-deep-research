@@ -15,6 +15,15 @@
      */
     function attachTestButton(urlInput) {
         if (!urlInput) return;
+        // Idempotency: remove any previously injected button in this
+        // setting item (renderSettingsByTab is called on every tab
+        // switch, so without this we'd accumulate one button per render).
+        const parent = urlInput.parentElement;
+        if (parent) {
+            const existing = parent.querySelector(".vision-test-btn");
+            if (existing) existing.remove();
+        }
+
         const btn = document.createElement("button");
         btn.type = "button";
         btn.className = "ldr-btn ldr-btn-secondary vision-test-btn";
@@ -135,7 +144,6 @@
         });
 
         // Insert the button right after the URL input in its parent.
-        const parent = urlInput.parentElement;
         if (parent) {
             parent.appendChild(btn);
         } else {
@@ -144,34 +152,37 @@
     }
 
     /**
-     * Show a toast using the existing WebUI alert system. Falls back
-     * to a console message (instead of native alert()) so we never
-     * silently drop the user's action.
+     * Show a toast using the WebUI's actual exported UI service
+     * (window.ui.showAlert from src/local_deep_research/web/static/js/
+     * services/ui.js). settings.js keeps its own showAlert private
+     * inside an IIFE, so window.showAlert is undefined; routing
+     * through window.ui.showAlert is what makes the toast actually
+     * visible to the user.
+     *
+     * Fallback chain (each level is independently guarded):
+     *   1. window.ui.showAlert           — the LDR UI service
+     *   2. window.api.showAlert           — older alias used by some
+     *                                       legacy components
+     *   3. window.showAlert               — third-party / older scripts
+     *   4. console.{log,error}           — last-resort, lets the user
+     *                                       inspect via DevTools
      */
     function showAlert(message, type) {
-        // settings.js exposes window.showAlert (used by other components).
-        if (typeof window.showAlert === "function") {
-            try {
-                window.showAlert(message, type);
-                return;
-            } catch (_) {
-                /* fall through */
+        const variants = [
+            window.ui && window.ui.showAlert,
+            window.api && window.api.showAlert,
+            window.showAlert,
+        ];
+        for (const fn of variants) {
+            if (typeof fn === "function") {
+                try {
+                    fn(message, type);
+                    return;
+                } catch (_) {
+                    /* try next variant */
+                }
             }
         }
-        // Some builds wire it on the global namespace differently.
-        if (
-            window.api &&
-            typeof window.api.showAlert === "function"
-        ) {
-            try {
-                window.api.showAlert(message, type);
-                return;
-            } catch (_) {
-                /* fall through */
-            }
-        }
-        // Last-resort: log so the user can at least open DevTools and
-        // see what happened, instead of a silent no-op.
         try {
             if (type === "error") {
                 console.error("[vision-test]", message);
