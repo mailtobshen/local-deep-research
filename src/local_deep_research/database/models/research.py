@@ -136,6 +136,7 @@ class SearchResult(Base):
 
     # Extended content
     content = Column(Text)  # Full content if fetched
+    html_content = Column(Text)  # raw html from Firecrawl; used to extract <img> post-hoc
     content_type = Column(String(50))  # html, pdf, text, etc.
     content_hash = Column(String(64))  # For deduplication
 

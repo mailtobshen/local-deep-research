@@ -18,8 +18,8 @@ function formatStatus(status) {
  */
 function formatMode(mode) {
     switch(mode) {
-        case 'quick': return 'Quick Summary';
-        case 'detailed': return 'Detailed Report';
+        case 'quick': return i18n.t('Quick Summary');
+        case 'detailed': return i18n.t('Detailed Report');
         default: return mode.charAt(0).toUpperCase() + mode.slice(1);
     }
 }
@@ -31,7 +31,7 @@ function formatMode(mode) {
  * @returns {string} The formatted date string
  */
 function formatDate(date, duration = null) {
-    if (!date) return 'Unknown';
+    if (!date) return i18n.t('Unknown');
 
     try {
         const dateObj = new Date(date);
@@ -70,7 +70,7 @@ function formatDate(date, duration = null) {
  * @returns {string} Formatted duration string
  */
 function formatDuration(seconds) {
-    if (!seconds || isNaN(seconds)) return 'Unknown';
+    if (!seconds || isNaN(seconds)) return i18n.t('Unknown');
 
     const minutes = Math.floor(seconds / 60);
     const remainingSeconds = Math.floor(seconds % 60);

@@ -2,7 +2,7 @@
 
 {% set active_page = 'benchmark' %}
 
-{% block title %}Benchmark - Deep Research System{% endblock %}
+{% block title %}{{ _("Benchmark - Deep Research System") }}{% endblock %}
 
 {% block extra_head %}
 <meta name="csrf-token" content="{{ csrf_token() }}">
@@ -129,8 +129,8 @@
 {% block content %}
 <div class="ldr-page active" id="benchmark">
     <div class="ldr-page-header">
-        <h1>Benchmark Your Configuration</h1>
-        <p class="ldr-page-subtitle">Test your current settings against standard datasets</p>
+        <h1>{{ _("Benchmark Your Configuration") }}</h1>
+        <p class="ldr-page-subtitle">{{ _("Test your current settings against standard datasets") }}</p>
     </div>
 
     <div id="benchmark-alert" class="ldr-settings-alert-container" role="alert" style="display:none"></div>
@@ -139,10 +139,10 @@
         <div class="ldr-card-content">
             <!-- Current Configuration Display -->
             <div class="ldr-current-config">
-                <h3>Current Configuration</h3>
+                <h3>{{ _("Current Configuration") }}</h3>
                 <div id="config-display">
                     <div class="ldr-config-item">
-                        <span class="ldr-config-label">Loading...</span>
+                        <span class="ldr-config-label">{{ _("Loading...") }}</span>
                         <span class="ldr-config-value"></span>
                     </div>
                 </div>
@@ -150,12 +150,12 @@
 
             <!-- Dataset Selection -->
             <div class="ldr-dataset-selection">
-                <h3>Select Datasets to Test</h3>
+                <h3>{{ _("Select Datasets to Test") }}</h3>
 
                 <div class="ldr-dataset-option ldr-selected" data-dataset="simpleqa">
                     <div>
                         <h4>SimpleQA</h4>
-                        <p>Fact-based questions with clear answers</p>
+                        <p>{{ _("Fact-based questions with clear answers") }}</p>
                     </div>
                     <input type="number" id="simpleqa_count" value="20" min="1">
                 </div>
@@ -163,7 +163,7 @@
                 <div class="ldr-dataset-option ldr-selected" data-dataset="browsecomp">
                     <div>
                         <h4>BrowseComp</h4>
-                        <p>Complex browsing and comparison tasks</p>
+                        <p>{{ _("Complex browsing and comparison tasks") }}</p>
                     </div>
                     <input type="number" id="browsecomp_count" value="10" min="1">
                 </div>
@@ -171,12 +171,12 @@
 
             <!-- Start Button -->
             <button type="button" id="start-benchmark" class="btn btn-primary ldr-start-button">
-                <i aria-hidden="true" class="fas fa-play"></i> Start Benchmark
+                <i aria-hidden="true" class="fas fa-play"></i> {{ _("Start Benchmark") }}
             </button>
 
             <!-- Progress Section -->
             <div class="ldr-progress-section" id="progress-section">
-                <h3>Benchmark Progress</h3>
+                <h3>{{ _("Benchmark Progress") }}</h3>
 
                 <div class="ldr-progress-bar">
                     <div class="ldr-progress-fill" id="progress-fill"></div>
@@ -185,25 +185,25 @@
                 <div class="ldr-stats-grid">
                     <div class="ldr-stat-card">
                         <div class="ldr-stat-value" id="stat-accuracy">--%</div>
-                        <div class="ldr-stat-label">Accuracy</div>
+                        <div class="ldr-stat-label">{{ _("Accuracy") }}</div>
                     </div>
                     <div class="ldr-stat-card">
                         <div class="ldr-stat-value" id="stat-completed">0</div>
-                        <div class="ldr-stat-label">Completed</div>
+                        <div class="ldr-stat-label">{{ _("Completed") }}</div>
                     </div>
                     <div class="ldr-stat-card">
                         <div class="ldr-stat-value" id="stat-rate">--</div>
-                        <div class="ldr-stat-label">Per Minute</div>
+                        <div class="ldr-stat-label">{{ _("Per Minute") }}</div>
                     </div>
                     <div class="ldr-stat-card">
                         <div class="ldr-stat-value" id="stat-remaining">--</div>
-                        <div class="ldr-stat-label">Time Left</div>
+                        <div class="ldr-stat-label">{{ _("Time Left") }}</div>
                     </div>
                 </div>
 
                 <div style="margin-top: 20px; text-align: center;">
                     <button type="button" id="cancel-benchmark" class="btn btn-secondary">
-                        <i aria-hidden="true" class="fas fa-stop"></i> Cancel
+                        <i aria-hidden="true" class="fas fa-stop"></i> {{ _("Cancel") }}
                     </button>
                 </div>
             </div>
@@ -228,8 +228,8 @@ async function loadCurrentConfig() {
 
         if (data.settings) {
             const config = {
-                provider: data.settings['llm.provider']?.value || 'Not configured',
-                model: data.settings['llm.model']?.value || 'Not configured',
+                provider: data.settings['llm.provider']?.value || "{{ _('Not configured') }}",
+                model: data.settings['llm.model']?.value || "{{ _('Not configured') }}",
                 search_tool: data.settings['search.tool']?.value || 'searxng',
                 iterations: data.settings['search.iterations']?.value || '8',
                 questions_per_iteration: data.settings['search.questions_per_iteration']?.value || '5',
@@ -241,9 +241,9 @@ async function loadCurrentConfig() {
         console.error('Error loading config:', error);
         // Use fallback display
         displayConfig({
-            provider: 'Loading...',
-            model: 'Loading...',
-            search_tool: 'Loading...',
+            provider: "{{ _('Loading...') }}",
+            model: "{{ _('Loading...') }}",
+            search_tool: "{{ _('Loading...') }}",
             iterations: '-'
         });
     }
@@ -253,19 +253,19 @@ function displayConfig(config) {
     const configDisplay = document.getElementById('config-display');
     configDisplay.innerHTML = `
         <div class="ldr-config-item">
-            <span class="ldr-config-label">LLM Provider</span>
-            <span class="ldr-config-value">${escapeHtml(config.provider || 'Not set')}</span>
+            <span class="ldr-config-label">{{ _('LLM Provider') }}</span>
+            <span class="ldr-config-value">${escapeHtml(config.provider || "{{ _('Not set') }}")}</span>
         </div>
         <div class="ldr-config-item">
-            <span class="ldr-config-label">Model</span>
-            <span class="ldr-config-value">${escapeHtml(config.model || 'Not set')}</span>
+            <span class="ldr-config-label">{{ _('Model') }}</span>
+            <span class="ldr-config-value">${escapeHtml(config.model || "{{ _('Not set') }}")}</span>
         </div>
         <div class="ldr-config-item">
-            <span class="ldr-config-label">Search Engine</span>
+            <span class="ldr-config-label">{{ _('Search Engine') }}</span>
             <span class="ldr-config-value">${escapeHtml(config.search_tool || 'searxng')}</span>
         </div>
         <div class="ldr-config-item">
-            <span class="ldr-config-label">Search Iterations</span>
+            <span class="ldr-config-label">{{ _('Search Iterations') }}</span>
             <span class="ldr-config-value">${escapeHtml(config.iterations || '8')}</span>
         </div>
     `;
@@ -300,7 +300,7 @@ async function startBenchmark() {
     });
 
     if (Object.keys(datasets).length === 0) {
-        showAlert('Please select at least one dataset', 'error');
+        showAlert("{{ _('Please select at least one dataset') }}", 'error');
         return;
     }
 
@@ -326,14 +326,14 @@ async function startBenchmark() {
             currentBenchmarkId = data.benchmark_run_id;
             showProgress();
             startProgressTracking();
-            showAlert('Benchmark started!', 'success');
+            showAlert("{{ _('Benchmark started!') }}", 'success');
         } else {
-            showAlert('Error: ' + data.error, 'error');
+            showAlert("{{ _('Error: ') }}" + data.error, 'error');
             document.getElementById('start-benchmark').disabled = false;
         }
     } catch (error) {
         console.error('Error starting benchmark:', error);
-        showAlert('Failed to start benchmark', 'error');
+        showAlert("{{ _('Failed to start benchmark') }}", 'error');
         document.getElementById('start-benchmark').disabled = false;
     }
 }
@@ -394,9 +394,9 @@ async function updateProgress() {
                 progressInterval = null;
 
                 if (status.status === 'completed') {
-                    showAlert(`Benchmark completed! Final accuracy: ${status.overall_accuracy.toFixed(1)}%`, 'success');
+                    showAlert(i18n.t('Benchmark completed! Final accuracy: ') + status.overall_accuracy.toFixed(1) + '%', 'success');
                 } else {
-                    showAlert(`Benchmark ${status.status}`, 'error');
+                    showAlert(i18n.t('Benchmark ') + status.status, 'error');
                 }
 
                 setTimeout(() => {
@@ -424,7 +424,7 @@ async function cancelBenchmark() {
 
         const data = await response.json();
         if (data.success) {
-            showAlert('Benchmark cancelled', 'info');
+            showAlert("{{ _('Benchmark cancelled') }}", 'info');
         }
     } catch (error) {
         console.error('Error cancelling benchmark:', error);

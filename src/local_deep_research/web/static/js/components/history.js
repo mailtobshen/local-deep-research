@@ -212,8 +212,8 @@
                 // Update button label
                 const btn = document.getElementById('search-mode-btn');
                 const iconMap = { hybrid: 'fa-brain', text: 'fa-font', semantic: 'fa-brain' };
-                const labelMap = { hybrid: 'AI Hybrid', text: 'Text Only', semantic: 'AI Only' };
-                const placeholders = { hybrid: 'Search titles + content...', text: 'Filter history by title...', semantic: 'Search content with AI...' };
+                const labelMap = { hybrid: i18n.t('AI Hybrid'), text: i18n.t('Text Only'), semantic: i18n.t('AI Only') };
+                const placeholders = { hybrid: i18n.t('Search titles + content...'), text: i18n.t('Filter history by title...'), semantic: i18n.t('Search content with AI...') };
                 if (btn && labelMap[mode]) {
                     window.safeUpdateButton(btn, iconMap[mode], ' ' + labelMap[mode]);
                 }
@@ -254,8 +254,11 @@
                     handleSubscribe(itemData);
                 } else if (e.target.closest('.ldr-rerun-btn')) {
                     handleRerun(itemData);
-                } else if (ResearchStates.isCompleted(itemData.status)) {
-                    // Item-level click (navigate to results/progress)
+                } else if (e.target.closest('.ldr-copy-query-btn')) {
+                    handleCopyQuery(itemData, e.target.closest('.ldr-copy-query-btn'));
+                } else if (ResearchStates.isCompleted(itemData.status) || ResearchStates.isPartialSuccess(itemData.status)) {
+                    // Item-level click (navigate to results/progress).
+                    // PARTIAL_SUCCESS also has a viewable report.
                     URLValidator.safeAssign(window.location, 'href', URLBuilder.resultsPage(itemId));
                 } else {
                     URLValidator.safeAssign(window.location, 'href', URLBuilder.progressPage(itemId));
@@ -287,7 +290,7 @@
         } catch (error) {
             SafeLogger.error('Error loading history:', error);
             uiUtils.hideSpinner(historyContainer);
-            uiUtils.showError('Error loading history: ' + error.message);
+            uiUtils.showError(i18n.tf('Error loading history: %s', error.message));
         }
     }
 
@@ -310,8 +313,8 @@
                 historyContainer.innerHTML = `
                     <div class="ldr-empty-state">
                         <i class="fas fa-history ldr-empty-icon"></i>
-                        <p>No research history found.</p>
-                        ${searchInput && searchInput.value ? '<p>Try adjusting your search query.</p>' : ''}
+                        <p>${i18n.t('No research history found.')}</p>
+                        ${searchInput && searchInput.value ? `<p>${i18n.t("Try adjusting your search query.")}</p>` : ''}
                     </div>
                 `;
             }
@@ -358,6 +361,50 @@
     }
 
     /**
+     * Format a duration in seconds to a readable string via the shared
+     * formatter (e.g. "3m 12s"). Every history page loads formatting.js,
+     * so the helper is always present.
+     */
+    function formatDuration(seconds) {
+        return window.formatting.formatDuration(seconds);
+    }
+
+    /**
+     * Build the timing tips row (start / completed / total duration) for a
+     * history item. Shown only when the research has started; completed
+     * research additionally shows the finish time and total elapsed time.
+     * @param {Object} item - The history item data
+     * @returns {string} HTML for the tips row, or '' if no timing info
+     */
+    function buildTimingTipsHtml(item) {
+        if (!item || !item.created_at) return '';
+
+        const started = formatDate(item.created_at);
+        const isDone = ResearchStates.isCompleted(item.status) ||
+            ResearchStates.isPartialSuccess(item.status);
+
+        const parts = [`<span class="ldr-history-tip"><i class="fas fa-play-circle"></i> ${esc(i18n.t('Started'))}: ${esc(started)}</span>`];
+
+        if (isDone && item.completed_at) {
+            parts.push(`<span class="ldr-history-tip"><i class="fas fa-check-circle"></i> ${esc(i18n.t('Completed'))}: ${esc(formatDate(item.completed_at))}</span>`);
+            // duration_seconds is best-effort — backend recalculates it when
+            // null but both timestamps exist, so fall back to the timestamps.
+            let secs = item.duration_seconds;
+            if ((secs === null || secs === undefined) &&
+                item.created_at && item.completed_at) {
+                const ms = new Date(item.completed_at).getTime() -
+                    new Date(item.created_at).getTime();
+                if (!isNaN(ms)) secs = Math.max(0, Math.round(ms / 1000));
+            }
+            if (secs !== null && secs !== undefined && !isNaN(secs)) {
+                parts.push(`<span class="ldr-history-tip"><i class="fas fa-stopwatch"></i> ${esc(i18n.t('Total time'))}: ${esc(formatDuration(secs))}</span>`);
+            }
+        }
+
+        return `<div class="ldr-history-item-tips">${parts.join('')}</div>`;
+    }
+
+    /**
      * Format status safely using ResearchStates helper
      */
     function formatStatus(status) {
@@ -374,8 +421,8 @@
 
         // Simple fallback formatting
         const modeMap = {
-            'quick': 'Quick Summary',
-            'detailed': 'Detailed Report'
+            'quick': i18n.t('Quick Summary'),
+            'detailed': i18n.t('Detailed Report')
         };
 
         return modeMap[mode] || mode;
@@ -426,8 +473,9 @@
                 <div class="ldr-history-item-mode">${esc(formatMode(item.mode))}</div>
                 ${isNewsItem ? '<span class="ldr-news-indicator"><i class="fas fa-newspaper"></i> News</span>' : ''}
             </div>
+            ${buildTimingTipsHtml(item)}
             <div class="ldr-history-item-actions">
-                ${ResearchStates.isCompleted(item.status) ?
+                ${(ResearchStates.isCompleted(item.status) || ResearchStates.isPartialSuccess(item.status)) ?
                     `<button class="btn btn-sm ldr-btn-outline ldr-view-btn">
                         <i class="fas fa-eye"></i><span> View</span>
                     </button>` : ''}
@@ -439,9 +487,13 @@
                     `<button class="btn btn-sm ldr-btn-outline ldr-subscribe-btn" data-research-id="${esc(item.id)}" data-query="${esc(encodeURIComponent(item.query))}">
                         <i class="fas fa-bell"></i><span> Subscribe</span>
                     </button>` : ''}
-                ${ResearchStates.isCompleted(item.status) ?
-                    `<button class="btn btn-sm ldr-btn-outline ldr-rerun-btn" title="Re-run this research">
+                ${(ResearchStates.isCompleted(item.status) || ResearchStates.isPartialSuccess(item.status)) ?
+                    `<button class="btn btn-sm ldr-btn-outline ldr-rerun-btn" title="i18n.t('Re-run this research')">
                         <i class="fas fa-redo"></i><span> Re-run</span>
+                    </button>` : ''}
+                ${item.query ?
+                    `<button class="btn btn-sm ldr-btn-outline ldr-copy-query-btn" title="${esc(i18n.t('Copy research query'))}" aria-label="${esc(i18n.t('Copy research query'))}">
+                        <i class="fas fa-copy"></i>
                     </button>` : ''}
                 <button class="btn btn-sm ldr-btn-outline ldr-delete-item-btn">
                     <i class="fas fa-trash-alt"></i>
@@ -473,7 +525,7 @@
         itemEl.className = 'ldr-history-item ldr-history-item--semantic-only';
         itemEl.dataset.id = semanticResult.research_id;
 
-        const displayTitle = semanticResult.research_title || semanticResult.title || 'Untitled Research';
+        const displayTitle = semanticResult.research_title || semanticResult.title || i18n.t('Untitled Research');
         let dateStr = '';
         if (semanticResult.research_created_at) {
             try {
@@ -522,8 +574,8 @@
             historyContainer.innerHTML = `
                 <div class="ldr-empty-state">
                     <i class="fas fa-history ldr-empty-icon"></i>
-                    <p>No research history found.</p>
-                    <p>Try adjusting your search query.</p>
+                    <p>${i18n.t('No research history found.')}</p>
+                    <p>${i18n.t('Try adjusting your search query.')}</p>
                 </div>
             `;
             return;
@@ -548,7 +600,7 @@
         if (tier3.length > 0) {
             const divider = document.createElement('div');
             divider.className = 'ldr-hybrid-divider';
-            divider.textContent = 'Also found in content';
+            divider.textContent = i18n.t('Also found in content');
             fragment.appendChild(divider);
 
             for (const entry of tier3) {
@@ -579,6 +631,73 @@
             source_id: item.id
         });
         URLValidator.safeAssign(window.location, 'href', `/news/subscriptions/new?${params.toString()}`);
+    }
+
+    /**
+     * Handle copy-query button click
+     * Copies the research query text to the clipboard. Uses the modern
+     * Clipboard API with a `document.execCommand` fallback for older
+     * browsers and unsecure contexts. On success, swaps the icon to a
+     * checkmark for a moment so the user gets visual confirmation.
+     * @param {Object} item - The research item whose query to copy
+     * @param {HTMLElement} button - The copy button (for icon feedback)
+     */
+    async function handleCopyQuery(item, button) {
+        const text = item.query;
+        if (!text) return;
+
+        let success = false;
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            try {
+                await navigator.clipboard.writeText(text);
+                success = true;
+            } catch (err) {
+                SafeLogger.warn('Clipboard API failed, falling back:', err);
+            }
+        }
+
+        // Fallback for browsers/contexts without async Clipboard API
+        if (!success) {
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            textarea.setAttribute('readonly', '');
+            textarea.style.position = 'fixed';
+            textarea.style.top = '0';
+            textarea.style.left = '0';
+            textarea.style.opacity = '0';
+            document.body.appendChild(textarea);
+            textarea.select();
+            try {
+                success = document.execCommand('copy');
+            } catch (err) {
+                SafeLogger.error('execCommand copy failed:', err);
+            }
+            document.body.removeChild(textarea);
+        }
+
+        if (success) {
+            uiUtils.showMessage(i18n.t('Research query copied to clipboard'));
+            if (button) flashCopySuccess(button);
+        } else {
+            uiUtils.showError(i18n.t('Failed to copy research query. Please copy manually.'));
+        }
+    }
+
+    /**
+     * Briefly swap the copy button's icon to a checkmark to give
+     * visual feedback that the copy succeeded.
+     * @param {HTMLElement} button - The copy button whose icon to swap
+     */
+    function flashCopySuccess(button) {
+        const icon = button.querySelector('i');
+        if (!icon) return;
+        const originalClass = icon.className;
+        icon.className = 'fas fa-check';
+        button.classList.add('ldr-copy-success');
+        setTimeout(() => {
+            icon.className = originalClass;
+            button.classList.remove('ldr-copy-success');
+        }, 1500);
     }
 
     /**
@@ -615,7 +734,7 @@
      * @returns {string} Formatted title
      */
     function formatTitleFromQuery(query) {
-        if (!query) return 'Untitled Research';
+        if (!query) return i18n.t('Untitled Research');
 
         // Truncate long queries
         if (query.length > 60) {
@@ -672,7 +791,7 @@
                         historyContainer.innerHTML = `
                             <div class="ldr-empty-state">
                                 <i class="fas fa-exclamation-triangle"></i>
-                                <p>Semantic search is loading. Please try again.</p>
+                                <p>${i18n.t('Semantic search is loading. Please try again.')}</p>
                             </div>
                         `;
                     }
@@ -692,7 +811,7 @@
                         historyContainer.innerHTML = `
                             <div class="ldr-empty-state">
                                 <i class="fas fa-brain"></i>
-                                <p>No research indexed yet. Use the "Index All" button above to enable semantic search.</p>
+                                <p>${i18n.t('No research indexed yet. Use the "Index All" button above to enable semantic search.')}</p>
                             </div>
                         `;
                         return;
@@ -704,7 +823,7 @@
                         historyContainer.innerHTML = `
                             <div class="ldr-empty-state">
                                 <i class="fas fa-exclamation-triangle"></i>
-                                <p>Search failed. Please try again.</p>
+                                <p>${i18n.t('Search failed. Please try again.')}</p>
                             </div>
                         `;
                     }
@@ -733,7 +852,7 @@
             const loadingDiv = document.createElement('div');
             loadingDiv.className = 'ldr-hybrid-loading';
             loadingDiv.id = 'hybrid-loading-indicator';
-            loadingDiv.innerHTML = '<div class="ldr-spinner" style="width: 16px; height: 16px; border-width: 2px;"></div> Searching content...';
+            loadingDiv.innerHTML = '<div class="ldr-spinner" style="width: 16px; height: 16px; border-width: 2px;"></div> ' + i18n.t('Searching content...');
             if (historyContainer) historyContainer.appendChild(loadingDiv);
 
             // 4. Race-condition guard
@@ -775,7 +894,7 @@
      * @param {string} itemId - The item ID to delete
      */
     async function handleDeleteItem(itemId) {
-        if (!confirm('Are you sure you want to delete this research? This action cannot be undone.')) {
+        if (!confirm(i18n.t('Are you sure you want to delete this research? This action cannot be undone.'))) {
             return;
         }
 
@@ -788,13 +907,13 @@
             filteredItems = filteredItems.filter(item => String(item.id) !== itemId);
 
             // Show success message
-            uiUtils.showMessage('Research deleted successfully');
+            uiUtils.showMessage(i18n.t('Research deleted successfully'));
 
             // Re-render via handleSearchInput to preserve hybrid/semantic state
             handleSearchInput();
         } catch (error) {
             SafeLogger.error('Error deleting research:', error);
-            uiUtils.showError('Error deleting research: ' + error.message);
+            uiUtils.showError(i18n.tf('Error deleting research: %s', error.message));
         }
     }
 
@@ -802,7 +921,7 @@
      * Handle clear history
      */
     async function handleClearHistory() {
-        if (!confirm('Are you sure you want to clear all research history? This action cannot be undone.')) {
+        if (!confirm(i18n.t('Are you sure you want to clear all research history? This action cannot be undone.'))) {
             return;
         }
 
@@ -815,13 +934,13 @@
             filteredItems = [];
 
             // Show success message
-            uiUtils.showMessage('Research history cleared successfully');
+            uiUtils.showMessage(i18n.t('Research history cleared successfully'));
 
             // Re-render history items
             renderHistoryItems();
         } catch (error) {
             SafeLogger.error('Error clearing history:', error);
-            uiUtils.showError('Error clearing history: ' + error.message);
+            uiUtils.showError(i18n.tf('Error clearing history: %s', error.message));
         }
     }
 

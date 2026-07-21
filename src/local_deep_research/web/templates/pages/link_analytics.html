@@ -11,23 +11,23 @@
 <div class="ldr-link-analytics-container">
     <div class="ldr-metrics-header">
         <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
-            <h1>🔗 Link Analytics Dashboard</h1>
+            <h1>{{ _("🔗 Link Analytics Dashboard") }}</h1>
             <a href="/metrics/" style="background: var(--bg-tertiary); color: var(--text-primary); padding: 0.5rem 1rem; border-radius: 0.375rem; text-decoration: none; font-size: 0.875rem; border: 1px solid var(--border-color); transition: background-color 0.2s ease;">
-                ← Back to Metrics
+                {{ _("← Back to Metrics") }}
             </a>
         </div>
-        <p>Analyze sources and domains used in your research sessions</p>
+        <p>{{ _("Analyze sources and domains used in your research sessions") }}</p>
     </div>
 
     <div class="ldr-period-selector" style="display: flex; justify-content: space-between; align-items: center;">
         <div>
-            <label for="period-select">Time Period: </label>
+            <label for="period-select">{{ _("Time Period:") }} </label>
             <select id="period-select">
-                <option value="7d">Last 7 days</option>
-                <option value="30d" selected>Last 30 days</option>
-                <option value="90d">Last 3 months</option>
-                <option value="365d">Last year</option>
-                <option value="all">All time</option>
+                <option value="7d">{{ _("Last 7 days") }}</option>
+                <option value="30d" selected>{{ _("Last 30 days") }}</option>
+                <option value="90d">{{ _("Last 3 months") }}</option>
+                <option value="365d">{{ _("Last year") }}</option>
+                <option value="all">{{ _("All time") }}</option>
             </select>
         </div>
         <div>
@@ -39,17 +39,17 @@
     </div>
 
     <!-- Understanding Link Analytics Help Panel -->
-    {% call help_panel('links-how', 'Understanding Link Analytics', icon='link', collapsed=true, dismissible=true) %}
+    {% call help_panel('links-how', _('Understanding Link Analytics'), icon='link', collapsed=true, dismissible=true) %}
     <div class="ldr-help-steps">
-        {{ help_step(1, "Source Tracking", "Every source cited in your research is tracked, showing which domains provide the most information.") }}
-        {{ help_step(2, "Domain Diversity", "Higher diversity means your research draws from many different sources, reducing single-source bias.") }}
-        {{ help_step(3, "AI Classification", "Classify domains as academic, news, reference, etc. to understand your source composition.") }}
+        {{ help_step(1, _('Source Tracking'), _('Every source cited in your research is tracked, showing which domains provide the most information.')) }}
+        {{ help_step(2, _('Domain Diversity'), _('Higher diversity means your research draws from many different sources, reducing single-source bias.')) }}
+        {{ help_step(3, _('AI Classification'), _('Classify domains as academic, news, reference, etc. to understand your source composition.')) }}
     </div>
-    {{ help_tip("<strong>Tip:</strong> If one domain dominates your research, consider adding more diverse search engines to get varied perspectives.") }}
+    {{ help_tip(_('<strong>Tip:</strong> If one domain dominates your research, consider adding more diverse search engines to get varied perspectives.')) }}
     {% endcall %}
 
     <div id="loading" class="ldr-loading" role="status">
-        <div>Loading link analytics data...</div>
+        <div>{{ _('Loading link analytics data...') }}</div>
     </div>
 
     <div id="error" class="ldr-error" style="display: none;"></div>
@@ -57,23 +57,23 @@
     <div id="content" style="display: none;">
         <!-- Overall Statistics -->
         <div class="ldr-metric-card">
-            <h3>📊 Overall Link Statistics</h3>
+            <h3>{{ _("📊 Overall Link Statistics") }}</h3>
             <div class="ldr-overall-stats">
                 <div class="ldr-stat-item">
                     <span class="ldr-stat-value" id="total-links">0</span>
-                    <div class="ldr-stat-label">Total Links</div>
+                    <div class="ldr-stat-label">{{ _("Total Links") }}</div>
                 </div>
                 <div class="ldr-stat-item">
                     <span class="ldr-stat-value" id="unique-domains">0</span>
-                    <div class="ldr-stat-label">Unique Domains</div>
+                    <div class="ldr-stat-label">{{ _("Unique Domains") }}</div>
                 </div>
                 <div class="ldr-stat-item">
                     <span class="ldr-stat-value" id="avg-links">0</span>
-                    <div class="ldr-stat-label">Avg Links/Research</div>
+                    <div class="ldr-stat-label">{{ _("Avg Links/Research") }}</div>
                 </div>
                 <div class="ldr-stat-item">
                     <span class="ldr-stat-value" id="total-researches">0</span>
-                    <div class="ldr-stat-label">Total Researches</div>
+                    <div class="ldr-stat-label">{{ _("Total Researches") }}</div>
                 </div>
             </div>
         </div>
@@ -81,7 +81,7 @@
         <div class="ldr-metrics-grid">
             <!-- Top Domains Chart -->
             <div class="ldr-metric-card">
-                <h3>🌐 Top 10 Domains</h3>
+                <h3>{{ _("🌐 Top 10 Domains") }}</h3>
                 <div class="ldr-chart-container">
                     <canvas id="top-domains-chart"></canvas>
                 </div>
@@ -89,7 +89,7 @@
 
             <!-- Domain Distribution Pie Chart -->
             <div class="ldr-metric-card">
-                <h3>📊 Domain Distribution</h3>
+                <h3>{{ _("📊 Domain Distribution") }}</h3>
                 <div class="ldr-chart-container">
                     <canvas id="domain-distribution-chart"></canvas>
                 </div>
@@ -97,7 +97,7 @@
 
             <!-- Temporal Trend Chart -->
             <div class="ldr-metric-card" style="grid-column: span 2;">
-                <h3>📈 Links Over Time</h3>
+                <h3>{{ _("📈 Links Over Time") }}</h3>
                 <div class="ldr-chart-container">
                     <canvas id="temporal-trend-chart"></canvas>
                 </div>
@@ -105,7 +105,7 @@
 
             <!-- Source Type Analysis -->
             <div class="ldr-metric-card">
-                <h3>📚 Domain Category Analysis</h3>
+                <h3>{{ _("📚 Domain Category Analysis") }}</h3>
                 <div id="domain-category-grid" class="ldr-category-grid">
                     <!-- Dynamic category cards will be generated here -->
                 </div>
@@ -116,7 +116,7 @@
 
             <!-- Top Domains List with Research Info -->
             <div class="ldr-metric-card" style="grid-column: span 2;">
-                <h3>🔍 Domain Details & Research Connections</h3>
+                <h3>{{ _("🔍 Domain Details & Research Connections") }}</h3>
                 <div class="ldr-domain-list" id="domain-list" style="max-height: 600px;">
                     <!-- Domain items will be populated here -->
                 </div>
@@ -130,7 +130,7 @@
     <div class="ldr-modal-content">
         <span class="ldr-close-modal">&times;</span>
         <div class="ldr-modal-header">
-            <h2><i aria-hidden="true" class="fas fa-brain"></i> AI Domain Classification</h2>
+            <h2><i aria-hidden="true" class="fas fa-brain"></i> {{ _("AI Domain Classification") }}</h2>
             <p style="color: var(--text-secondary); margin-top: 0.5rem;">
                 The AI will analyze and categorize each domain based on its content and purpose.
             </p>
@@ -140,18 +140,18 @@
             <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; margin-bottom: 1.5rem;">
                 <div style="background: var(--bg-tertiary); padding: 1rem; border-radius: 0.5rem;">
                     <div style="font-size: 1.5rem; font-weight: bold; color: var(--accent-primary);" id="total-domains-count">0</div>
-                    <div style="font-size: 0.875rem; color: var(--text-secondary);">Total Domains</div>
+                    <div style="font-size: 0.875rem; color: var(--text-secondary);">{{ _("Total Domains") }}</div>
                 </div>
                 <div style="background: var(--bg-tertiary); padding: 1rem; border-radius: 0.5rem;">
                     <div style="font-size: 1.5rem; font-weight: bold; color: var(--success-color);" id="classified-count">0</div>
-                    <div style="font-size: 0.875rem; color: var(--text-secondary);">Already Classified</div>
+                    <div style="font-size: 0.875rem; color: var(--text-secondary);">{{ _("Already Classified") }}</div>
                 </div>
             </div>
 
             <div id="classification-options" style="margin-bottom: 1.5rem;">
                 <label style="display: flex; align-items: center; cursor: pointer;">
                     <input type="checkbox" id="force-reclassify" style="margin-right: 0.5rem;">
-                    <span>Force reclassification of all domains (overwrite existing)</span>
+                    <span>{{ _("Force reclassification of all domains (overwrite existing)") }}</span>
                 </label>
             </div>
 
@@ -180,7 +180,7 @@
 
         <div id="classification-complete" style="display: none; text-align: center;">
             <i aria-hidden="true" class="fas fa-check-circle" style="font-size: 3rem; color: var(--success-color); margin-bottom: 1rem;"></i>
-            <h3>Classification Complete!</h3>
+            <h3>{{ _("Classification Complete!") }}</h3>
             <p style="color: var(--text-secondary); margin: 1rem 0;">
                 Successfully classified <span id="final-classified">0</span> domains.
             </p>
@@ -527,7 +527,7 @@ function updateEnhancedDomainList(domains, domainMetrics) {
     container.innerHTML = '';
 
     if (domains.length === 0) {
-        container.innerHTML = '<div style="text-align: center; color: var(--text-secondary); padding: 1rem;">No domain data available</div>';
+        container.innerHTML = '<div style="text-align: center; color: var(--text-secondary); padding: 1rem;">' + i18n.t('No domain data available') + '</div>';
         return;
     }
 
@@ -545,7 +545,7 @@ function updateEnhancedDomainList(domains, domainMetrics) {
         if (domain.recent_researches && domain.recent_researches.length > 0) {
             researchLinksHtml = `
                 <div class="ldr-research-links">
-                    <div class="ldr-research-links-title">Recent Researches (${researchDiversity} total)</div>
+                    <div class="ldr-research-links-title">${i18n.tf('Recent Researches (%s total)', researchDiversity)}</div>
                     ${domain.recent_researches.map(r => `
                         <a href="/research/${encodeURIComponent(r.id)}" class="ldr-research-link" title="${window.escapeHtml(r.query)}">
                             ${window.escapeHtml(r.query.length > 30 ? r.query.substring(0, 30) + '...' : r.query)}

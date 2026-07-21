@@ -84,7 +84,7 @@
             <button type="button"
                     class="ldr-custom-dropdown-refresh-btn"
                     id="${params.input_id}-refresh"
-                    aria-label="${params.refresh_aria_label || 'Refresh options'}">
+                    aria-label="${params.refresh_aria_label || i18n.t('Refresh options')}">
                 <i class="fas fa-sync-alt" aria-hidden="true"></i>
             </button>
         ` : '';
@@ -129,7 +129,7 @@
                             <input type="button"
                                    id="test-notification-button"
                                    class="btn btn-secondary btn-sm"
-                                   value="Test Notification">
+                                   value="\${i18n.t('Test Notification')}">
                             <div id="test-notification-result" class="ldr-test-result" style="display: none;"></div>
                         `;
 
@@ -189,13 +189,13 @@
                         initializeModelDropdowns();
 
                         // Show success message
-                        showAlert('Model list refreshed', 'success');
+                        showAlert(i18n.t('Model list refreshed'), 'success');
                     })
                     .catch(error => {
                         SafeLogger.error('Error refreshing models:', error);
                         if (icon) icon.className = 'fas fa-sync-alt';
                         modelRefreshBtn.classList.remove('ldr-loading');
-                        showAlert('Failed to refresh models', 'error');
+                        showAlert(i18n.t('Failed to refresh models'), 'error');
                     });
             });
         } else {
@@ -224,13 +224,13 @@
                         initializeSearchEngineDropdowns();
 
                         // Show success message
-                        showAlert('Search engine list refreshed', 'success');
+                        showAlert(i18n.t('Search engine list refreshed'), 'success');
                     })
                     .catch(error => {
                         SafeLogger.error('Error refreshing search engines:', error);
                         if (icon) icon.className = 'fas fa-sync-alt';
                         searchEngineRefreshBtn.classList.remove('ldr-loading');
-                        showAlert('Failed to refresh search engines', 'error');
+                        showAlert(i18n.t('Failed to refresh search engines'), 'error');
                     });
             });
         } else {
@@ -430,7 +430,7 @@
                     // Validate
                     value = JSON.parse(input.value);
                 } catch {
-                    markInvalidInput(input, 'Invalid JSON');
+                    markInvalidInput(input, i18n.t('Invalid JSON'));
                     return;
                 }
             }
@@ -447,7 +447,7 @@
                    }
                    value = numValue; // Use parsed number
                } catch {
-                    markInvalidInput(input, 'Invalid number');
+                    markInvalidInput(input, i18n.t('Invalid number'));
                     return;
                }
             }
@@ -786,7 +786,7 @@
                                 errorMsg.className = 'ldr-settings-error-message';
                                 settingsItem.appendChild(errorMsg);
                             }
-                            errorMsg.textContent = 'Invalid JSON format';
+                            errorMsg.textContent = i18n.t('Invalid JSON format');
                         }
                     }
                 });
@@ -988,11 +988,11 @@
                         initExpandedJsonControls();
                     }, 100);
                 } else {
-                    showAlert('Error loading settings: ' + data.message, 'error');
+                    showAlert(i18n.tf('Error loading settings: %s', data.message), 'error');
                 }
             })
             .catch(error => {
-                showAlert('Error loading settings: ' + error, 'error');
+                showAlert(i18n.tf('Error loading settings: %s', error), 'error');
             });
     }
 
@@ -1004,15 +1004,16 @@
      */
     function formatCategoryName(key, category) {
         // Special cases for known categories
-        if (category === 'app_interface') return 'App Interface';
-        if (category === 'app_parameters') return 'App Parameters';
-        if (category === 'llm_general') return 'LLM General';
-        if (category === 'llm_parameters') return 'LLM Parameters';
-        if (category === 'report_parameters') return 'Report Parameters';
-        if (category === 'search_general') return 'Search General';
-        if (category === 'notifications') return 'Notifications';
-        if (category === 'search_parameters') return 'Search Parameters';
-        if (category === 'warnings') return 'Warnings';
+        if (category === 'app_interface') return i18n.t('App Interface');
+        if (category === 'app_parameters') return i18n.t('App Parameters');
+        if (category === 'app_network') return i18n.t('Network');
+        if (category === 'llm_general') return i18n.t('LLM General');
+        if (category === 'llm_parameters') return i18n.t('LLM Parameters');
+        if (category === 'report_parameters') return i18n.t('Report Parameters');
+        if (category === 'search_general') return i18n.t('Search General');
+        if (category === 'notifications') return i18n.t('Notifications');
+        if (category === 'search_parameters') return i18n.t('Search Parameters');
+        if (category === 'warnings') return i18n.t('Warnings');
 
         // Remove any underscores and capitalize each word
         let formattedCategory = category.replace(/_/g, ' ');
@@ -1029,14 +1030,20 @@
      * Organize settings to avoid duplicate group names and improve organization
      * @param {Array} settings - The settings array
      * @param {string} tab - The current tab
+     * @param {string[]} [tabPrefixes] - Optional list of key prefixes
+     *   the current tab is allowed to display (besides `<tab>.`). When
+     *   provided, used by the inner filter to keep settings whose
+     *   `prefix` doesn't match `tab` but whose key starts with one of
+     *   these prefixes (e.g. `general.*` showing up under the Reports
+     *   tab).
      * @returns {Object} - The organized settings
      */
-    function organizeSettings(settings, tab) {
+    function organizeSettings(settings, tab, tabPrefixes) {
         // Create a mapping of types
         const typeMap = {
             'app': 'Application',
-            'llm': 'Language Models',
-            'search': 'Search Engines',
+            'llm': i18n.t('Language Models'),
+            'search': i18n.t('Search Engines'),
             'report': 'Reports'
         };
 
@@ -1060,7 +1067,6 @@
                 'questions_per_iteration',
                 'region',
                 'search_engine',
-                'searches_per_section',
                 'skip_relevance_filter',
                 'safe_search',
                 'search_language',
@@ -1068,10 +1074,7 @@
                 'tool',
                 'snippets_only'
             ],
-            'report': [
-                'knowledge_accumulation',
-                'knowledge_accumulation_context_limit'
-            ],
+            'report': [],
             'app': [
                 'debug',
                 'host',
@@ -1109,11 +1112,6 @@
                 return false;
             }
 
-            // Filter out knowledge_accumulation duplicates - only keep in report tab
-            if (prefix !== 'report' && (subKey === 'knowledge_accumulation' || subKey === 'knowledge_accumulation_context_limit')) {
-                return false;
-            }
-
             // Filter out settings that are not marked as visible.
             if (!setting.visible) {
                 return false;
@@ -1121,8 +1119,14 @@
 
             // If we're on a specific tab, only show settings for that tab
             if (tab !== 'all') {
-                // Only show settings in tab-specific lists for that tab
-                if (tab === prefix) {
+                // Accept the setting if its key prefix matches the tab
+                // (e.g. `report.foo` for the Reports tab) OR its prefix
+                // is in the extra tabPrefixes list (e.g. `general.foo`
+                // for the Reports tab via the tabKeyPrefixes mapping).
+                const matchesTabPrefix = tab === prefix;
+                const matchesExtraPrefix = Array.isArray(tabPrefixes)
+                    && tabPrefixes.some(p => p !== (tab + '.') && setting.key.startsWith(p));
+                if (matchesTabPrefix || matchesExtraPrefix) {
                     // For tab-specific settings, make sure they're in the list
                     if (tabSpecificSettings[tab] && tabSpecificSettings[tab].includes(subKey)) {
                         return true;
@@ -1168,8 +1172,11 @@
             // Format the category name to be user-friendly
             category = formatCategoryName(prefix, category);
 
-            // For duplicate "general" categories, prefix with the type
-            if (category.toLowerCase() === 'general') {
+            // For duplicate "general" categories, prefix with the type to
+            // disambiguate (e.g. "LLM General" vs "Search General"). Skip
+            // when the prefix is already "general" — re-prefixing would
+            // produce "General General".
+            if (category.toLowerCase() === 'general' && prefix !== 'general') {
                 category = `${typeMap[prefix] || prefix.charAt(0).toUpperCase() + prefix.slice(1)} General`;
             }
 
@@ -1642,7 +1649,7 @@
                 icon.className = 'fas fa-exclamation-circle';
                 alertDiv.appendChild(icon);
 
-                const errorText = document.createTextNode(' Failed to load data location information: ' + (error.message || 'Unknown error'));
+                const errorText = document.createTextNode(' ' + i18n.tf('Failed to load data location information: %s', error.message || i18n.t('Unknown error')));
                 alertDiv.appendChild(errorText);
 
                 contentElement.appendChild(alertDiv);
@@ -1823,7 +1830,7 @@
                 contentElement.innerHTML = '';
                 const alertDiv = document.createElement('div');
                 alertDiv.className = 'ldr-backup-hint';
-                alertDiv.textContent = 'Could not load backup status.';
+                alertDiv.textContent = i18n.t('Could not load backup status.');
                 contentElement.appendChild(alertDiv);
             });
     }
@@ -1840,15 +1847,35 @@
         window.modelDropdownsInitialized = false;
         window.searchEngineDropdownInitialized = false;
 
-        // Filter settings by tab
-        let filteredSettings = allSettings;
+        // Filter settings by tab.
+        //
+        // Each tab normally shows settings whose key starts with `<tab>.`
+        // (e.g. the "llm" tab shows `llm.*`). Some settings are stored
+        // under a different key prefix but logically belong to a tab
+        // (e.g. `general.output_instructions` is about report output,
+        // `rate_limiting.*` belongs to LLM, `web.*`/`focused_iteration.*`/
+        // `langgraph_agent.*` belong to Search). The mapping below lets
+        // those orphan settings surface under the right tab while still
+        // showing in the "all" tab.
+        const tabKeyPrefixes = {
+            'all': null,
+            'llm': ['llm.', 'rate_limiting.'],
+            'search': ['search.', 'web.', 'focused_iteration.', 'langgraph_agent.'],
+            'report': ['report.', 'general.'],
+            'app': ['app.', 'mcp.', 'research_library.', 'backup.', 'benchmark.'],
+            'notifications': ['notifications.', 'news.'],
+        };
+        const allowedPrefixes = tabKeyPrefixes[tab];
 
-        if (tab !== 'all') {
-            filteredSettings = allSettings.filter(setting => setting.key.startsWith(tab + '.'));
+        let filteredSettings = allSettings;
+        if (allowedPrefixes !== null && allowedPrefixes !== undefined) {
+            filteredSettings = allSettings.filter(setting =>
+                allowedPrefixes.some(prefix => setting.key.startsWith(prefix))
+            );
         }
 
         // Organize settings to avoid duplicate groups
-        const groupedSettings = organizeSettings(filteredSettings, tab);
+        const groupedSettings = organizeSettings(filteredSettings, tab, allowedPrefixes || undefined);
 
         // Build HTML
         let html = '';
@@ -1885,7 +1912,15 @@
 
         // For each type (app, llm, search, etc.)
         for (const type of prefixTypes) {
-            if (tab !== 'all' && type !== tab) continue;
+            // For a specific tab, only render prefixes that match the tab
+            // OR are part of its extra-prefix mapping (e.g. `general`
+            // for the Reports tab). Otherwise settings for non-tab
+            // prefixes that snuck in would render in the wrong tab.
+            if (tab !== 'all' && type !== tab) {
+                const typeIsExtra = Array.isArray(allowedPrefixes)
+                    && allowedPrefixes.some(p => p === type + '.');
+                if (!typeIsExtra) continue;
+            }
 
             // For each category in this type
             for (const category in groupedSettings[type]) {
@@ -1918,7 +1953,7 @@
         }
 
         if (html === '') {
-            html = '<div class="ldr-empty-state"><p>No settings found for this category</p></div>';
+            html = '<div class="ldr-empty-state"><p>' + i18n.t('No settings found for this category') + '</p></div>';
         }
 
         // Update the content
@@ -2009,7 +2044,7 @@
                     const dropdownParams = {
                         input_id: setting.key,
                         dropdown_id: settingId + "-dropdown",
-                        placeholder: "Select a provider",
+                        placeholder: i18n.t("Select a provider"),
                         label: null, // Label handled outside
                         label_id: settingId + "-label",
                         help_text: setting.description || null,
@@ -2023,7 +2058,7 @@
                     const dropdownParams = {
                         input_id: setting.key,
                         dropdown_id: settingId + "-dropdown",
-                        placeholder: "Select a search tool",
+                        placeholder: i18n.t("Select a search tool"),
                         label: null,
                         label_id: settingId + "-label",
                         help_text: setting.description || null,
@@ -2038,13 +2073,13 @@
                     const dropdownParams = {
                         input_id: setting.key,
                         dropdown_id: settingId + "-dropdown",
-                        placeholder: "Select or enter a model",
+                        placeholder: i18n.t("Select or enter a model"),
                         label: null,
                         label_id: settingId + "-label",
                         help_text: setting.description || null,
                         allow_custom: true, // Allow custom for model
                         show_refresh: true, // Show refresh for model
-                        refresh_aria_label: "Refresh model list",
+                        refresh_aria_label: i18n.t("Refresh model list"),
                         data_setting_key: setting.key,
                         disabled: !setting.editable
                     };
@@ -2168,6 +2203,14 @@
             settingName = formatCategoryName('', settingName);
         }
 
+        // Translate description via i18n if a Chinese translation exists.
+        // Falls back to the original English text when no translation
+        // entry is found (so missing translations don't blank out the
+        // description).
+        const translatedDescription = setting.description
+            ? i18n.t(setting.description)
+            : '';
+
         // For checkboxes, we've already handled the label in the inputElement
         if (setting.ui_element === 'checkbox') {
             return `
@@ -2175,7 +2218,7 @@
                     ${inputElement}
                     ${setting.description ? `
                     <div class="ldr-input-help">
-                        ${escapeHtml(setting.description)}
+                        ${escapeHtml(translatedDescription)}
                     </div>
                     ` : ''}
                 </div>
@@ -2184,7 +2227,7 @@
 
         // For non-checkbox elements, use the standard layout without info icons
         // Ensure help text is appended correctly AFTER the input element is generated
-        const helpTextHTML = setting.description ? `<div class="ldr-input-help">${escapeHtml(setting.description)}</div>` : '';
+        const helpTextHTML = setting.description ? `<div class="ldr-input-help">${escapeHtml(translatedDescription)}</div>` : '';
 
         return `
             <div class="ldr-settings-item form-group" data-key="${setting.key}">
@@ -2280,7 +2323,7 @@
                                 data-property="${key}"
                                 data-parent-key="${setting.key}"
                                 ${!setting.editable ? 'disabled' : ''}>
-                            <option value="ITERATION" ${value === 'ITERATION' ? 'selected' : ''}>Iteration</option>
+                            <option value="ITERATION" ${value === 'ITERATION' ? 'selected' : ''}>${i18n.t("Iteration")}</option>
                             <option value="NONE" ${value === 'NONE' ? 'selected' : ''}>None</option>
                         </select>
                     </div>
@@ -2309,7 +2352,7 @@
             </div>
             ${setting.description ? `
             <div class="ldr-input-help">
-                ${escapeHtml(setting.description)}
+                ${escapeHtml(translatedDescription)}
             </div>
             ` : ''}
         </div>
@@ -2351,7 +2394,13 @@
 
             if (input.name) {
                 // Check if value is a JSON object (textarea)
-                if (input.tagName === 'TEXTAREA' && input.classList.contains('ldr-settings-textarea')) {
+                // Only treat as JSON if the textarea carries the
+                // `ldr-json-content` class — plain textareas (e.g.
+                // `ui_element: "textarea"` like general.output_instructions)
+                // must be saved as-is, not JSON-parsed.
+                if (input.tagName === 'TEXTAREA'
+                    && input.classList.contains('ldr-settings-textarea')
+                    && input.classList.contains('ldr-json-content')) {
                     try {
                         const jsonValue = JSON.parse(input.value);
                         formData[input.name] = jsonValue;
@@ -2474,7 +2523,7 @@
                 // Merge with form data, giving precedence to the raw JSON config
                 Object.assign(formData, flattenedConfig);
             } catch (err) {
-                showAlert('Invalid JSON in raw config editor: ' + err.message, 'error');
+                showAlert(i18n.tf('Invalid JSON in raw config editor: %s', err.message), 'error');
                 return;
             }
         }
@@ -2515,7 +2564,7 @@
             JSON.parse(content);
             return true;
         } catch {
-            showMessage('Setting value must be valid JSON.', 'error', 5000);
+            showMessage(i18n.t('Setting value must be valid JSON.'), 'error', 5000);
             return false;
         }
     }
@@ -2683,10 +2732,10 @@
             } else {
                 // Show error message
                 if (window.ui && window.ui.showMessage) {
-                    window.ui.showMessage(data.message || 'Error saving settings', 'error', 5000);
-                    showAlert(data.message || 'Error saving settings', 'error', true);
+                    window.ui.showMessage(data.message || i18n.t('Error saving settings'), 'error', 5000);
+                    showAlert(data.message || i18n.t('Error saving settings'), 'error', true);
                 } else {
-                    showAlert(data.message || 'Error saving settings', 'error', false);
+                    showAlert(data.message || i18n.t('Error saving settings'), 'error', false);
                 }
 
                 // Remove loading state
@@ -2701,10 +2750,10 @@
 
             // Show error message
             if (window.ui && window.ui.showMessage) {
-                window.ui.showMessage('Error saving settings: ' + error.message, 'error', 5000);
-                showAlert('Error saving settings: ' + error.message, 'error', true);
+                window.ui.showMessage(i18n.tf('Error saving settings: %s', error.message), 'error', 5000);
+                showAlert(i18n.tf('Error saving settings: %s', error.message), 'error', true);
             } else {
-                showAlert('Error saving settings: ' + error.message, 'error', false);
+                showAlert(i18n.tf('Error saving settings: %s', error.message), 'error', false);
             }
 
             // Remove loading state
@@ -2800,7 +2849,7 @@
         }
 
         if (html === '') {
-            html = '<div class="ldr-empty-state"><p>No settings found matching your search</p></div>';
+            html = '<div class="ldr-empty-state"><p>' + i18n.t('No settings found matching your search') + '</p></div>';
         }
 
         // Add a container for alerts that will maintain proper positioning
@@ -2911,7 +2960,7 @@
         // Format JSON values
         initJsonFormatting();
 
-        showAlert('Settings reset to last saved values', 'info');
+        showAlert(i18n.t('Settings reset to last saved values'), 'info');
     }
 
     /**
@@ -2919,7 +2968,7 @@
      */
     function handleResetToDefaults() {
         // Show confirmation dialog
-        if (confirm('Are you sure you want to reset ALL settings to their default values? This cannot be undone.')) {
+        if (confirm(i18n.t('Are you sure you want to reset ALL settings to their default values? This cannot be undone.'))) {
             // Call the reset to defaults API
             fetch(URLS.SETTINGS_API.RESET_TO_DEFAULTS, {
                 method: 'POST',
@@ -2931,18 +2980,18 @@
             .then(response => response.json())
             .then(data => {
                 if (data.status === 'success') {
-                    showAlert('Settings have been reset to defaults. Reloading page...', 'success');
+                    showAlert(i18n.t('Settings have been reset to defaults. Reloading page...'), 'success');
 
                     // Reload the page after a brief delay to show the success message
                     setTimeout(() => {
                         window.location.reload();
                     }, 1500);
                 } else {
-                    showAlert('Error resetting settings: ' + data.message, 'error');
+                    showAlert(i18n.tf('Error resetting settings: %s', data.message), 'error');
                 }
             })
             .catch(error => {
-                showAlert('Error resetting settings: ' + error, 'error');
+                showAlert(i18n.tf('Error resetting settings: %s', error), 'error');
             });
         }
     }
@@ -2976,7 +3025,7 @@
                     submitSettingsData(flattenedConfig, null);
                 } catch (e) {
                     // Show error and prevent hiding the editor
-                    showAlert('Invalid JSON in editor: ' + e.message, 'error');
+                    showAlert(i18n.tf('Invalid JSON in editor: %s', e.message), 'error');
                     return;
                 }
             }
@@ -2991,7 +3040,7 @@
             // Update toggle text
             const toggleText = document.getElementById('toggle-text');
             if (toggleText) {
-                toggleText.textContent = isVisible ? 'Show JSON Configuration' : 'Hide JSON Configuration';
+                toggleText.textContent = isVisible ? i18n.t('Show JSON Configuration') : i18n.t('Hide JSON Configuration');
             }
 
             // If showing the config, prepare it
@@ -3143,21 +3192,21 @@
         .then(data => {
             if (data.status === 'success') {
                 if (data.fixed_settings && data.fixed_settings.length > 0) {
-                    showAlert(`Fixed ${data.fixed_settings.length} corrupted settings. Reloading page...`, 'success');
+                    showAlert(i18n.tf('Fixed %s corrupted settings. Reloading page...', data.fixed_settings.length), 'success');
 
                     // Reload the page after a brief delay to show the success message
                     setTimeout(() => {
                         window.location.reload();
                     }, 1500);
                 } else {
-                    showAlert('No corrupted settings were found.', 'info');
+                    showAlert(i18n.t('No corrupted settings were found.'), 'info');
                 }
             } else {
-                showAlert('Error fixing corrupted settings: ' + data.message, 'error');
+                showAlert(i18n.tf('Error fixing corrupted settings: %s', data.message), 'error');
             }
         })
         .catch(error => {
-            showAlert('Error fixing corrupted settings: ' + error, 'error');
+            showAlert(i18n.tf('Error fixing corrupted settings: %s', error), 'error');
         });
     }
 
@@ -3532,11 +3581,11 @@
 
                             filterModelOptionsForProvider(provider);
 
-                            showAlert('Model list refreshed', 'success');
+                            showAlert(i18n.t('Model list refreshed'), 'success');
                         }).catch(error => {
                             SafeLogger.error('Error refreshing models:', error);
                             if (icon) icon.className = 'fas fa-sync-alt';
-                            showAlert('Failed to refresh models: ' + error.message, 'error');
+                            showAlert(i18n.tf('Failed to refresh models: %s', error.message), 'error');
                         });
                     });
                 }
@@ -3545,7 +3594,7 @@
         }).catch(err => {
             SafeLogger.error('Error initializing model dropdowns:', err);
             // Show a warning to the user
-            showAlert('Failed to load model options. Using fallback values.', 'warning');
+            showAlert(i18n.t('Failed to load model options. Using fallback values.'), 'warning');
         });
     }
 
@@ -3614,7 +3663,7 @@
             const dropdown = window.setupCustomDropdown(
                 searchEngineInput,
                 dropdownList,
-                () => (searchEngineOptions.length > 0 ? searchEngineOptions : [{ value: 'auto', label: 'Auto (Default)' }]),
+                () => (searchEngineOptions.length > 0 ? searchEngineOptions : [{ value: 'auto', label: i18n.t('Auto (Default)') }]),
                 (value) => {
                     SafeLogger.log('Search engine selected:', value);
                     // Update the hidden input value
@@ -3856,7 +3905,7 @@
         fixCorruptedButton.setAttribute('type', 'button');
         fixCorruptedButton.setAttribute('id', 'fix-corrupted-button');
         fixCorruptedButton.className = 'btn btn-info';
-        fixCorruptedButton.innerHTML = '<i class="fas fa-wrench"></i> Fix Corrupted Settings';
+        fixCorruptedButton.innerHTML = '<i class="fas fa-wrench"></i> ' + i18n.t('Fix Corrupted Settings');
         fixCorruptedButton.addEventListener('click', handleFixCorruptedSettings);
 
         // Insert it after the reset to defaults button
@@ -4058,7 +4107,7 @@
                                 SafeLogger.error('Error refreshing models:', error);
                                 if (icon) icon.className = 'fas fa-sync-alt';
                                 if (typeof showAlert === 'function') {
-                                    showAlert('Failed to refresh models: ' + error.message, 'error');
+                                    showAlert(i18n.tf('Failed to refresh models: %s', error.message), 'error');
                                 }
                             });
                         } else if (icon) icon.className = 'fas fa-sync-alt';
@@ -4090,7 +4139,7 @@
                     searchEngineOptions : [
                         { value: 'google_pse', label: 'Google Programmable Search' },
                         { value: 'duckduckgo', label: 'DuckDuckGo' },
-                        { value: 'auto', label: 'Auto (Default)' }
+                        { value: 'auto', label: i18n.t('Auto (Default)') }
                     ];
             }
 
@@ -4295,7 +4344,7 @@
                 modelInput,
                 modelDropdownList, // Use correct variable name
                 () => (filteredModels.length > 0 ? filteredModels : [
-                    { value: 'no-models', label: 'No models available for this provider' }
+                    { value: 'no-models', label: i18n.t('No models available for this provider') }
                 ]),
                 (value) => {
                     SafeLogger.log('Selected model:', value);
@@ -4457,14 +4506,14 @@
         }
 
         if (!serviceUrl) {
-            showTestResult('No notification service URL configured', 'error');
+            showTestResult(i18n.t('No notification service URL configured'), 'error');
             return;
         }
 
         // Disable button and show loading state
         testBtn.disabled = true;
         const originalText = testBtn.innerHTML;
-        testBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Testing...';
+        testBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> ' + i18n.t('Testing...');
 
         // Make API call to test notification
         fetch('/settings/api/notifications/test-url', {
@@ -4480,14 +4529,14 @@
         .then(response => response.json())
         .then(data => {
             if (data.success) {
-                showTestResult('Test notification sent successfully!', 'success');
+                showTestResult(i18n.t('Test notification sent successfully!'), 'success');
             } else {
-                showTestResult(`Test failed: ${data.error || 'Unknown error'}`, 'error');
+                showTestResult(i18n.tf('Test failed: %s', data.error || i18n.t('Unknown error')), 'error');
             }
         })
         .catch(error => {
             SafeLogger.error('Error testing notification:', error);
-            showTestResult('Network error while testing notification', 'error');
+            showTestResult(i18n.t('Network error while testing notification'), 'error');
         })
         .finally(() => {
             // Re-enable button and restore original text
@@ -4585,11 +4634,11 @@
                     initializeSearchEngineDropdowns();
                 }
 
-                showAlert(`Options refreshed`, 'success');
+                showAlert(i18n.t('Options refreshed'), 'success');
             }).catch(error => {
                 SafeLogger.error('Error refreshing options:', error);
                 icon.className = 'fas fa-sync-alt';
-                showAlert('Failed to refresh options', 'error');
+                showAlert(i18n.t('Failed to refresh options'), 'error');
             });
         });
 

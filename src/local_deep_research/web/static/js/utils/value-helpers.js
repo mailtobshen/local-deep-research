@@ -102,9 +102,9 @@
      */
     function formatValueForDisplay(value) {
         if (value === null || value === undefined) {
-            return 'empty';
+            return i18n.t('empty');
         } else if (typeof value === 'boolean') {
-            return value ? 'enabled' : 'disabled';
+            return value ? i18n.t('enabled') : i18n.t('disabled');
         } else if (typeof value === 'object') {
             // For objects, show a simplified representation
             return '{...}';

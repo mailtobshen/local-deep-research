@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Document Chunks - Deep Research System{% endblock %}
+{% block title %}{{ _('Document Chunks') }} - {{ _('Deep Research System') }}{% endblock %}
 
 {% block extra_head %}
 <link rel="stylesheet" href="/static/css/document_details.css">
@@ -9,14 +9,14 @@
 {% block content %}
 <div class="ldr-chunks-container">
     <a href="/library/document/{{ document.id }}" class="ldr-back-button">
-        <i aria-hidden="true" class="fas fa-arrow-left"></i> Back to Document
+        <i aria-hidden="true" class="fas fa-arrow-left"></i> {{ _('Back to Document') }}
     </a>
 
     <div class="ldr-chunks-header">
-        <h1><i aria-hidden="true" class="fas fa-puzzle-piece"></i> Document Chunks</h1>
+        <h1><i aria-hidden="true" class="fas fa-puzzle-piece"></i> {{ _("Document Chunks") }}</h1>
         <div class="ldr-chunks-stats">
-            <strong>Document:</strong> {{ document.filename or document.title or "Untitled" }}<br>
-            <strong>Total Chunks:</strong> {{ total_chunks }} chunk{{ 's' if total_chunks != 1 else '' }} across {{ chunks_by_collection|length }} collection{{ 's' if chunks_by_collection|length != 1 else '' }}
+            <strong>{{ _("Document:") }}</strong> {{ document.filename or document.title or _("Untitled") }}<br>
+            <strong>{{ _("Total Chunks:") }}</strong> {{ total_chunks }} chunk{{ 's' if total_chunks != 1 else '' }} across {{ chunks_by_collection|length }} collection{{ 's' if chunks_by_collection|length != 1 else '' }}
         </div>
     </div>
 
@@ -26,7 +26,7 @@
             <div class="ldr-collection-header">
                 <h2>{{ collection_data.name }}</h2>
                 <div class="ldr-chunk-count">
-                    {{ collection_data.chunks|length }} chunk{{ 's' if collection_data.chunks|length != 1 else '' }}
+                    {{ collection_data.chunks|length }} {{ _('chunks') if collection_data.chunks|length != 1 else _('chunk') }}
                 </div>
             </div>
 
@@ -34,16 +34,16 @@
             <div class="ldr-chunk">
                 <div class="ldr-chunk-meta">
                     <div class="ldr-chunk-meta-item">
-                        <strong>Chunk #{{ chunk.index + 1 }}</strong>
+                        <strong>{{ _('Chunk') }} #{{ chunk.index + 1 }}</strong>
                     </div>
                     <div class="ldr-chunk-meta-item">
-                        <strong>Words:</strong> {{ chunk.word_count }}
+                        <strong>{{ _("Words:") }}</strong> {{ chunk.word_count }}
                     </div>
                     <div class="ldr-chunk-meta-item">
-                        <strong>Position:</strong> {{ chunk.start_char }}-{{ chunk.end_char }}
+                        <strong>{{ _("Position:") }}</strong> {{ chunk.start_char }}-{{ chunk.end_char }}
                     </div>
                     <div class="ldr-chunk-meta-item">
-                        <strong>ID:</strong> <code>{{ chunk.id }}</code>
+                        <strong>{{ _("ID:") }}</strong> <code>{{ chunk.id }}</code>
                     </div>
                 </div>
 
@@ -51,11 +51,11 @@
 
                 <div class="ldr-embedding-info">
                     <i aria-hidden="true" class="fas fa-brain"></i>
-                    <strong>Embedding:</strong> {{ chunk.embedding_model }} ({{ chunk.embedding_model_type }})
+                    <strong>{{ _('Embedding:') }}</strong> {{ chunk.embedding_model }} ({{ chunk.embedding_model_type }})
                     {% if chunk.embedding_dimension %}
-                    | <strong>Dimension:</strong> {{ chunk.embedding_dimension }}
+                    | <strong>{{ _("Dimension:") }}</strong> {{ chunk.embedding_dimension }}
                     {% endif %}
-                    | <strong>Created:</strong> {{ chunk.created_at.strftime('%Y-%m-%d %H:%M') if chunk.created_at else 'N/A' }}
+                    | <strong>{{ _("Created:") }}</strong> {{ chunk.created_at.strftime('%Y-%m-%d %H:%M') if chunk.created_at else 'N/A' }}
                 </div>
             </div>
             {% endfor %}
@@ -64,8 +64,8 @@
     {% else %}
         <div class="ldr-no-chunks">
             <i aria-hidden="true" class="fas fa-inbox" style="font-size: 48px; margin-bottom: 20px; display: block;"></i>
-            <p>No chunks found for this document.</p>
-            <p>The document may not be indexed yet.</p>
+            <p>{{ _("No chunks found for this document.") }}</p>
+            <p>{{ _("The document may not be indexed yet.") }}</p>
         </div>
     {% endif %}
 </div>

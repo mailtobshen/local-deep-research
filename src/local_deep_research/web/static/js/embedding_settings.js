@@ -57,11 +57,11 @@ async function loadAvailableModels() {
             // Update provider information
             updateProviderInfo();
         } else {
-            showError('Failed to load available models: ' + data.error);
+            showError(i18n.tf('Failed to load available models: %s', data.error));
         }
     } catch (error) {
         SafeLogger.error('Error loading models:', error.message || error);
-        showError('Failed to load available models');
+        showError(i18n.t('Failed to load available models'));
     }
 }
 
@@ -178,31 +178,31 @@ function renderSavedDefaults(settings) {
     // bearer:disable javascript_lang_dangerous_insert_html
     container.innerHTML = `
         <div class="ldr-info-item">
-            <span class="ldr-info-label">Provider:</span>
+            <span class="ldr-info-label">${i18n.t('Provider:')}</span>
             <span class="ldr-info-value">${escapeHtml(providerLabel)}</span>
         </div>
         <div class="ldr-info-item">
-            <span class="ldr-info-label">Embedding Model:</span>
+            <span class="ldr-info-label">${i18n.t('Embedding Model:')}</span>
             <span class="ldr-info-value">${escapeHtml(settings.embedding_model || '')}</span>
         </div>
         <div class="ldr-info-item">
-            <span class="ldr-info-label">Chunk Size:</span>
-            <span class="ldr-info-value">${escapeHtml(String(settings.chunk_size ?? 1000))} characters</span>
+            <span class="ldr-info-label">${i18n.t('Chunk Size:')}</span>
+            <span class="ldr-info-value">${escapeHtml(String(settings.chunk_size ?? 1000))} ${i18n.t('characters')}</span>
         </div>
         <div class="ldr-info-item">
-            <span class="ldr-info-label">Chunk Overlap:</span>
-            <span class="ldr-info-value">${escapeHtml(String(settings.chunk_overlap ?? 200))} characters</span>
+            <span class="ldr-info-label">${i18n.t('Chunk Overlap:')}</span>
+            <span class="ldr-info-value">${escapeHtml(String(settings.chunk_overlap ?? 200))} ${i18n.t('characters')}</span>
         </div>
         <div class="ldr-info-item">
-            <span class="ldr-info-label">Splitter Type:</span>
+            <span class="ldr-info-label">${i18n.t('Splitter Type:')}</span>
             <span class="ldr-info-value">${escapeHtml(settings.splitter_type || 'recursive')}</span>
         </div>
         <div class="ldr-info-item">
-            <span class="ldr-info-label">Distance Metric:</span>
+            <span class="ldr-info-label">${i18n.t('Distance Metric:')}</span>
             <span class="ldr-info-value">${escapeHtml(settings.distance_metric || 'cosine')}</span>
         </div>
         <div class="ldr-info-item">
-            <span class="ldr-info-label">Index Type:</span>
+            <span class="ldr-info-label">${i18n.t('Index Type:')}</span>
             <span class="ldr-info-value">${escapeHtml(settings.index_type || 'flat')}</span>
         </div>
     `;
@@ -266,9 +266,9 @@ async function saveSetting(key, value, displayName, oldValue) {
         const data = await response.json();
         if (data.error) {
             if (window.ui && window.ui.showMessage) {
-                window.ui.showMessage('Failed to save ' + displayName + ': ' + data.error, 'error');
+                window.ui.showMessage(i18n.tf('Failed to save %s: %s', displayName, data.error), 'error');
             } else {
-                showError('Failed to save ' + displayName + ': ' + data.error);
+                showError(i18n.tf('Failed to save %s: %s', displayName, data.error));
             }
             return;
         }
@@ -276,7 +276,7 @@ async function saveSetting(key, value, displayName, oldValue) {
         // Show success notification with old → new
         const oldDisplay = formatValueForDisplay(oldValue);
         const newDisplay = formatValueForDisplay(value);
-        const message = displayName + ': ' + oldDisplay + ' \u2192 ' + newDisplay;
+        const message = i18n.tf('%s: %s → %s', displayName, oldDisplay, newDisplay);
 
         if (window.ui && window.ui.showMessage) {
             window.ui.showMessage(message, 'success', 6000);
@@ -292,9 +292,9 @@ async function saveSetting(key, value, displayName, oldValue) {
     } catch (error) {
         SafeLogger.error('Error saving setting ' + key + ':', error);
         if (window.ui && window.ui.showMessage) {
-            window.ui.showMessage('Failed to save ' + displayName, 'error');
+            window.ui.showMessage(i18n.tf('Failed to save %s', displayName), 'error');
         } else {
-            showError('Failed to save ' + displayName);
+            showError(i18n.tf('Failed to save %s', displayName));
         }
     }
 }
@@ -332,7 +332,7 @@ function attachAutoSaveListeners() {
     document.getElementById('embedding-provider').addEventListener('change', async function() {
         const value = this.value;
         const oldValue = originalValues['local_search_embedding_provider'];
-        await saveSetting('local_search_embedding_provider', value, 'Embedding provider', oldValue);
+        await saveSetting('local_search_embedding_provider', value, i18n.t('Embedding provider'), oldValue);
         // Refresh provider status since the active provider changed
         await loadAvailableModels();
     });
@@ -341,7 +341,7 @@ function attachAutoSaveListeners() {
     document.getElementById('embedding-model').addEventListener('change', function() {
         const value = this.value;
         const oldValue = originalValues['local_search_embedding_model'];
-        saveSetting('local_search_embedding_model', value, 'Embedding model', oldValue);
+        saveSetting('local_search_embedding_model', value, i18n.t('Embedding model'), oldValue);
     });
 
     // Chunk size - blur / Enter
@@ -350,7 +350,7 @@ function attachAutoSaveListeners() {
         const value = parseInt(chunkSizeEl.value, 10);
         if (isNaN(value) || value < 100 || value > 5000) return;
         const oldValue = originalValues['local_search_chunk_size'];
-        saveSetting('local_search_chunk_size', value, 'Chunk size', oldValue);
+        saveSetting('local_search_chunk_size', value, i18n.t('Chunk size'), oldValue);
     }
     chunkSizeEl.addEventListener('blur', saveChunkSize);
     chunkSizeEl.addEventListener('keydown', function(e) {
@@ -363,7 +363,7 @@ function attachAutoSaveListeners() {
         const value = parseInt(chunkOverlapEl.value, 10);
         if (isNaN(value) || value < 0 || value > 1000) return;
         const oldValue = originalValues['local_search_chunk_overlap'];
-        saveSetting('local_search_chunk_overlap', value, 'Chunk overlap', oldValue);
+        saveSetting('local_search_chunk_overlap', value, i18n.t('Chunk overlap'), oldValue);
     }
     chunkOverlapEl.addEventListener('blur', saveChunkOverlap);
     chunkOverlapEl.addEventListener('keydown', function(e) {
@@ -374,28 +374,28 @@ function attachAutoSaveListeners() {
     document.getElementById('splitter-type').addEventListener('change', function() {
         const value = this.value;
         const oldValue = originalValues['local_search_splitter_type'];
-        saveSetting('local_search_splitter_type', value, 'Splitter type', oldValue);
+        saveSetting('local_search_splitter_type', value, i18n.t('Splitter type'), oldValue);
     });
 
     // Distance metric - change (immediate)
     document.getElementById('distance-metric').addEventListener('change', function() {
         const value = this.value;
         const oldValue = originalValues['local_search_distance_metric'];
-        saveSetting('local_search_distance_metric', value, 'Distance metric', oldValue);
+        saveSetting('local_search_distance_metric', value, i18n.t('Distance metric'), oldValue);
     });
 
     // Index type - change (immediate)
     document.getElementById('index-type').addEventListener('change', function() {
         const value = this.value;
         const oldValue = originalValues['local_search_index_type'];
-        saveSetting('local_search_index_type', value, 'Index type', oldValue);
+        saveSetting('local_search_index_type', value, i18n.t('Index type'), oldValue);
     });
 
     // Normalize vectors - change (immediate)
     document.getElementById('normalize-vectors').addEventListener('change', function() {
         const value = this.checked;
         const oldValue = originalValues['local_search_normalize_vectors'];
-        saveSetting('local_search_normalize_vectors', value, 'Normalize vectors', oldValue);
+        saveSetting('local_search_normalize_vectors', value, i18n.t('Normalize vectors'), oldValue);
     });
 
     // Text separators - blur
@@ -406,18 +406,18 @@ function attachAutoSaveListeners() {
             // Empty textarea acts as "reset to defaults" — save the default
             // array so a stale customization in the DB is overwritten. This
             // mirrors the behavior of the removed handleConfigSubmit path.
-            saveSetting('local_search_text_separators', ["\n\n", "\n", ". ", " ", ""], 'Text separators', oldValue);
+            saveSetting('local_search_text_separators', ["\n\n", "\n", ". ", " ", ""], i18n.t('Text separators'), oldValue);
             return;
         }
         try {
             const value = JSON.parse(rawValue);
             if (!Array.isArray(value)) {
-                showError('Text separators must be a JSON array');
+                showError(i18n.t('Text separators must be a JSON array'));
                 return;
             }
-            saveSetting('local_search_text_separators', value, 'Text separators', oldValue);
+            saveSetting('local_search_text_separators', value, i18n.t('Text separators'), oldValue);
         } catch {
-            showError('Invalid JSON format for text separators');
+            showError(i18n.t('Invalid JSON format for text separators'));
         }
     });
 
@@ -426,7 +426,7 @@ function attachAutoSaveListeners() {
     async function saveOllamaUrlAuto() {
         const value = ollamaUrlEl.value.trim();
         const oldValue = originalValues['embeddings.ollama.url'];
-        await saveSetting('embeddings.ollama.url', value, 'Ollama URL', oldValue);
+        await saveSetting('embeddings.ollama.url', value, i18n.t('Ollama URL'), oldValue);
         // Refresh provider status since URL change affects reachability
         await loadAvailableModels();
     }
@@ -441,7 +441,7 @@ function attachAutoSaveListeners() {
         const value = parseInt(ollamaNumCtxEl.value, 10);
         if (isNaN(value) || value < 512 || value > 131072) return;
         const oldValue = originalValues['embeddings.ollama.num_ctx'];
-        saveSetting('embeddings.ollama.num_ctx', value, 'Ollama embeddings num_ctx', oldValue);
+        saveSetting('embeddings.ollama.num_ctx', value, i18n.t('Ollama embeddings num_ctx'), oldValue);
     }
     ollamaNumCtxEl.addEventListener('blur', saveOllamaNumCtx);
     ollamaNumCtxEl.addEventListener('keydown', function(e) {
@@ -498,8 +498,7 @@ function updateModelOptions() {
         warning.style.marginTop = '8px';
         // bearer:disable javascript_lang_dangerous_insert_html
         warning.innerHTML = '<i class="fas fa-exclamation-triangle"></i> ' +
-            escapeHtml(providerInfo.label) +
-            ' is not reachable. Check the URL or service and try again.';
+            i18n.tf('%s is not reachable. Check the URL or service and try again.', escapeHtml(providerInfo.label));
         const providerSelect = document.getElementById('embedding-provider');
         providerSelect.parentNode.insertBefore(warning, providerSelect.nextSibling);
     }
@@ -520,10 +519,10 @@ function updateModelOptions() {
 
         // Mark embedding compatibility when the provider supplies it
         if (modelData.is_embedding === true) {
-            option.textContent = modelData.label + ' (Embedding)';
+            option.textContent = modelData.label + ' ' + i18n.t('(Embedding)');
             option.style.color = 'var(--success-color)';
         } else if (modelData.is_embedding === false) {
-            option.textContent = modelData.label + ' (LLM — may not support embeddings)';
+            option.textContent = modelData.label + ' ' + i18n.t('(LLM — may not support embeddings)');
             option.style.color = 'var(--warning-color)';
         } else {
             option.textContent = modelData.label;
@@ -535,7 +534,7 @@ function updateModelOptions() {
     if (models.length === 0) {
         const placeholder = document.createElement('option');
         placeholder.value = '';
-        placeholder.textContent = 'No models available';
+        placeholder.textContent = i18n.t('No models available');
         placeholder.disabled = true;
         modelSelect.appendChild(placeholder);
     }
@@ -595,11 +594,11 @@ function updateModelHint() {
     if (selected.is_embedding === true) {
         hint.style.color = 'var(--success-color)';
         // bearer:disable javascript_lang_dangerous_insert_html
-        hint.innerHTML = '<i class="fas fa-check-circle"></i> Dedicated embedding model &mdash; recommended for search and RAG.';
+        hint.innerHTML = '<i class="fas fa-check-circle"></i> ' + i18n.t('Dedicated embedding model &mdash; recommended for search and RAG.');
     } else {
         hint.style.color = 'var(--warning-color)';
         // bearer:disable javascript_lang_dangerous_insert_html
-        hint.innerHTML = '<i class="fas fa-exclamation-circle"></i> This is an LLM, not a dedicated embedding model. ' +
+        hint.innerHTML = '<i class="fas fa-exclamation-circle"></i> ' + i18n.t('This is an LLM, not a dedicated embedding model.') + ' ' +
             'Some LLMs can still produce embeddings but results vary. Use <strong>Test Embedding Model</strong> to verify.';
     }
 
@@ -649,19 +648,13 @@ function updateProviderInfo() {
             providerNote = `
                 <div class="ldr-alert ldr-alert-info" style="margin-top: 10px; padding: 8px 12px; font-size: 0.85em;">
                     <i class="fas fa-info-circle"></i>
-                    <strong>${embeddingCount} embedding model${embeddingCount !== 1 ? 's' : ''}</strong> detected
-                    out of ${models.length} total.
+                    <strong>${embeddingCount === 1 ? i18n.tf('%s embedding model detected', embeddingCount) : i18n.tf('%s embedding models detected', embeddingCount)}</strong> ${i18n.tf('out of %s total', models.length)}
                     <br><br>
-                    <strong>Dedicated embedding models</strong> (e.g. nomic-embed-text, mxbai-embed-large)
-                    are optimized for search and produce compact, high-quality vectors.
+                    ${i18n.t('Dedicated embedding models (e.g. nomic-embed-text, mxbai-embed-large) are optimized for search and produce compact, high-quality vectors.')}
                     <br><br>
-                    <strong>Some LLMs can also generate embeddings</strong> via Ollama's embed API,
-                    but not all do &mdash; for example deepseek-r1 and nemotron work,
-                    while qwen3 does not. LLM embeddings tend to have much higher dimensions
-                    and are not optimized for similarity search.
+                    ${i18n.t("Some LLMs can also generate embeddings via Ollama's embed API, but not all do — for example deepseek-r1 and nemotron work, while qwen3 does not. LLM embeddings tend to have much higher dimensions and are not optimized for similarity search.")}
                     <br><br>
-                    Use the <strong>Test Embedding Model</strong> button above to verify
-                    your selection works before saving.
+                    ${i18n.t('Use the Test Embedding Model button above to verify your selection works before saving.')}
                 </div>
             `;
         }
@@ -669,23 +662,23 @@ function updateProviderInfo() {
         let statusIcon, statusText, statusClass;
         if (provider.available === false) {
             statusIcon = 'fa-exclamation-triangle';
-            statusText = 'Not reachable';
+            statusText = i18n.t('Not reachable');
             statusClass = 'ldr-provider-status-unavailable';
         } else {
             statusIcon = 'fa-check-circle';
-            statusText = 'Ready';
+            statusText = i18n.t('Ready');
             statusClass = '';
         }
 
         const embCount = models.filter(function(m) { return m.is_embedding === true; }).length;
         const modelCountLabel = embCount > 0
-            ? `${embCount} embedding / ${models.length} total`
-            : `${models.length}`;
+            ? i18n.tf('%s embedding / %s total', embCount, models.length)
+            : i18n.tf('%s total', models.length);
 
         infoHTML += `
             <div class="ldr-stat-card">
                 <h4>${escapeHtml(provider.label)}</h4>
-                <p><strong>Models Available:</strong> ${modelCountLabel}</p>
+                <p><strong>${i18n.t('Models Available:')}</strong> ${modelCountLabel}</p>
                 <div class="ldr-provider-status ${statusClass}">
                     <i class="fas ${statusIcon}"></i> ${statusText}
                 </div>
@@ -709,16 +702,16 @@ async function testConfiguration() {
     const testResult = document.getElementById('test-result');
 
     if (!provider || !model) {
-        showError('Please select a provider and model first');
+        showError(i18n.t('Please select a provider and model first'));
         return;
     }
 
     // Disable button during test
     testBtn.disabled = true;
-    testBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Testing...';
+    testBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> ' + i18n.t('Testing...');
 
     testResult.style.display = 'block';
-    testResult.innerHTML = '<div class="ldr-alert ldr-alert-info"><i class="fas fa-spinner fa-spin"></i> Testing embedding model... For local providers this may take a moment while the model is loaded into memory.</div>';
+    testResult.innerHTML = '<div class="ldr-alert ldr-alert-info"><i class="fas fa-spinner fa-spin"></i> ' + i18n.t('Testing embedding model... For local providers this may take a moment while the model is loaded into memory.') + '</div>';
 
     try {
         const csrfToken = window.api ? window.api.getCsrfToken() : '';
@@ -742,46 +735,46 @@ async function testConfiguration() {
         if (data.success) {
             const responseTime = parseInt(data.response_time_ms, 10);
             const slowHint = responseTime > 3000
-                ? '<br><i class="fas fa-info-circle"></i> <em>Slow response time may be due to initial model loading. Test again for a more accurate measurement.</em>'
+                ? '<br><i class="fas fa-info-circle"></i> <em>' + i18n.t('Slow response time may be due to initial model loading. Test again for a more accurate measurement.') + '</em>'
                 : '';
             // bearer:disable javascript_lang_dangerous_insert_html
             // eslint-disable-next-line no-unsanitized/property -- audited 2026-03-28: all interpolations use escapeHtml/esc, numeric coercion, or hardcoded strings
             testResult.innerHTML = `
                 <div class="ldr-alert ldr-alert-success">
-                    <i class="fas fa-check-circle"></i> <strong>Test Passed!</strong><br>
-                    Model: ${window.XSSProtection.escapeHtml(model)}<br>
-                    Provider: ${window.XSSProtection.escapeHtml(provider)}<br>
-                    Embedding dimension: ${window.XSSProtection.escapeHtml(String(data.dimension))}<br>
-                    Response time: ${window.XSSProtection.escapeHtml(String(data.response_time_ms))}ms
+                    <i class="fas fa-check-circle"></i> <strong>${i18n.t('Test Passed!')}</strong><br>
+                    ${i18n.t('Model:')} ${window.XSSProtection.escapeHtml(model)}<br>
+                    ${i18n.t('Provider:')} ${window.XSSProtection.escapeHtml(provider)}<br>
+                    ${i18n.t('Embedding dimension:')} ${window.XSSProtection.escapeHtml(String(data.dimension))}<br>
+                    ${i18n.t('Response time:')} ${window.XSSProtection.escapeHtml(String(data.response_time_ms))}ms
                     ${slowHint}
                 </div>
             `;
-            showSuccess('Embedding test passed!');
+            showSuccess(i18n.t('Embedding test passed!'));
         } else {
             // bearer:disable javascript_lang_dangerous_insert_html
             testResult.innerHTML = `
                 <div class="ldr-alert ldr-alert-danger">
-                    <i class="fas fa-times-circle"></i> <strong>Test Failed!</strong><br>
-                    Error: ${window.XSSProtection.escapeHtml(data.error || 'Unknown error')}
+                    <i class="fas fa-times-circle"></i> <strong>${i18n.t('Test Failed!')}</strong><br>
+                    ${i18n.t('Error:')} ${window.XSSProtection.escapeHtml(data.error || i18n.t('Unknown error'))}
                 </div>
             `;
             // Safe: showError escapes internally
-            showError('Embedding test failed: ' + (data.error || 'Unknown error'));
+            showError(i18n.tf('Embedding test failed: %s', data.error || i18n.t('Unknown error')));
         }
     } catch (error) {
         // bearer:disable javascript_lang_dangerous_insert_html
         testResult.innerHTML = `
             <div class="ldr-alert ldr-alert-danger">
-                <i class="fas fa-times-circle"></i> <strong>Test Failed!</strong><br>
-                Error: ${window.XSSProtection.escapeHtml(error.message)}
+                <i class="fas fa-times-circle"></i> <strong>${i18n.t('Test Failed!')}</strong><br>
+                ${i18n.t('Error:')} ${window.XSSProtection.escapeHtml(error.message)}
             </div>
         `;
         // Safe: showError escapes internally
-        showError('Test failed: ' + error.message);
+        showError(i18n.tf('Test failed: %s', error.message));
     } finally {
         // Re-enable button
         testBtn.disabled = false;
-        testBtn.innerHTML = '<i class="fas fa-play"></i> Test Embedding Model';
+        testBtn.innerHTML = '<i class="fas fa-play"></i> ' + i18n.t('Test Embedding Model');
     }
 }
 
@@ -794,7 +787,7 @@ function showSuccess(message) {
     alertDiv.className = 'ldr-alert ldr-alert-success';
     // Escape message before including in HTML template
     // bearer:disable javascript_lang_dangerous_insert_html
-    alertDiv.innerHTML = `<i class="fas fa-check-circle"></i>${escapeHtml(message)}`;
+    alertDiv.innerHTML = '<i class="fas fa-check-circle"></i>' + escapeHtml(message);
 
     // Insert at the top of the container
     const container = document.querySelector('.ldr-library-container');
@@ -817,7 +810,7 @@ function showInfo(message) {
     alertDiv.className = 'ldr-alert ldr-alert-info';
     // Escape message before including in HTML template
     // bearer:disable javascript_lang_dangerous_insert_html
-    alertDiv.innerHTML = `<i class="fas fa-info-circle"></i>${escapeHtml(message)}`;
+    alertDiv.innerHTML = '<i class="fas fa-info-circle"></i>' + escapeHtml(message);
 
     // Insert at the top of the container
     const container = document.querySelector('.ldr-library-container');
@@ -840,7 +833,7 @@ function showError(message) {
     alertDiv.className = 'ldr-alert ldr-alert-danger';
     // Escape message before including in HTML template
     // bearer:disable javascript_lang_dangerous_insert_html
-    alertDiv.innerHTML = `<i class="fas fa-exclamation-triangle"></i>${escapeHtml(message)}`;
+    alertDiv.innerHTML = '<i class="fas fa-exclamation-triangle"></i>' + escapeHtml(message);
 
     // Insert at the top of the container
     const container = document.querySelector('.ldr-library-container');

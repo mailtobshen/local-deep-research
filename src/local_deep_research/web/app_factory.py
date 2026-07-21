@@ -11,6 +11,7 @@ from flask import (
     make_response,
     request,
     send_from_directory,
+    session,
 )
 from flask_wtf.csrf import CSRFProtect
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -295,6 +296,12 @@ def create_app():
 
     theme_helper.init_app(app)
 
+    # Register translation function as a Jinja2 global so macros can use it
+    # without requiring `with context` on every import.
+    from .translations import translator
+
+    app.add_template_global(translator.gettext, "_")
+
     # Generate combined themes.css from individual theme files
     from .themes import theme_registry
 
@@ -409,6 +416,59 @@ def apply_middleware(app):
 
     logger.info("All middleware imports completed")
 
+    # Locale / language selection — runs before auth middleware so that
+    # auth pages (login, register) can be rendered in the user's chosen
+    # language even when they are not yet logged in.
+    @app.before_request
+    def set_locale():
+        """Set the active language for this request."""
+        from flask import g
+        from .translations import translator
+
+        # Force refresh current_language from request context
+        lang = translator.current_language
+        g.locale = lang
+
+        # For authenticated users, sync the database language preference into
+        # the session so that navigation without ?lang= still respects the
+        # user's choice.
+        if "username" in session and session.get("locale") is None:
+            try:
+                from ..database.session_context import get_user_db_session
+                from ..utilities.db_utils import get_settings_manager
+
+                username = session["username"]
+                with get_user_db_session(username) as db_session:
+                    if db_session:
+                        settings_manager = get_settings_manager(db_session, username)
+                        db_lang = settings_manager.get_setting("app.language")
+                        if db_lang in translator._SUPPORTED_LANGUAGES:
+                            session["locale"] = db_lang
+                            lang = db_lang
+                            g.locale = lang
+            except Exception:
+                pass
+
+    # Ensure all generated URLs carry the current language parameter so that
+    # sidebar links and redirects preserve the chosen locale.
+    @app.url_defaults
+    def add_lang_code(endpoint, values):
+        from flask import g, request
+        from .translations import translator
+
+        # Skip for static files and API endpoints
+        if endpoint in ("app_serve_static", "static", "favicon"):
+            return
+        if endpoint and (endpoint.startswith("api_") or endpoint.endswith("_api")):
+            return
+
+        lang = getattr(g, "locale", None) or translator.current_language
+        if lang and lang != "zh":
+            values.setdefault("lang", lang)
+        elif "lang" in values and values["lang"] == "zh":
+            # Keep explicit zh if present
+            pass
+
     # Register authentication middleware
     # First clean up stale sessions
     app.before_request(cleanup_stale_sessions)
@@ -442,9 +502,20 @@ def apply_middleware(app):
     from ..constants import ResearchStatus
 
     @app.context_processor
+    def inject_i18n():
+        from .translations import translator
+
+        return {
+            "_": translator.gettext,
+            "current_language": translator.current_language,
+            "translations_dict": translator._get_dict(translator.current_language),
+        }
+
+    @app.context_processor
     def inject_frontend_constants():
         terminal = [
             ResearchStatus.COMPLETED,
+            ResearchStatus.PARTIAL_SUCCESS,
             ResearchStatus.SUSPENDED,
             ResearchStatus.FAILED,
             ResearchStatus.ERROR,

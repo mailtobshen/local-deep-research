@@ -3,7 +3,7 @@
 
 {% set active_page = 'settings' %}
 
-{% block title %}Settings - Deep Research System{% endblock %}
+{% block title %}{{ _("Settings - Deep Research System") }}{% endblock %}
 
 {% block extra_head %}
 <meta name="csrf-token" content="{{ csrf_token() }}">
@@ -16,40 +16,40 @@
 <div class="ldr-page active" id="settings">
     <div class="ldr-settings-container">
         <div class="ldr-page-header">
-            <h1>Settings</h1>
+            <h1>{{ _("Settings") }}</h1>
             <p class="ldr-settings-description">
-                Configure your research environment by adjusting the settings below. All settings are automatically saved when you make changes.
+                {{ _("Configure your research environment by adjusting the settings below. All settings are automatically saved when you make changes.") }}
             </p>
             <p class="ldr-support-note">
-                <span class="ldr-support-label">Learn & Get Help:</span>
-                <a href="https://github.com/LearningCircuit/local-deep-research/wiki" target="_blank" title="Tips, guides, and tutorials">
+                <span class="ldr-support-label">{{ _("Learn & Get Help:") }}</span>
+                <a href="https://github.com/LearningCircuit/local-deep-research/wiki" target="_blank" title="{{ _("Tips, guides, and tutorials") }}">
                     <i aria-hidden="true" class="fas fa-book"></i> Wiki
                 </a>
                 ·
-                <a href="https://github.com/LearningCircuit/local-deep-research/tree/main/docs" target="_blank" title="Technical documentation">
+                <a href="https://github.com/LearningCircuit/local-deep-research/tree/main/docs" target="_blank" title="{{ _("Technical documentation") }}">
                     <i aria-hidden="true" class="fas fa-file-alt"></i> Docs
                 </a>
                 ·
-                <a href="https://github.com/LearningCircuit/local-deep-research/blob/main/docs/CONFIGURATION.md" target="_blank" title="Complete reference of all settings, defaults, and environment variables">
-                    <i aria-hidden="true" class="fas fa-cogs"></i> Config Reference
+                <a href="https://github.com/LearningCircuit/local-deep-research/blob/main/docs/CONFIGURATION.md" target="_blank" title="{{ _("Complete reference of all settings, defaults, and environment variables") }}">
+                    <i aria-hidden="true" class="fas fa-cogs"></i> {{ _("Config Reference") }}
                 </a>
                 ·
-                <a href="https://discord.gg/ttcqQeFcJ3" target="_blank" title="Get help from the community">
+                <a href="https://discord.gg/ttcqQeFcJ3" target="_blank" title="{{ _("Get help from the community") }}">
                     <i aria-hidden="true" class="fab fa-discord"></i> Discord
                 </a>
                 ·
-                <a href="https://www.reddit.com/r/LocalDeepResearch/" target="_blank" title="Discussions and showcases">
+                <a href="https://www.reddit.com/r/LocalDeepResearch/" target="_blank" title="{{ _("Discussions and showcases") }}">
                     <i aria-hidden="true" class="fab fa-reddit"></i> Reddit
                 </a>
                 ·
-                <a href="https://github.com/LearningCircuit/local-deep-research/issues" target="_blank" title="Report bugs or suggest ideas">
+                <a href="https://github.com/LearningCircuit/local-deep-research/issues" target="_blank" title="{{ _("Report bugs or suggest ideas") }}">
                     <i aria-hidden="true" class="fas fa-bug"></i> Feedback
                 </a>
             </p>
             <p class="ldr-community-note">
                 <i aria-hidden="true" class="fas fa-lightbulb"></i>
-                We're always looking for new ideas and recommendations! If you have suggestions for features, improvements, or if you encounter bugs or things that don't work optimally, please share them on
-                <a href="https://github.com/LearningCircuit/local-deep-research/issues" target="_blank">GitHub Issues</a>. Your feedback helps make Local Deep Research better for everyone.
+                {{ _("We're always looking for new ideas and recommendations! If you have suggestions for features, improvements, or if you encounter bugs or things that don't work optimally, please share them on") }}
+                <a href="https://github.com/LearningCircuit/local-deep-research/issues" target="_blank">{{ _("GitHub Issues") }}</a>. {{ _("Your feedback helps make Local Deep Research better for everyone.") }}
             </p>
         </div>
 
@@ -58,9 +58,9 @@
 
         {% if not has_encryption %}
             <div class="ldr-alert ldr-alert-warning">
-                <i aria-hidden="true" class="fas fa-exclamation-triangle"></i> <strong>Security Warning:</strong>
-                Database encryption is not available. Your API keys and data are stored unencrypted.
-                <br><small>Install SQLCipher for secure storage. See documentation for details.</small>
+                <i aria-hidden="true" class="fas fa-exclamation-triangle"></i> <strong>{{ _("Security Warning:") }}</strong>
+                {{ _("Database encryption is not available. Your API keys and data are stored unencrypted.") }}
+                <br><small>{{ _("Install SQLCipher for secure storage. See documentation for details.") }}</small>
             </div>
         {% endif %}
 
@@ -79,17 +79,16 @@
         <div class="ldr-card">
             <div class="ldr-card-content">
                 <div class="ldr-search-controls">
-                    <input type="text" id="settings-search" class="ldr-search-input" placeholder="Search settings by name, description or category...">
+                    <input type="text" id="settings-search" class="ldr-search-input" placeholder="{{ _("Search settings by name, description or category...") }}">
                 </div>
 
-                <div class="ldr-settings-tabs" role="tablist" tabindex="0" aria-label="Settings categories">
-                    <div class="ldr-settings-tab active" data-tab="all" role="tab" aria-selected="true">All Settings</div>
-                    <div class="ldr-settings-tab" data-tab="llm" role="tab" aria-selected="false">Language Models</div>
-                    <div class="ldr-settings-tab" data-tab="search" role="tab" aria-selected="false">Search Engines</div>
-                    <div class="ldr-settings-tab" data-tab="report" role="tab" aria-selected="false">Reports</div>
-                    <div class="ldr-settings-tab" data-tab="app" role="tab" aria-selected="false">Application</div>
-                    <div class="ldr-settings-tab" data-tab="notifications" role="tab" aria-selected="false">Notifications</div>
-                    <div class="ldr-settings-tab" data-tab="domains" role="tab" aria-selected="false">Domain Classification</div>
+                <div class="ldr-settings-tabs" role="tablist" tabindex="0" aria-label="{{ _("Settings categories") }}">
+                    <div class="ldr-settings-tab active" data-tab="all" role="tab" aria-selected="true">{{ _("All Settings") }}</div>
+                    <div class="ldr-settings-tab" data-tab="llm" role="tab" aria-selected="false">{{ _("Language Models") }}</div>
+                    <div class="ldr-settings-tab" data-tab="search" role="tab" aria-selected="false">{{ _("Search Engines") }}</div>
+                    <div class="ldr-settings-tab" data-tab="report" role="tab" aria-selected="false">{{ _("Reports") }}</div>
+                    <div class="ldr-settings-tab" data-tab="app" role="tab" aria-selected="false">{{ _("Application") }}</div>
+                    <div class="ldr-settings-tab" data-tab="notifications" role="tab" aria-selected="false">{{ _("Notifications") }}</div>
                 </div>
 
                 <form id="settings-form" class="ldr-settings-form" method="POST" action="{{ url_for('settings.save_settings') }}" novalidate>
@@ -98,19 +97,19 @@
                     <div id="settings-content">
                         <div class="ldr-loading-spinner ldr-centered" role="status">
                             <div class="ldr-spinner"></div>
-                            <p>Loading settings...</p>
+                            <p>{{ _("Loading settings...") }}</p>
                         </div>
                     </div>
 
                     <div class="ldr-toggle-raw-config" id="toggle-raw-config">
-                        <i aria-hidden="true" class="fas fa-code"></i> <span id="toggle-text">Show JSON Configuration</span>
+                        <i aria-hidden="true" class="fas fa-code"></i> <span id="toggle-text">{{ _("Show JSON Configuration") }}</span>
                     </div>
 
                     <div id="raw-config" class="ldr-raw-config-section" style="display: none;">
                         <div class="ldr-section-header">
-                            <h3>Advanced JSON Configuration</h3>
+                            <h3>{{ _("Advanced JSON Configuration") }}</h3>
                             <p class="ldr-section-description">
-                                Use this editor to directly modify configuration values. You can add new parameters not shown in the UI, and they will be preserved across saves. Changes here override the UI settings.
+                                {{ _("Use this editor to directly modify configuration values. You can add new parameters not shown in the UI, and they will be preserved across saves. Changes here override the UI settings.") }}
                             </p>
                         </div>
                         <div id="json-editor-container">
@@ -120,10 +119,10 @@
 
                     <div class="ldr-form-actions">
                         <button type="button" id="reset-to-defaults-button" class="btn btn-warning">
-                            <i aria-hidden="true" class="fas fa-sync-alt"></i> Reset to Defaults
+                            <i aria-hidden="true" class="fas fa-sync-alt"></i> {{ _("Reset to Defaults") }}
                         </button>
                         <button type="submit" class="btn btn-primary">
-                            <i aria-hidden="true" class="fas fa-save"></i> Save All Settings
+                            <i aria-hidden="true" class="fas fa-save"></i> {{ _("Save All Settings") }}
                         </button>
                     </div>
                 </form>

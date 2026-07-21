@@ -18,9 +18,9 @@
             <!-- Header with integrated search -->
             <div class="ldr-feed-header-section">
                 <div class="ldr-feed-header">
-                    <h1><i aria-hidden="true" class="bi bi-newspaper"></i> Research News Feed</h1>
+                    <h1><i aria-hidden="true" class="bi bi-newspaper"></i> {{ _("Research News Feed") }}</h1>
                     <div class="ldr-news-search-box">
-                        <input type="text" id="news-search" class="ldr-form-control" placeholder="Search news topics...">
+                        <input type="text" id="news-search" class="ldr-form-control" placeholder="{{ _("Search news topics...") }}">
                         <button id="search-btn" class="btn btn-primary">
                             <i aria-hidden="true" class="bi bi-search"></i>
                         </button>
@@ -49,8 +49,8 @@
                 <div class="ldr-filter-section">
                     <div class="ldr-subscriptions-horizontal">
                         <select id="subscription-filter" class="form-select">
-                            <option value="">All Topics</option>
-                            <option value="ai">AI & Technology</option>
+                            <option value="">{{ _("All Topics") }}</option>
+                            <option value="ai">{{ _("AI & Technology") }}</option>
                             <option value="science">Science</option>
                             <option value="business">Business</option>
                             <option value="health">Health</option>
@@ -60,12 +60,12 @@
 
                     <div class="ldr-time-filter-group">
                         <button class="ldr-filter-btn active" data-time="today">Today</button>
-                        <button class="ldr-filter-btn" data-time="week">This Week</button>
-                        <button class="ldr-filter-btn" data-time="month">This Month</button>
+                        <button class="ldr-filter-btn" data-time="week">{{ _("This Week") }}</button>
+                        <button class="ldr-filter-btn" data-time="month">{{ _("This Month") }}</button>
                     </div>
 
                     <div class="ldr-impact-filter-group">
-                        <label>Impact:</label>
+                        <label>{{ _("Impact:") }}</label>
                         <input type="range" class="ldr-impact-slider" min="0" max="10" value="0" id="impact-filter">
                         <span class="ldr-impact-value">0+</span>
                     </div>
@@ -92,26 +92,26 @@
 
         <!-- Right Sidebar - Recommendations -->
         <div class="ldr-recommendations">
-            <h3><i aria-hidden="true" class="bi bi-stars"></i> Recommended Topics</h3>
+            <h3><i aria-hidden="true" class="bi bi-stars"></i> {{ _("Recommended Topics") }}</h3>
             <div class="ldr-recommendation-list" id="recommendations-list">
                 <div class="ldr-recommendation-item">
                     <i aria-hidden="true" class="bi bi-lightning-charge"></i>
-                    <span>Quantum Computing Breakthroughs</span>
+                    <span>{{ _("Quantum Computing Breakthroughs") }}</span>
                     <button class="btn btn-sm btn-outline-primary">Follow</button>
                 </div>
                 <div class="ldr-recommendation-item">
                     <i aria-hidden="true" class="bi bi-cpu"></i>
-                    <span>AI Safety Research</span>
+                    <span>{{ _("AI Safety Research") }}</span>
                     <button class="btn btn-sm btn-outline-primary">Follow</button>
                 </div>
                 <div class="ldr-recommendation-item">
                     <i aria-hidden="true" class="bi bi-graph-up"></i>
-                    <span>Tech Market Analysis</span>
+                    <span>{{ _("Tech Market Analysis") }}</span>
                     <button class="btn btn-sm btn-outline-primary">Follow</button>
                 </div>
             </div>
 
-            <h3 class="mt-4"><i aria-hidden="true" class="bi bi-clock-history"></i> Recent Searches</h3>
+            <h3 class="mt-4"><i aria-hidden="true" class="bi bi-clock-history"></i> {{ _("Recent Searches") }}</h3>
             <div class="ldr-recent-searches" id="recent-searches">
                 <!-- Will be populated dynamically -->
             </div>
@@ -124,20 +124,20 @@
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title"><i aria-hidden="true" class="bi bi-bell"></i> Manage Subscriptions</h5>
+                <h5 class="modal-title"><i aria-hidden="true" class="bi bi-bell"></i> {{ _("Manage Subscriptions") }}</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
                 <div class="ldr-subscription-section">
-                    <h6>Your Subscriptions</h6>
+                    <h6>{{ _("Your Subscriptions") }}</h6>
                     <div id="current-subscriptions" class="ldr-subscriptions-list">
                         <!-- Will be populated dynamically -->
                     </div>
 
-                    <h6 class="mt-4">Add New Subscription</h6>
+                    <h6 class="mt-4">{{ _("Add New Subscription") }}</h6>
                     <form id="add-subscription-form">
                         <div class="input-group">
-                            <input type="text" class="ldr-form-control" placeholder="Enter topic or search query" id="new-subscription-input">
+                            <input type="text" class="ldr-form-control" placeholder="{{ _("Enter topic or search query") }}" id="new-subscription-input">
                             <button class="btn btn-primary" type="submit">
                                 <i aria-hidden="true" class="bi bi-plus"></i> Subscribe
                             </button>

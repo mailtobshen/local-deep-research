@@ -2,7 +2,7 @@
 
 {% set active_page = 'benchmark-results' %}
 
-{% block title %}Benchmark Results History - Deep Research System{% endblock %}
+{% block title %}{{ _("Benchmark Results History - Deep Research System") }}{% endblock %}
 
 {% block extra_head %}
 <meta name="csrf-token" content="{{ csrf_token() }}">
@@ -13,8 +13,8 @@
 {% block content %}
 <div class="ldr-page active" id="benchmark-results">
     <div class="ldr-page-header">
-        <h1>Benchmark Results History</h1>
-        <p class="ldr-page-subtitle">Compare accuracy across different models, search engines, and strategies</p>
+        <h1>{{ _("Benchmark Results History") }}</h1>
+        <p class="ldr-page-subtitle">{{ _("Compare accuracy across different models, search engines, and strategies") }}</p>
     </div>
 
     <div class="ldr-card ldr-benchmark-results-card">
@@ -22,38 +22,38 @@
             <!-- Filters -->
             <div class="ldr-filters">
                 <div class="ldr-filter-group">
-                    <label for="accuracy-filter">Accuracy Range</label>
+                    <label for="accuracy-filter">{{ _("Accuracy Range") }}</label>
                     <select id="accuracy-filter">
-                        <option value="">All</option>
-                        <option value="high">90%+ (High)</option>
-                        <option value="medium">70-90% (Medium)</option>
-                        <option value="low"><70% (Low)</option>
+                        <option value="">{{ _("All") }}</option>
+                        <option value="high">{{ _("90%+ (High)") }}</option>
+                        <option value="medium">{{ _("70-90% (Medium)") }}</option>
+                        <option value="low">{{ _("<70% (Low)") }}</option>
                     </select>
                 </div>
                 <div class="ldr-filter-group">
-                    <label for="model-filter">Model</label>
+                    <label for="model-filter">{{ _("Model") }}</label>
                     <select id="model-filter">
-                        <option value="">All Models</option>
+                        <option value="">{{ _("All Models") }}</option>
                     </select>
                 </div>
                 <div class="ldr-filter-group">
-                    <label for="strategy-filter">Strategy</label>
+                    <label for="strategy-filter">{{ _("Strategy") }}</label>
                     <select id="strategy-filter">
-                        <option value="">All Strategies</option>
+                        <option value="">{{ _("All Strategies") }}</option>
                     </select>
                 </div>
                 <div class="ldr-filter-group">
-                    <label for="status-filter">Status</label>
+                    <label for="status-filter">{{ _("Status") }}</label>
                     <select id="status-filter">
-                        <option value="">All Statuses</option>
-                        <option value="completed">Completed</option>
-                        <option value="in_progress">In Progress</option>
-                        <option value="failed">Failed</option>
-                        <option value="cancelled">Cancelled</option>
+                        <option value="">{{ _("All Statuses") }}</option>
+                        <option value="completed">{{ _("Completed") }}</option>
+                        <option value="in_progress">{{ _("In Progress") }}</option>
+                        <option value="failed">{{ _("Failed") }}</option>
+                        <option value="cancelled">{{ _("Cancelled") }}</option>
                     </select>
                 </div>
                 <div class="ldr-filter-group">
-                    <label for="date-filter">Date Range</label>
+                    <label for="date-filter">{{ _("Date Range") }}</label>
                     <input type="date" id="date-from">
                     <input type="date" id="date-to">
                 </div>
@@ -62,15 +62,15 @@
             <!-- Results List -->
             <div id="results-container">
                 <div class="ldr-loading">
-                    <i aria-hidden="true" class="fas fa-spinner fa-spin"></i> Loading benchmark results...
+                    <i aria-hidden="true" class="fas fa-spinner fa-spin"></i> {{ _("Loading benchmark results...") }}
                 </div>
             </div>
 
             <!-- Pagination -->
             <div class="ldr-pagination" id="pagination" style="display: none;">
-                <button id="prev-page">← Previous</button>
-                <span id="page-info">Page 1 of 1</span>
-                <button id="next-page">Next →</button>
+                <button id="prev-page">{{ _("← Previous") }}</button>
+                <span id="page-info">{{ _("Page 1 of 1") }}</span>
+                <button id="next-page">{{ _("Next →") }}</button>
             </div>
         </div>
     </div>
@@ -99,12 +99,12 @@ async function loadBenchmarkHistory() {
             displayResults();
         } else {
             document.getElementById('results-container').innerHTML =
-                '<div class="ldr-no-results">Error loading benchmark results</div>';
+                '<div class="ldr-no-results">' + i18n.t('Error loading benchmark results') + '</div>';
         }
     } catch (error) {
         console.error('Error loading benchmark history:', error);
         document.getElementById('results-container').innerHTML =
-            '<div class="ldr-no-results">Error loading benchmark results</div>';
+            '<div class="ldr-no-results">' + i18n.t('Error loading benchmark results') + '</div>';
     }
 }
 
@@ -183,7 +183,7 @@ function displayResults() {
     const container = document.getElementById('results-container');
 
     if (filteredRuns.length === 0) {
-        container.innerHTML = '<div class="ldr-no-results">No benchmark results found</div>';
+        container.innerHTML = '<div class="ldr-no-results">' + i18n.t('No benchmark results found') + '</div>';
         document.getElementById('pagination').style.display = 'none';
         return;
     }
@@ -229,89 +229,89 @@ function createRunCard(run) {
             <div class="ldr-run-summary">
                 <div class="ldr-summary-item">
                     <div class="ldr-summary-value ${statusClass} ldr-status-indicator">${escapeHtml(formattedStatus)}</div>
-                    <div class="ldr-summary-label">Status</div>
+                    <div class="ldr-summary-label">${i18n.t('Status')}</div>
                 </div>
                 <div class="ldr-summary-item">
                     <div class="ldr-summary-value">${run.completed_examples}/${run.total_examples}</div>
-                    <div class="ldr-summary-label">Progress (${progress}%)</div>
+                    <div class="ldr-summary-label">${i18n.t('Progress')}: ${progress}%</div>
                 </div>
                 <div class="ldr-summary-item">
                     <div class="ldr-summary-value ${status === 'completed' && accuracy > 0 ? accuracyClass + ' ldr-accuracy-indicator' : ''}">${status === 'completed' && accuracy > 0 ? accuracy.toFixed(1) + '%' : 'N/A'}</div>
-                    <div class="ldr-summary-label">Accuracy</div>
+                    <div class="ldr-summary-label">${i18n.t('Accuracy')}</div>
                 </div>
                 <div class="ldr-summary-item">
-                    <div class="ldr-summary-value">${escapeHtml(run.search_config?.model_name || 'Unknown')}</div>
-                    <div class="ldr-summary-label">Model</div>
+                    <div class="ldr-summary-value">${escapeHtml(run.search_config?.model_name || i18n.t('Unknown'))}</div>
+                    <div class="ldr-summary-label">${i18n.t('Model')}</div>
                 </div>
                 <div class="ldr-summary-item">
                     <div class="ldr-summary-value">${escapeHtml((run.search_config?.search_strategy || 'unknown').replace(/_/g, ' '))}</div>
-                    <div class="ldr-summary-label">Strategy</div>
+                    <div class="ldr-summary-label">${i18n.t('Strategy')}</div>
                 </div>
                 <div class="ldr-summary-item">
-                    <div class="ldr-summary-value">${escapeHtml(run.search_config?.search_tool || 'Unknown')}</div>
-                    <div class="ldr-summary-label">Search Engine</div>
+                    <div class="ldr-summary-value">${escapeHtml(run.search_config?.search_tool || i18n.t('Unknown'))}</div>
+                    <div class="ldr-summary-label">${i18n.t('Search Engine')}</div>
                 </div>
                 <div class="ldr-summary-item">
                     <div class="ldr-summary-value">${formatAvgSearchResults(run)}</div>
-                    <div class="ldr-summary-label">Avg Search Results</div>
+                    <div class="ldr-summary-label">${i18n.t('Avg Search Results')}</div>
                 </div>
                 <div class="ldr-summary-item">
                     <div class="ldr-summary-value">${formatAvgSearchRequests(run)}</div>
-                    <div class="ldr-summary-label">Avg Search Requests</div>
+                    <div class="ldr-summary-label">${i18n.t('Avg Search Requests')}</div>
                 </div>
                 <div class="ldr-summary-item">
                     <div class="ldr-summary-value">${formatAvgProcessingTime(run)}</div>
-                    <div class="ldr-summary-label">Avg Time/Question</div>
+                    <div class="ldr-summary-label">${i18n.t('Avg Time/Question')}</div>
                 </div>
                 <div class="ldr-summary-item">
                     <div style="display: flex; gap: 8px; flex-wrap: wrap; justify-content: center;">
                         ${status === 'completed' ?
-                            `<button class="btn ldr-btn-outline btn-sm ldr-download-btn" onclick="event.stopPropagation(); downloadBenchmarkYAML(${run.id}, false)" title="Summary only">
-                                <i aria-hidden="true" class="fas fa-download"></i> YAML
+                            `<button class="btn ldr-btn-outline btn-sm ldr-download-btn" onclick="event.stopPropagation(); downloadBenchmarkYAML(${run.id}, false)" title="${i18n.t('Summary only')}">
+                                <i aria-hidden="true" class="fas fa-download"></i> ${i18n.t('YAML')}
                             </button>
-                            <button class="btn ldr-btn-outline btn-sm ldr-download-btn" onclick="event.stopPropagation(); downloadBenchmarkYAML(${run.id}, true)" title="Summary + individual questions &amp; answers">
-                                <i aria-hidden="true" class="fas fa-download"></i> + Examples
+                            <button class="btn ldr-btn-outline btn-sm ldr-download-btn" onclick="event.stopPropagation(); downloadBenchmarkYAML(${run.id}, true)" title="${i18n.t('Summary + individual questions & answers')}">
+                                <i aria-hidden="true" class="fas fa-download"></i> ${i18n.t('+ Examples')}
                             </button>` : ''
                         }
                         ${status === 'in_progress' ?
                             `<button class="btn ldr-btn-outline btn-sm ldr-delete-btn" onclick="event.stopPropagation(); cancelAndDeleteBenchmarkRun(${run.id})">
-                                <i aria-hidden="true" class="fas fa-stop"></i> Cancel & Delete
+                                <i aria-hidden="true" class="fas fa-stop"></i> ${i18n.t('Cancel & Delete')}
                             </button>` :
                             `<button class="btn ldr-btn-outline btn-sm ldr-delete-btn" onclick="event.stopPropagation(); deleteBenchmarkRun(${run.id})">
-                                <i aria-hidden="true" class="fas fa-trash"></i> Delete
+                                <i aria-hidden="true" class="fas fa-trash"></i> ${i18n.t('Delete')}
                             </button>`
                         }
                     </div>
-                    <div class="ldr-summary-label">Actions</div>
+                    <div class="ldr-summary-label">${i18n.t('Actions')}</div>
                 </div>
             </div>
 
             <div class="ldr-expand-indicator">
-                <i aria-hidden="true" class="fas fa-chevron-down"></i> Click to view detailed results and examples
+                <i aria-hidden="true" class="fas fa-chevron-down"></i> ${i18n.t('Click to view detailed results and examples')}
             </div>
 
             <div class="ldr-results-section" id="results-${run.id}">
                 <div class="ldr-run-config">
                     <div class="ldr-config-item">
-                        <span class="ldr-config-label">Iterations:</span>
+                        <span class="ldr-config-label">${i18n.t('Iterations')}:</span>
                         <span class="ldr-config-value">${escapeHtml(run.search_config?.iterations || 'N/A')}</span>
                     </div>
                     <div class="ldr-config-item">
-                        <span class="ldr-config-label">Questions/Iteration:</span>
+                        <span class="ldr-config-label">${i18n.t('Questions/Iteration')}:</span>
                         <span class="ldr-config-value">${escapeHtml(run.search_config?.questions_per_iteration || 'N/A')}</span>
                     </div>
                     <div class="ldr-config-item">
-                        <span class="ldr-config-label">Temperature:</span>
+                        <span class="ldr-config-label">${i18n.t('Temperature')}:</span>
                         <span class="ldr-config-value">${escapeHtml(run.search_config?.temperature || 'N/A')}</span>
                     </div>
                     <div class="ldr-config-item">
-                        <span class="ldr-config-label">Provider:</span>
+                        <span class="ldr-config-label">${i18n.t('Provider')}:</span>
                         <span class="ldr-config-value">${escapeHtml(run.search_config?.provider || 'N/A')}</span>
                     </div>
                 </div>
 
                 <div id="examples-${run.id}">
-                    <div class="ldr-loading">Loading detailed results...</div>
+                    <div class="ldr-loading">{{ _("Loading detailed results...") }}</div>
                 </div>
             </div>
         </div>
@@ -333,7 +333,7 @@ async function toggleRunDetails(runId) {
 
     // Load examples if not already loaded
     const examplesContainer = document.getElementById(`examples-${runId}`);
-    if (examplesContainer.innerHTML.includes('Loading detailed results...')) {
+    if (examplesContainer.innerHTML.includes(i18n.t('Loading detailed results...'))) {
         await loadExamples(runId);
     }
 }
@@ -358,24 +358,24 @@ async function loadExamples(runId) {
             const statsHtml = `
                 <div class="ldr-search-stats-section">
                     <h4 class="ldr-section-title">
-                        <i aria-hidden="true" class="fas fa-search"></i> Search Results Statistics
+                        <i aria-hidden="true" class="fas fa-search"></i> ${i18n.t('Search Results Statistics')}
                     </h4>
                     <div class="ldr-search-stats-grid">
                         <div class="ldr-stat-item">
                             <div class="ldr-stat-value">${avgSearchResults}</div>
-                            <div class="ldr-stat-label">Avg Search Results</div>
+                            <div class="ldr-stat-label">${i18n.t('Avg Search Results')}</div>
                         </div>
                         <div class="ldr-stat-item">
                             <div class="ldr-stat-value">${minSearchResults}</div>
-                            <div class="ldr-stat-label">Min Results</div>
+                            <div class="ldr-stat-label">${i18n.t('Min Results')}</div>
                         </div>
                         <div class="ldr-stat-item">
                             <div class="ldr-stat-value">${maxSearchResults}</div>
-                            <div class="ldr-stat-label">Max Results</div>
+                            <div class="ldr-stat-label">${i18n.t('Max Results')}</div>
                         </div>
                         <div class="ldr-stat-item">
                             <div class="ldr-stat-value">${data.results.length}</div>
-                            <div class="ldr-stat-label">Total Queries</div>
+                            <div class="ldr-stat-label">${i18n.t('Total Queries')}</div>
                         </div>
                     </div>
                 </div>
@@ -389,18 +389,18 @@ async function loadExamples(runId) {
                 <div class="ldr-results-divider"></div>
                 <div class="ldr-examples-section">
                     <h4 class="ldr-section-title">
-                        <i aria-hidden="true" class="fas fa-list"></i> Individual Query Results (${data.results.length} shown)
+                        <i aria-hidden="true" class="fas fa-list"></i> ${i18n.t('Individual Query Results')} (${data.results.length} ${i18n.t('shown')})
                     </h4>
                     <div class="ldr-examples-grid">${examplesHtml}</div>
                 </div>
             `;
         } else {
-            examplesContainer.innerHTML = '<div class="ldr-no-results">No detailed results available</div>';
+            examplesContainer.innerHTML = '<div class="ldr-no-results">' + i18n.t('No detailed results available') + '</div>';
         }
     } catch (error) {
         console.error('Error loading examples:', error);
         document.getElementById(`examples-${runId}`).innerHTML =
-            '<div class="ldr-no-results">Error loading examples</div>';
+            '<div class="ldr-no-results">' + i18n.t('Error loading examples') + '</div>';
     }
 }
 
@@ -456,7 +456,7 @@ function formatAvgProcessingTime(run) {
 function createExampleCard(result) {
     const statusClass = result.is_correct ? 'ldr-correct' : 'ldr-incorrect';
     const statusIcon = result.is_correct ? '<i aria-hidden="true" class="fas fa-check-circle"></i>' : '<i aria-hidden="true" class="fas fa-times-circle"></i>';
-    const statusText = result.is_correct ? 'Correct' : 'Incorrect';
+    const statusText = result.is_correct ? i18n.t('Correct') : i18n.t('Incorrect');
 
     // Format processing time for individual result
     const processingTime = result.processing_time && result.processing_time > 0
@@ -477,22 +477,22 @@ function createExampleCard(result) {
                 </span>
                 <div class="ldr-example-metrics">
                     <span class="ldr-processing-time">⏱️ ${processingTime}</span>
-                    <span class="ldr-search-results-count">🔍 ${searchResultCount} results</span>
+                    <span class="ldr-search-results-count">🔍 ${searchResultCount} ${i18n.t('results')}</span>
                 </div>
             </div>
 
             <div class="ldr-example-question">
-                <strong>Question:</strong> ${escapeHtml(result.question)}
+                <strong>${i18n.t('Question')}:</strong> ${escapeHtml(result.question)}
             </div>
 
             <div class="ldr-example-answers">
                 <div class="ldr-answer-section ldr-model-answer-section">
-                    <div class="ldr-answer-label">Model Answer</div>
-                    <div class="ldr-answer-text">${escapeHtml(result.model_answer || 'No answer provided')}</div>
+                    <div class="ldr-answer-label">${i18n.t('Model Answer')}</div>
+                    <div class="ldr-answer-text">${escapeHtml(result.model_answer || i18n.t('No answer provided'))}</div>
                 </div>
                 <div class="ldr-answer-section ldr-correct-answer-section">
-                    <div class="ldr-answer-label">Expected Answer</div>
-                    <div class="ldr-answer-text">${escapeHtml(result.correct_answer || 'No expected answer')}</div>
+                    <div class="ldr-answer-label">${i18n.t('Expected Answer')}</div>
+                    <div class="ldr-answer-text">${escapeHtml(result.correct_answer || i18n.t('No expected answer'))}</div>
                 </div>
             </div>
         </div>
@@ -516,7 +516,7 @@ function setupPagination() {
 
     prevBtn.disabled = currentPage === 1;
     nextBtn.disabled = currentPage === totalPages;
-    pageInfo.textContent = `Page ${currentPage} of ${totalPages}`;
+    pageInfo.textContent = i18n.t('Page') + ' ' + currentPage + ' ' + i18n.t('of') + ' ' + totalPages;
 
     prevBtn.onclick = () => {
         if (currentPage > 1) {
@@ -534,7 +534,7 @@ function setupPagination() {
 }
 
 async function cancelAndDeleteBenchmarkRun(runId) {
-    if (!confirm('Are you sure you want to cancel and delete this running benchmark? This action cannot be undone.')) {
+    if (!confirm(i18n.t('Are you sure you want to cancel and delete this running benchmark? This action cannot be undone.'))) {
         return;
     }
 
@@ -554,7 +554,7 @@ async function cancelAndDeleteBenchmarkRun(runId) {
         const cancelData = await cancelResponse.json();
 
         if (cancelData.success) {
-            showAlert('Benchmark cancelled successfully. Deleting...', 'info');
+            showAlert(i18n.t('Benchmark cancelled successfully. Deleting...'), 'info');
 
             // Wait a moment for cancellation to process
             await new Promise(resolve => setTimeout(resolve, 1000));
@@ -562,11 +562,11 @@ async function cancelAndDeleteBenchmarkRun(runId) {
             // Then delete it
             await deleteBenchmarkRun(runId);
         } else {
-            showAlert('Error cancelling benchmark: ' + cancelData.error, 'error');
+            showAlert(i18n.t('Error cancelling benchmark: ') + cancelData.error, 'error');
         }
     } catch (error) {
         console.error('Error cancelling benchmark:', error);
-        showAlert('Error cancelling benchmark: ' + error.message, 'error');
+        showAlert(i18n.t('Error cancelling benchmark: ') + error.message, 'error');
     }
 }
 
@@ -585,7 +585,7 @@ async function downloadBenchmarkYAML(runId, includeExamples = false) {
         // Find the run in our local data
         const run = benchmarkRuns.find(r => r.id === runId);
         if (!run) {
-            showAlert('Benchmark run not found', 'error');
+            showAlert(i18n.t('Benchmark run not found'), 'error');
             return;
         }
 
@@ -593,7 +593,7 @@ async function downloadBenchmarkYAML(runId, includeExamples = false) {
         const date = new Date().toISOString().split('T')[0];
 
         // Get app version from meta tag
-        const appVersion = document.querySelector('meta[name="app-version"]')?.content || 'Could not fetch version';
+        const appVersion = document.querySelector('meta[name="app-version"]')?.content || i18n.t('Could not fetch version');
 
         // Extract model name and clean it for filename
         const modelName = run.search_config?.model_name || 'unknown-model';
@@ -681,7 +681,7 @@ date_tested: ${date}
                 }
             } catch (e) {
                 console.error('Error fetching examples for export:', e);
-                showAlert('Could not fetch individual examples, downloading without them.', 'warning');
+                showAlert(i18n.t('Could not fetch individual examples, downloading without them.'), 'warning');
             }
         }
 
@@ -697,10 +697,10 @@ date_tested: ${date}
         window.URL.revokeObjectURL(url);
         document.body.removeChild(a);
 
-        showAlert('Benchmark YAML downloaded successfully.', 'success');
+        showAlert(i18n.t('Benchmark YAML downloaded successfully.'), 'success');
     } catch (error) {
         console.error('Error downloading YAML:', error);
-        showAlert('Error downloading YAML: ' + error.message, 'error');
+        showAlert(i18n.t('Error downloading YAML: ') + error.message, 'error');
     }
 }
 
@@ -721,7 +721,7 @@ async function deleteBenchmarkRun(runId) {
 
         if (data.success) {
             // Show success message
-            showAlert('Benchmark run deleted successfully!', 'success');
+            showAlert(i18n.t('Benchmark run deleted successfully!'), 'success');
 
             // Remove the run from our local data
             benchmarkRuns = benchmarkRuns.filter(run => run.id !== runId);
@@ -729,11 +729,11 @@ async function deleteBenchmarkRun(runId) {
             // Reapply filters and redisplay
             applyFilters();
         } else {
-            showAlert('Error deleting benchmark run: ' + data.error, 'error');
+            showAlert(i18n.t('Error deleting benchmark run: ') + data.error, 'error');
         }
     } catch (error) {
         console.error('Error deleting benchmark run:', error);
-        showAlert('Error deleting benchmark run: ' + error.message, 'error');
+        showAlert(i18n.t('Error deleting benchmark run: ') + error.message, 'error');
     }
 }
 

@@ -5,23 +5,23 @@
             <div class="modal-header bg-danger text-white">
                 <h5 class="modal-title" id="deleteConfirmModalLabel">
                     <i aria-hidden="true" class="fas fa-exclamation-triangle me-2"></i>
-                    <span id="deleteModalTitle">Confirm Delete</span>
+                    <span id="deleteModalTitle">{{ _("Confirm Delete") }}</span>
                 </h5>
-                <button type="button" class="btn-close ldr-btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                <button type="button" class="btn-close ldr-btn-close-white" data-bs-dismiss="modal" aria-label="{{ _("Close") }}"></button>
             </div>
             <div class="modal-body">
-                <p id="deleteModalMessage" class="mb-3">Are you sure you want to delete this item?</p>
+                <p id="deleteModalMessage" class="mb-3">{{ _("Are you sure you want to delete this item?") }}</p>
 
                 <!-- Dynamic details section -->
                 <div id="deleteModalDetails" class="alert alert-warning" style="display: none;">
-                    <strong>This will delete:</strong>
+                    <strong>{{ _("This will delete:") }}</strong>
                     <ul id="deleteDetailsList" class="mb-0 mt-2"></ul>
                 </div>
 
                 <!-- Warning section for dangerous operations -->
                 <div id="deleteModalWarning" class="alert alert-danger" style="display: none;">
                     <i aria-hidden="true" class="fas fa-exclamation-circle me-2"></i>
-                    <span id="deleteWarningText">This action cannot be undone.</span>
+                    <span id="deleteWarningText">{{ _("This action cannot be undone.") }}</span>
                 </div>
             </div>
             <div class="modal-footer">

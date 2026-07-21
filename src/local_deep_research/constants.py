@@ -58,6 +58,7 @@ class ResearchStatus(StrEnum):
 
     # --- Terminal states ---
     COMPLETED = "completed"  # Finished successfully
+    PARTIAL_SUCCESS = "partial_success"  # Finished with errors during synthesis but useful findings were saved
     SUSPENDED = "suspended"  # User terminated the research
     FAILED = "failed"  # Unrecoverable error during execution
 

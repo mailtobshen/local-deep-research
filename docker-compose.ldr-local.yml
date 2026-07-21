@@ -1,0 +1,195 @@
+# =============================================================================
+# LDR 本地版 (复刻源码运行方式, 复用宿主 Ollama, 自带全新 SearXNG)
+# =============================================================================
+# 设计要点:
+#   - 只起 LDR + SearXNG 两个容器 (Ollama 复用 Windows 宿主上已有的)
+#   - 镜像:
+#       LDR    -> 本地构建的 ldr-local:i18n (含当前 i18n-zh-translation 分支改动)
+#       SearXNG-> 官方 searxng/searxng:latest (全新独立, 不碰已损坏的旧 searxng 容器)
+#   - Ollama -> Windows 宿主 host.docker.internal:11434 (复刻源码 .env 的 172.25.128.1:11434)
+#   - SearXNG -> 同网络容器名 searxng-ldr:8080 (容器内解析, 不依赖宿主端口)
+#   - 全新空数据 (不迁移源码版 ~/.local/share/local-deep-research 的旧库)
+#   - 端口 5000 不变
+#   - 容器名加 -ldr 后缀, 避免与已存在的 searxng 容器冲突
+#
+# 网络代理归口 (统一到 WebUI「设置-配置-网络代理 PROXY」):
+#   - 宿主 shell/.env 导出 LDR_APP_NETWORK_PROXY_URL (例: http://172.25.128.1:10888)
+#   - LDR 容器: 读 LDR_APP_NETWORK_PROXY_ENABLED/URL, 下载器与 wikipedia 库走此代理
+#   - SearXNG 容器: 同一 URL 注入其 settings.yml 的 outgoing.proxies (httpx 不读 env)
+#   - 该值须与 WebUI「设置-配置-网络代理 PROXY URL」一致, 实现单源归口管理
+#
+# 启动: LDR_APP_NETWORK_PROXY_URL=http://172.25.128.1:10888 docker compose -f docker-compose.ldr-local.yml up -d
+# 停止: docker compose -f docker-compose.ldr-local.yml down
+# 日志: docker compose -f docker-compose.ldr-local.yml logs -f ldr-local
+# =============================================================================
+
+services:
+  local-deep-research:
+    image: ldr-local:i18n
+    container_name: ldr-local
+    networks:
+      - ldr-network
+
+    # 注: 此环境的 host-gateway 解析到 docker0(172.17.0.1) 而非 Windows 宿主,
+    # 故不用 host.docker.internal, 直接用 WSL 网关 IP 172.25.128.1 (与源码 .env 一致)
+
+    ports:
+      - "5000:5000"
+
+    environment:
+      # --- Docker 运行必需 (与仓库默认一致) ---
+      - LDR_WEB_HOST=0.0.0.0
+      - LDR_WEB_PORT=5000
+      - LDR_DATA_DIR=/data
+
+      # --- 复用宿主已有 Ollama (复刻源码 .env) ---
+      # 源码 .env: LDR_LLM_OLLAMA_URL=http://172.25.128.1:11434
+      # 容器内同样用 172.25.128.1 (WSL 的 Windows 宿主网关, Ollama 监听于此)
+      - LDR_LLM_OLLAMA_URL=http://172.25.128.1:11434
+      # --- SearXNG: 同网络容器名 + 8080 (容器内解析) ---
+      - LDR_SEARCH_ENGINE_WEB_SEARXNG_DEFAULT_PARAMS_INSTANCE_URL=http://searxng-ldr:8080
+
+      # --- 网络代理归口 (与 WebUI「设置-配置-网络代理 PROXY」同源) ---
+      # LDR 自身下载器 (HTML/PDF) 与 wikipedia 库经此代理出网。
+      # 本地服务 (Ollama/SearXNG on 私有网段) 自动豁免, 不走代理。
+      - LDR_APP_NETWORK_PROXY_ENABLED=${LDR_APP_NETWORK_PROXY_ENABLED:-true}
+      - LDR_APP_NETWORK_PROXY_URL=${LDR_APP_NETWORK_PROXY_URL:-http://172.25.128.1:10888}
+
+    volumes:
+      - ldr_local_data:/data
+
+    # SQLCipher mlock 免告警
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+
+    # 最小权限 (与仓库默认一致; entrypoint root 阶段需要这些 cap, 之后降权到 ldruser)
+    security_opt:
+      - "no-new-privileges:true"
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - FOWNER
+      - DAC_OVERRIDE
+      - SETUID
+      - SETGID
+
+    depends_on:
+      searxng-ldr:
+        condition: service_healthy
+
+    restart: unless-stopped
+
+  # -----------------------------------------------------------------------
+  # 独立 SearXNG (全新, 不影响已损坏的旧 searxng 容器)
+  # -----------------------------------------------------------------------
+  # 新版 searxng 镜像: 不挂 /etc/searxng volume (挂载会导致权限问题使 settings.yml
+  # 无法生成)。改用 named volume 存放生成的 settings.yml, 容器内 searxng 用户可写。
+  # 通过 entrypoint 注入 JSON format 配置 (LDR 需要)。
+  searxng-ldr:
+    image: searxng/searxng:latest
+    container_name: searxng-ldr
+    networks:
+      - ldr-network
+    environment:
+      - SEARXNG_LIMITER=false
+      - SEARXNG_PUBLIC_INSTANCE=false
+      # 新版 searxng 用环境变量配置 search formats (替代旧版 settings.yml sed)
+      - SEARXNG_SETTINGS_PATH=/etc/searxng/settings.yml
+      # ---------------------------------------------------------------------
+      # 出网代理: WSL2 宿主无 Google/DDG/Brave/Wikipedia 直连 (IPv6 不可达,
+      # IPv4 超时), 必须经宿主代理 172.25.128.1:10888 出网。
+      # SearXNG 的 httpx 不读 HTTPS_PROXY 环境变量, 必须写入 settings.yml 的
+      # outgoing.proxies (见下方 entrypoint 注入)。否则所有后端引擎超时 -> 0 结果。
+      # 代理 URL 统一引用 LDR_APP_NETWORK_PROXY_URL, 与 WebUI「设置-网络代理」归口。
+      # ---------------------------------------------------------------------
+      - SEARXNG_OUTGOING_PROXY=${LDR_APP_NETWORK_PROXY_URL:-http://172.25.128.1:10888}
+    # entrypoint 先确保 settings.yml 存在 (首次从模板生成), 再追加 json format 与代理
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        set -e
+        if [ ! -f /etc/searxng/settings.yml ]; then
+          cp /usr/local/searxng/settings.template.yml /etc/searxng/settings.yml
+          SECRET=$(head -c 24 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9')
+          sed -i "s/ultrasecretkey/$${SECRET}/g" /etc/searxng/settings.yml
+        fi
+        grep -q 'json' /etc/searxng/settings.yml || printf '\nsearch:\n  formats:\n    - html\n    - json\n' >> /etc/searxng/settings.yml
+        # 启用 /healthz 端点供 healthcheck 探测 (默认未开启, 否则 wget exit 4 -> unhealthy)
+        grep -q 'healthz_enabled' /etc/searxng/settings.yml || sed -i '/^server:/a\  healthz_enabled: true' /etc/searxng/settings.yml
+        # 注入出网代理 (SearXNG httpx 不读环境变量, 必须写 outgoing.proxies)
+        # .onion 引擎 (ahmia/torch) 走 Tor sidecar (容器名 tor, SOCKS5 9050);
+        # ahmia/torch 需 using_tor_proxy: true 才会被判为 active, 且引擎级 proxies 只走 tor
+        # (否则会继承全局 Privoxy, 触发 check_tor_proxy 失败导致 worker 崩溃)
+        if [ -n "$${SEARXNG_OUTGOING_PROXY}" ] && ! grep -q 'outgoing:' /etc/searxng/settings.yml; then
+          printf '\noutgoing:\n  request_timeout: 15.0\n  max_request_timeout: 60.0\n  proxies:\n    all://: %s\n' "$${SEARXNG_OUTGOING_PROXY}" >> /etc/searxng/settings.yml
+        fi
+        if ! grep -q 'name: ahmia' /etc/searxng/settings.yml; then
+          printf '\nengines:\n  - name: brave\n    engine: brave\n    disabled: true\n  - name: duckduckgo\n    engine: duckduckgo\n    disabled: true\n  - name: ahmia\n    engine: ahmia\n    using_tor_proxy: true\n    timeout: 40.0\n    proxies:\n      all://: socks5h://tor:9050\n  - name: torch\n    engine: xpath\n    using_tor_proxy: true\n    timeout: 40.0\n    proxies:\n      all://: socks5h://tor:9050\n    paging: true\n    search_url: http://xmh57jrknzkhv6y3ls3ubitzfqnkrwxhopf5aygthi7d6rplyvk3noyd.onion/cgi-bin/omega/omega?P={query}&DEFAULTOP=and\n    results_xpath: //table//tr\n    url_xpath: ./td[2]/a\n    title_xpath: ./td[2]/b\n    content_xpath: ./td[2]/small\n' >> /etc/searxng/settings.yml
+        fi
+        exec /usr/local/searxng/entrypoint.sh
+    security_opt:
+      - "no-new-privileges:true"
+    cap_drop:
+      - ALL
+    # 首次启动需在 searxng(977) 拥有的 /etc/searxng 目录里创建 settings.yml
+    # cap_drop:ALL 后 root 无 DAC_OVERRIDE 无法写他人目录, 故补回:
+    cap_add:
+      - DAC_OVERRIDE
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/healthz"]
+      interval: 15s
+      timeout: 10s
+      start_period: 120s
+      retries: 8
+    volumes:
+      - searxng_ldr_data:/etc/searxng
+    restart: unless-stopped
+    depends_on:
+      - tor
+
+  # -----------------------------------------------------------------------
+  # Tor sidecar: 为 SearXNG 的 .onion 引擎 (ahmia/torch) 提供 SOCKS5 出口
+  # Tor 自身经宿主 Privoxy (172.25.128.1:10888) 出网 (WSL2 无法直连 relay)
+  # bootstrap 约 3 分钟, 期间 .onion 搜索会优雅超时, 不影响 general 搜索
+  # -----------------------------------------------------------------------
+  tor:
+    image: alpine:latest
+    container_name: ldr-tor
+    networks:
+      - ldr-network
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        set -e
+        apk add --no-cache tor
+        mkdir -p /tmp/tordata
+        cat > /tmp/torrc <<'EOF'
+        SocksPort 0.0.0.0:9050
+        DataDirectory /tmp/tordata
+        Log notice stdout
+        HTTPSProxy 172.25.128.1:10888
+        EOF
+        exec tor -f /tmp/torrc
+    security_opt:
+      - "no-new-privileges:true"
+    cap_drop:
+      - ALL
+    # apk 装 tor 时 pre-install 脚本需 adduser/addgroup (需 CHOWN/SETUID/SETGID)
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
+    restart: unless-stopped
+
+volumes:
+  ldr_local_data:
+  searxng_ldr_data:
+
+networks:
+  ldr-network:
+    external: true

@@ -189,7 +189,7 @@ class TestRun:
                 return_value=True,
             ):
                 with patch(
-                    "local_deep_research.web_search_engines.engines.full_search.batch_fetch_and_extract",
+                    "local_deep_research.web_search_engines.engines.full_search.fetch_content",
                     return_value={"https://example.com/1": "Fetched content"},
                 ):
                     engine = FullSearchResults(
@@ -223,7 +223,7 @@ class TestRun:
                 return_value=True,
             ):
                 with patch(
-                    "local_deep_research.web_search_engines.engines.full_search.batch_fetch_and_extract",
+                    "local_deep_research.web_search_engines.engines.full_search.fetch_content",
                     return_value={"https://example.com/1": "Content"},
                 ):
                     engine = FullSearchResults(
@@ -360,7 +360,7 @@ class TestJSRenderingForwardingFromSettingsSnapshot:
                 return_value=True,
             ),
             patch(
-                "local_deep_research.web_search_engines.engines.full_search.batch_fetch_and_extract",
+                "local_deep_research.web_search_engines.engines.full_search.fetch_content",
                 return_value={"https://example.com/1": "content"},
             ) as mock_batch,
         ):
@@ -417,7 +417,7 @@ class TestJSRenderingForwardingFromSettingsSnapshot:
                 return_value=True,
             ),
             patch(
-                "local_deep_research.web_search_engines.engines.full_search.batch_fetch_and_extract",
+                "local_deep_research.web_search_engines.engines.full_search.fetch_content",
                 return_value={"https://example.com/1": "content"},
             ) as mock_batch,
         ):
@@ -442,7 +442,7 @@ class TestJSRenderingForwardingFromSettingsSnapshot:
                 return_value=True,
             ),
             patch(
-                "local_deep_research.web_search_engines.engines.full_search.batch_fetch_and_extract",
+                "local_deep_research.web_search_engines.engines.full_search.fetch_content",
                 return_value={"https://example.com/1": "content"},
             ) as mock_batch,
         ):

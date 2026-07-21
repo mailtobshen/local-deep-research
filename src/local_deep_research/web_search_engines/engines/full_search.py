@@ -5,8 +5,11 @@ from typing import Any, Dict, List, Optional, Protocol, runtime_checkable
 from langchain_core.language_models import BaseLLM
 
 from ...config.search_config import QUALITY_CHECK_DDG_URLS
-from ...research_library.downloaders.extraction import (
-    batch_fetch_and_extract,
+from ...config.thread_settings import get_bool_setting_from_snapshot
+from ...images.serialize import dumps_images
+from ...research_library.downloaders.extraction.pipeline import (
+    fetch_content,
+    fetch_content_with_images,
 )
 from ...security.ssrf_validator import validate_url
 from ...utilities.js_rendering import (
@@ -127,10 +130,11 @@ class FullSearchResults:
                 result["full_content"] = None
             return filtered_results
 
-        # Fetch and extract all pages — specialized downloaders (arXiv,
-        # PubMed, etc.) are tried first, with HTML crawling as fallback.
-        url_to_content = batch_fetch_and_extract(
+        # Fetch and extract all pages — Firecrawl-first when enabled,
+        # transparently falling back to specialized/HTML downloaders.
+        url_to_content = fetch_content(
             safe_urls,
+            settings_snapshot=self.settings_snapshot,
             language=self.language,
             enable_js_rendering=_read_js_rendering_setting(
                 self.settings_snapshot
@@ -164,9 +168,44 @@ class FullSearchResults:
                 item["full_content"] = None
             return relevant_items
 
+        enable_images = get_bool_setting_from_snapshot(
+            "report.enable_images",
+            default=False,
+            settings_snapshot=self.settings_snapshot,
+        )
+
+        if enable_images:
+            titles = {
+                item["link"]: item.get("title", "")
+                for item in relevant_items
+                if item.get("link")
+            }
+            try:
+                url_to_data = fetch_content_with_images(
+                    urls,
+                    titles=titles,
+                    settings_snapshot=self.settings_snapshot,
+                    language=self.language,
+                    enable_js_rendering=_read_js_rendering_setting(
+                        self.settings_snapshot
+                    ),
+                )
+            except Exception:
+                logger.exception("Error fetching full content with images")
+                url_to_data = {}
+            for item in relevant_items:
+                link = item.get("link")
+                data = url_to_data.get(link) if link else None
+                item["full_content"] = data.get("text") if data else None
+                item["html_content"] = (
+                    dumps_images(data["images"]) if data else dumps_images([])
+                )
+            return relevant_items
+
         try:
-            url_to_content = batch_fetch_and_extract(
+            url_to_content = fetch_content(
                 urls,
+                settings_snapshot=self.settings_snapshot,
                 language=self.language,
                 enable_js_rendering=_read_js_rendering_setting(
                     self.settings_snapshot

@@ -9,7 +9,7 @@
     const shortcuts = {
         'newSearch': {
             keys: ['escape'],
-            description: 'Return to main search',
+            description: i18n.t('Return to main search'),
             handler: () => {
                 // Always navigate to main research page
                 window.location.href = URLS.PAGES.HOME;
@@ -17,28 +17,28 @@
         },
         'navNewResearch': {
             keys: ['ctrl+shift+1'],
-            description: 'Go to New Research',
+            description: i18n.t('Go to New Research'),
             handler: () => {
                 window.location.href = URLS.PAGES.HOME;
             }
         },
         'navHistory': {
             keys: ['ctrl+shift+2'],
-            description: 'Go to History',
+            description: i18n.t('Go to History'),
             handler: () => {
                 window.location.href = URLS.PAGES.HISTORY;
             }
         },
         'navMetrics': {
             keys: ['ctrl+shift+3'],
-            description: 'Go to Metrics',
+            description: i18n.t('Go to Metrics'),
             handler: () => {
                 window.location.href = URLS.PAGES.METRICS;
             }
         },
         'navSettings': {
             keys: ['ctrl+shift+4'],
-            description: 'Go to Settings',
+            description: i18n.t('Go to Settings'),
             handler: () => {
                 window.location.href = URLS.PAGES.SETTINGS;
             }

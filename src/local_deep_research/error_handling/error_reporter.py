@@ -8,6 +8,8 @@ from typing import Any, Dict, Optional
 
 from loguru import logger
 
+from ..web.translations import _
+
 
 class ErrorCategory(Enum):
     """Categories of errors that can occur during research"""
@@ -141,15 +143,15 @@ class ErrorReporter:
             str: User-friendly title
         """
         titles = {
-            ErrorCategory.CONNECTION_ERROR: "Connection Issue",
-            ErrorCategory.MODEL_ERROR: "LLM Service Error",
-            ErrorCategory.SEARCH_ERROR: "Search Service Error",
-            ErrorCategory.SYNTHESIS_ERROR: "Report Generation Error",
-            ErrorCategory.FILE_ERROR: "File System Error",
-            ErrorCategory.RATE_LIMIT_ERROR: "API Rate Limit Exceeded",
-            ErrorCategory.UNKNOWN_ERROR: "Unexpected Error",
+            ErrorCategory.CONNECTION_ERROR: _("Connection Issue"),
+            ErrorCategory.MODEL_ERROR: _("LLM Service Error"),
+            ErrorCategory.SEARCH_ERROR: _("Search Service Error"),
+            ErrorCategory.SYNTHESIS_ERROR: _("Report Generation Error"),
+            ErrorCategory.FILE_ERROR: _("File System Error"),
+            ErrorCategory.RATE_LIMIT_ERROR: _("API Rate Limit Exceeded"),
+            ErrorCategory.UNKNOWN_ERROR: _("Unexpected Error"),
         }
-        return titles.get(category, "Error")
+        return titles.get(category, _("Error"))
 
     def get_suggested_actions(self, category: ErrorCategory) -> list:
         """

@@ -160,7 +160,7 @@
             SafeLogger.error('Console log container not found, logs will not be displayed');
         } else {
             // Add placeholder message
-            consoleLogContainer.innerHTML = '<div class="ldr-empty-log-message">No logs available. Expand panel to load logs.</div>';
+            consoleLogContainer.innerHTML = '<div class="ldr-empty-log-message">' + i18n.t('No logs available. Expand panel to load logs.') + '</div>';
         }
 
         // Abort previous event handlers to prevent stacking on re-init
@@ -432,7 +432,7 @@
             // arrived before this fetch completes.
             const logContent = document.getElementById('console-log-container');
             if (logContent && !logContent.querySelector('.ldr-console-log-entry')) {
-                logContent.innerHTML = '<div class="ldr-loading-spinner ldr-centered"><div class="ldr-spinner"></div><div style="margin-left: 10px;">Loading logs...</div></div>';
+                logContent.innerHTML = '<div class="ldr-loading-spinner ldr-centered"><div class="ldr-spinner"></div><div style="margin-left: 10px;">' + i18n.t('Loading logs...') + '</div></div>';
             }
 
             SafeLogger.log('Loading logs for research ID:', researchId);
@@ -559,7 +559,7 @@
                     const logEntry = {
                         id: `${log.timestamp || log.time}-${hashString(log.message || log.content || '')}`,
                         time: log.timestamp || log.time,
-                        message: log.message || log.content || 'No message',
+                        message: log.message || log.content || i18n.t('No message'),
                         type: log.log_type || log.type || log.level || 'info',
                         metadata: log.metadata || {},
                         source: 'standard_logs'
@@ -582,7 +582,7 @@
                     // in flight, don't clobber them with the empty placeholder.
                     const hasLiveEntries = logContent.querySelector('.ldr-console-log-entry');
                     if (!hasLiveEntries) {
-                        logContent.innerHTML = '<div class="ldr-empty-log-message">No logs available for this research.</div>';
+                        logContent.innerHTML = '<div class="ldr-empty-log-message">' + i18n.t('No logs available for this research.') + '</div>';
                     }
                     // Leave dataset.loaded unset so a future toggle re-fetches
                     // once the backend has flushed log rows.
@@ -641,7 +641,7 @@
                 const logIndicators = document.querySelectorAll('.ldr-log-indicator');
                 if (logIndicators.length > 0) {
                     logIndicators.forEach(indicator => {
-                        indicator.textContent = logContent.children.length;
+                        indicator.textContent = String(logContent.children.length);
                     });
                 }
 
@@ -660,7 +660,7 @@
             const logContent = document.getElementById('console-log-container');
             if (logContent) {
                 // bearer:disable javascript_lang_dangerous_insert_html
-                logContent.innerHTML = `<div class="ldr-error-message">Error loading logs: ${escapeHtml(error.message)}</div>`;
+                logContent.innerHTML = '<div class="ldr-error-message">' + i18n.t('Error loading logs:') + ' ' + escapeHtml(error.message) + '</div>';
             }
         } finally {
             if (panelEl) {
@@ -1017,7 +1017,7 @@
                 SafeLogger.log(`Adding 'no logs' message for filter: ${filterType}`);
                 const newEmptyMessage = document.createElement('div');
                 newEmptyMessage.className = 'ldr-empty-log-message';
-                newEmptyMessage.textContent = `No ${filterType} logs to display.`;
+                newEmptyMessage.textContent = i18n.t('No') + ' ' + filterType + ' ' + i18n.t('logs to display.');
                 consoleContainer.appendChild(newEmptyMessage);
             }
         }

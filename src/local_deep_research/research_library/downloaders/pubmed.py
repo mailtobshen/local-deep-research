@@ -112,16 +112,34 @@ class PubMedDownloader(BaseDownloader):
             pmc_id = pmc_match.group(1)
             logger.info(f"Downloading PMC article: {pmc_id}")
 
-            # Try Europe PMC first
-            pdf_content = self._download_via_europe_pmc(pmc_id)
-            if pdf_content:
-                return DownloadResult(content=pdf_content, is_success=True)
+            # Quick index precheck: EuropePMC only hosts full text for articles
+            # it indexes. For PMC ids that exist only in NCBI (common for very
+            # recent articles), the fullTextXML call below 404s after ~3s, then
+            # NCBI PDF endpoints each retry for ~13s. Checking the index first
+            # (0.5s) lets us skip straight to NCBI for those ids.
+            in_europe_pmc = self._is_in_europe_pmc(pmc_id)
 
-            # Try NCBI PMC
+            if in_europe_pmc is not False:
+                # Try Europe PMC fullTextXML (replaces the dead ptpmcrender.fcgi
+                # PDF endpoint, which now returns an empty reply for every id).
+                text_content = self._fetch_fulltext_xml_from_europe_pmc(pmc_id)
+                if text_content:
+                    return DownloadResult(
+                        content=text_content.encode("utf-8", errors="ignore"),
+                        is_success=True,
+                    )
+
+            # Fall back to NCBI PMC (legacy PDF endpoints; often 403/PoW-protected now)
             pdf_content = self._download_via_ncbi_pmc(pmc_id)
             if pdf_content:
                 return DownloadResult(content=pdf_content, is_success=True)
 
+            # Distinguish "not in Europe PMC index" from "paywalled" so the
+            # caller can classify the failure correctly.
+            if in_europe_pmc is False:
+                return DownloadResult(
+                    skip_reason=f"PMC article {pmc_id} not in Europe PMC - not accessible via open access"
+                )
             return DownloadResult(
                 skip_reason=f"PMC article {pmc_id} not accessible - may be retracted or embargoed"
             )
@@ -169,10 +187,15 @@ class PubMedDownloader(BaseDownloader):
                         # Try to download
                         pmcid = article.get("pmcid")
                         if pmcid:
-                            pdf_content = self._download_via_europe_pmc(pmcid)
-                            if pdf_content:
+                            text_content = (
+                                self._fetch_fulltext_xml_from_europe_pmc(pmcid)
+                            )
+                            if text_content:
                                 return DownloadResult(
-                                    content=pdf_content, is_success=True
+                                    content=text_content.encode(
+                                        "utf-8", errors="ignore"
+                                    ),
+                                    is_success=True,
                                 )
                     else:
                         return DownloadResult(
@@ -186,11 +209,15 @@ class PubMedDownloader(BaseDownloader):
             if pmc_id:
                 logger.info(f"Found PMC ID: {pmc_id} for PMID: {pmid}")
 
-                # Try downloading via PMC
-                pdf_content = self._download_via_europe_pmc(pmc_id)
-                if pdf_content:
-                    return DownloadResult(content=pdf_content, is_success=True)
+                # Try downloading via Europe PMC fullTextXML
+                text_content = self._fetch_fulltext_xml_from_europe_pmc(pmc_id)
+                if text_content:
+                    return DownloadResult(
+                        content=text_content.encode("utf-8", errors="ignore"),
+                        is_success=True,
+                    )
 
+                # Fall back to NCBI PMC PDF endpoints
                 pdf_content = self._download_via_ncbi_pmc(pmc_id)
                 if pdf_content:
                     return DownloadResult(content=pdf_content, is_success=True)
@@ -209,9 +236,12 @@ class PubMedDownloader(BaseDownloader):
             pmc_match = re.search(r"(PMC\d+)", url)
             if pmc_match:
                 pmc_id = pmc_match.group(1)
-                pdf_content = self._download_via_europe_pmc(pmc_id)
-                if pdf_content:
-                    return DownloadResult(content=pdf_content, is_success=True)
+                text_content = self._fetch_fulltext_xml_from_europe_pmc(pmc_id)
+                if text_content:
+                    return DownloadResult(
+                        content=text_content.encode("utf-8", errors="ignore"),
+                        is_success=True,
+                    )
                 return DownloadResult(
                     skip_reason=f"Europe PMC article {pmc_id} not accessible"
                 )
@@ -326,10 +356,10 @@ class PubMedDownloader(BaseDownloader):
         pmc_id = pmc_match.group(1)
         logger.info(f"Downloading PMC article: {pmc_id}")
 
-        # Try Europe PMC first (more reliable)
-        pdf_content = self._download_via_europe_pmc(pmc_id)
-        if pdf_content:
-            return pdf_content
+        # Try Europe PMC fullTextXML first (more reliable)
+        text = self._fetch_fulltext_xml_from_europe_pmc(pmc_id)
+        if text:
+            return text.encode("utf-8", errors="ignore")
 
         # Fallback to NCBI PMC
         return self._download_via_ncbi_pmc(pmc_id)
@@ -345,19 +375,19 @@ class PubMedDownloader(BaseDownloader):
         logger.info(f"Processing PubMed article: {pmid}")
 
         # Try Europe PMC API first
-        pdf_content = self._try_europe_pmc_api(pmid)
-        if pdf_content:
-            return pdf_content
+        text = self._try_europe_pmc_api(pmid)
+        if text:
+            return text
 
         # Try to find PMC ID via NCBI API
         pmc_id = self._get_pmc_id_from_pmid(pmid)
         if pmc_id:
             logger.info(f"Found PMC ID: {pmc_id} for PMID: {pmid}")
 
-            # Try Europe PMC with PMC ID
-            pdf_content = self._download_via_europe_pmc(pmc_id)
-            if pdf_content:
-                return pdf_content
+            # Try Europe PMC fullTextXML with PMC ID
+            text = self._fetch_fulltext_xml_from_europe_pmc(pmc_id)
+            if text:
+                return text.encode("utf-8", errors="ignore")
 
             # Try NCBI PMC
             pdf_content = self._download_via_ncbi_pmc(pmc_id)
@@ -377,7 +407,11 @@ class PubMedDownloader(BaseDownloader):
         return None
 
     def _try_europe_pmc_api(self, pmid: str) -> Optional[bytes]:
-        """Try downloading via Europe PMC API using PMID."""
+        """Try downloading via Europe PMC API using PMID.
+
+        Returns UTF-8 encoded full-text bytes when an open-access article with
+        a PMCID is found, otherwise ``None``.
+        """
         try:
             # Query Europe PMC API
             api_url = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
@@ -391,17 +425,18 @@ class PubMedDownloader(BaseDownloader):
 
                 if results:
                     article = results[0]
-                    # Check if article has open access PDF
-                    if (
-                        article.get("isOpenAccess") == "Y"
-                        and article.get("hasPDF") == "Y"
-                    ):
+                    # Check if article is open access with full text
+                    if article.get("isOpenAccess") == "Y":
                         pmcid = article.get("pmcid")
                         if pmcid:
                             logger.info(
-                                f"Found open access PDF via Europe PMC API: {pmcid}"
+                                f"Found open access article via Europe PMC API: {pmcid}"
                             )
-                            return self._download_via_europe_pmc(pmcid)
+                            text = self._fetch_fulltext_xml_from_europe_pmc(
+                                pmcid
+                            )
+                            if text:
+                                return text.encode("utf-8", errors="ignore")
 
         except Exception as e:
             logger.debug(f"Europe PMC API query failed: {e}")
@@ -455,24 +490,120 @@ class PubMedDownloader(BaseDownloader):
 
         return None
 
+    def _fetch_fulltext_xml_from_europe_pmc(
+        self, pmc_id: str
+    ) -> Optional[str]:
+        """Fetch full-text XML from Europe PMC and return it as plain text.
+
+        The former ``ptpmcrender.fcgi`` PDF endpoint is dead (returns an empty
+        reply for every id), but the REST API ``fullTextXML`` endpoint works for
+        open-access articles indexed in Europe PMC. We fetch the XML and strip
+        tags to plain text — callers treat the UTF-8 bytes as document content.
+        Returns ``None`` when the article is not in Europe PMC or has no
+        full-text XML (e.g. paywalled / not OA).
+        """
+        # pmc_id may be "PMC12345" or "12345"; normalize to the bare number for
+        # the REST path, which expects the PMC id without the "PMC" prefix.
+        pmc_num = pmc_id.replace("PMC", "")
+        xml_url = (
+            f"https://www.ebi.ac.uk/europepmc/webservices/rest/PMC{pmc_num}"
+            f"/fullTextXML"
+        )
+        logger.debug(f"Trying Europe PMC fullTextXML: {xml_url}")
+        try:
+            response = self.session.get(xml_url, timeout=30)
+        except Exception as e:
+            logger.debug(f"Europe PMC fullTextXML request failed: {e}")
+            return None
+
+        if response.status_code != 200:
+            # 404 = article not in Europe PMC or no full text available.
+            logger.debug(
+                f"Europe PMC fullTextXML for {pmc_id} returned {response.status_code}"
+            )
+            return None
+
+        xml_content = response.text
+        if not xml_content or "<" not in xml_content:
+            return None
+
+        # Strip XML tags to get plain text (same approach as the existing
+        # _fetch_text_from_europe_pmc helper).
+        text = re.sub(r"<[^>]+>", " ", xml_content)
+        text = " ".join(text.split())
+        if not text:
+            return None
+
+        # Europe PMC returns a 200 with an ``article-type="advert"`` stub whose
+        # entire body is a sentence like "The content is available as a PDF
+        # (937.3 KB)." for articles it indexes but has no extractable full text
+        # for (e.g. scanned historical issues). That is not usable document
+        # text, so treat it as a miss and fall through to NCBI.
+        lowered = text.lower()
+        if (
+            "<advert" in xml_content.lower()
+            or 'article-type="advert"' in xml_content.lower()
+        ) and "available as a pdf" in lowered:
+            logger.debug(
+                f"Europe PMC fullTextXML for {pmc_id} is a PDF-only stub, skipping"
+            )
+            return None
+
+        logger.info(
+            f"Retrieved full text from Europe PMC fullTextXML: {pmc_id}"
+        )
+        return text
+
+    def _is_in_europe_pmc(self, pmc_id: str) -> Optional[bool]:
+        """Whether ``pmc_id`` is indexed in Europe PMC.
+
+        Returns ``True``/``False`` from the search API, or ``None`` if the
+        lookup itself failed (so callers can't draw a conclusion either way).
+        """
+        try:
+            response = self.session.get(
+                "https://www.ebi.ac.uk/europepmc/webservices/rest/search",
+                # ``pmcid:`` is an exact field match on the PMC id. The looser
+                # ``PMC:`` form is a full-text search and matches unrelated
+                # articles whose text merely contains the digits.
+                params={"query": f"pmcid:{pmc_id}", "format": "json"},
+                timeout=10,
+            )
+            if response.status_code != 200:
+                return None
+            data = response.json()
+            return (data.get("hitCount", 0) or 0) > 0
+        except Exception as e:
+            logger.debug(f"Europe PMC index lookup failed: {e}")
+            return None
+
     def _download_via_europe_pmc(self, pmc_id: str) -> Optional[bytes]:
-        """Download PDF via Europe PMC."""
-        # Europe PMC PDF URL
-        pdf_url = f"https://europepmc.org/backend/ptpmcrender.fcgi?accid={pmc_id}&blobtype=pdf"
+        """Download full text from Europe PMC.
 
-        logger.debug(f"Trying Europe PMC: {pdf_url}")
-        pdf_content = self._download_pdf(pdf_url)
-
-        if pdf_content:
+        Returns UTF-8 encoded text derived from the Europe PMC ``fullTextXML``
+        REST endpoint. The legacy ``ptpmcrender.fcgi`` PDF URL is no longer used
+        — it returns an empty reply for every id.
+        """
+        text = self._fetch_fulltext_xml_from_europe_pmc(pmc_id)
+        if text:
             logger.info(f"Successfully downloaded from Europe PMC: {pmc_id}")
-
-        return pdf_content
+            return text.encode("utf-8", errors="ignore")
+        return None
 
     def _download_via_ncbi_pmc(self, pmc_id: str) -> Optional[bytes]:
-        """Download PDF via NCBI PMC."""
-        # Try different NCBI PMC URL patterns
+        """Download PDF via NCBI PMC.
+
+        NCBI migrated PMC to ``pmc.ncbi.nlm.nih.gov`` and now protects PDF
+        downloads with a Proof-of-Work challenge, so these endpoints frequently
+        return 403 or an interstitial HTML page. We try both the new and legacy
+        host patterns as a best-effort fallback; success is not guaranteed.
+        """
+        pmc_num = pmc_id.replace("PMC", "")
+        # Try both the new pmc.ncbi.nlm.nih.gov host and the legacy
+        # www.ncbi.nlm.nih.gov host. The /pdf/ directory form redirects to the
+        # actual PDF filename on the new host.
         url_patterns = [
-            f"https://www.ncbi.nlm.nih.gov/pmc/articles/{pmc_id}/pdf/",
+            f"https://pmc.ncbi.nlm.nih.gov/articles/{pmc_id}/pdf/",
             f"https://www.ncbi.nlm.nih.gov/pmc/articles/{pmc_id}/pdf/main.pdf",
         ]
 
@@ -481,7 +612,7 @@ class PubMedDownloader(BaseDownloader):
 
             # Add referer header for NCBI
             headers = {
-                "Referer": f"https://www.ncbi.nlm.nih.gov/pmc/articles/{pmc_id}/"
+                "Referer": f"https://pmc.ncbi.nlm.nih.gov/articles/{pmc_id}/"
             }
 
             pdf_content = self._download_pdf(pdf_url, headers)

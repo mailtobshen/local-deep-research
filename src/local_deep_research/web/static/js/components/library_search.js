@@ -36,7 +36,7 @@ function fileTypeIcon(fileType) {
  */
 const LIBRARY_CARD_CONFIG = {
     getId(r) { return r.document_id || ''; },
-    getTitle(r) { return r.title || 'Untitled'; },
+    getTitle(r) { return r.title || i18n.t('Untitled'); },
     getUrl(r) {
         return (typeof URLBuilder !== 'undefined' && r.document_id)
             ? URLBuilder.documentPage(r.document_id) : '#';
@@ -46,7 +46,7 @@ const LIBRARY_CARD_CONFIG = {
         if (r.file_type) {
             badges.push({ icon: fileTypeIcon(r.file_type), label: r.file_type.toUpperCase() });
         }
-        return badges.length > 0 ? badges : [{ icon: 'file', label: 'DOC' }];
+        return badges.length > 0 ? badges : [{ icon: 'file', label: i18n.t('DOC') }];
     },
     getDate(r) { return r.created_at || null; },
     getSubtitle(r) { return r.domain || null; },
@@ -163,7 +163,7 @@ function renderSemanticResults(results, container, query) {
 
     if (!results || results.length === 0) {
         // bearer:disable javascript_lang_dangerous_insert_html
-        container.innerHTML = '<div class="ldr-empty-state"><i class="fas fa-search fa-2x"></i><p>No matching results found.</p></div>';
+        container.innerHTML = '<div class="ldr-empty-state"><i class="fas fa-search fa-2x"></i><p>' + i18n.t('No matching results found.') + '</p></div>';
         return;
     }
 
@@ -171,7 +171,7 @@ function renderSemanticResults(results, container, query) {
 
     if (!createCard) {
         // bearer:disable javascript_lang_dangerous_insert_html
-        container.innerHTML = '<div class="ldr-empty-state"><i class="fas fa-exclamation-triangle fa-2x"></i><p>Search module not loaded. Please refresh the page.</p></div>';
+        container.innerHTML = '<div class="ldr-empty-state"><i class="fas fa-exclamation-triangle fa-2x"></i><p>' + i18n.t('Search module not loaded. Please refresh the page.') + '</p></div>';
         return;
     }
 

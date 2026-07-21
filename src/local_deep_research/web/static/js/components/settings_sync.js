@@ -42,7 +42,7 @@ function saveMenuSettings(settingKey, settingValue) {
 
         // Show success notification if UI module is available
         if (window.ui && window.ui.showMessage) {
-            window.ui.showMessage(`${settingKey.split('.').pop()} updated successfully`, 'success');
+            window.ui.showMessage(i18n.tf('%s updated successfully', settingKey.split('.').pop()), 'success');
         } else {
             SafeLogger.log('Setting saved successfully:', data);
         }
@@ -50,7 +50,7 @@ function saveMenuSettings(settingKey, settingValue) {
     .catch(error => {
         SafeLogger.error(`Error saving setting ${settingKey}:`, error);
         if (window.ui && window.ui.showMessage) {
-            window.ui.showMessage(`Error updating ${settingKey}: ${error.message}`, 'error');
+            window.ui.showMessage(i18n.tf('Error updating %s: %s', settingKey, error.message), 'error');
         }
     });
 }

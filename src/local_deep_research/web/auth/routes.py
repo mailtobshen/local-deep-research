@@ -40,6 +40,7 @@ from ...security.url_validator import URLValidator
 from ...security.account_lockout import get_account_lockout_manager
 from ...security.password_validator import PasswordValidator
 from ...security.log_sanitizer import sanitize_for_log
+from ..translations import _
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/auth")
 
@@ -96,7 +97,7 @@ def login():
     remember = request.form.get("remember", "false") == "true"
 
     if not username or not password:
-        flash("Username and password are required", "error")
+        flash(_("Username and password are required"), "error")
         return render_template(
             "auth/login.html",
             has_encryption=db_manager.has_encryption,
@@ -109,7 +110,7 @@ def login():
         logger.warning(
             f"Login attempt for locked account: {sanitize_for_log(username)}"
         )
-        flash("Account is temporarily locked. Please try again later.", "error")
+        flash(_("Account is temporarily locked. Please try again later."), "error")
         return render_template(
             "auth/login.html",
             has_encryption=db_manager.has_encryption,
@@ -132,8 +133,10 @@ def login():
             "Lockout counter NOT incremented — credentials are valid."
         )
         flash(
-            "Database initialisation failed. The server is misconfigured — "
-            "please check the server logs or contact the administrator.",
+            _(
+                "Database initialisation failed. The server is misconfigured — "
+                "please check the server logs or contact the administrator."
+            ),
             "error",
         )
         return render_template(
@@ -148,7 +151,7 @@ def login():
         logger.warning(
             f"Failed login attempt for username: {sanitize_for_log(username)}"
         )
-        flash("Invalid username or password", "error")
+        flash(_("Invalid username or password"), "error")
         return render_template(
             "auth/login.html",
             has_encryption=db_manager.has_encryption,
@@ -383,7 +386,7 @@ def register_page():
     """
     config = load_server_config()
     if not config.get("allow_registrations", True):
-        flash("New user registrations are currently disabled.", "error")
+        flash(_("New user registrations are currently disabled."), "error")
         return redirect(url_for("auth.login_page"))
 
     return render_template(
@@ -403,7 +406,7 @@ def register():
     """
     config = load_server_config()
     if not config.get("allow_registrations", True):
-        flash("New user registrations are currently disabled.", "error")
+        flash(_("New user registrations are currently disabled."), "error")
         return redirect(url_for("auth.login_page"))
 
     # POST - Handle registration
@@ -416,25 +419,25 @@ def register():
     errors = []
 
     if not username:
-        errors.append("Username is required")
+        errors.append(_("Username is required"))
     elif len(username) < 3:
-        errors.append("Username must be at least 3 characters")
+        errors.append(_("Username must be at least 3 characters"))
     elif not username.replace("_", "").replace("-", "").isalnum():
         errors.append(
-            "Username can only contain letters, numbers, underscores, and hyphens"
+            _("Username can only contain letters, numbers, underscores, and hyphens")
         )
 
     if not password:
-        errors.append("Password is required")
+        errors.append(_("Password is required"))
     else:
         errors.extend(PasswordValidator.validate_strength(password))
 
     if password != confirm_password:
-        errors.append("Passwords do not match")
+        errors.append(_("Passwords do not match"))
 
     if not acknowledge:
         errors.append(
-            "You must acknowledge that password recovery is not possible"
+            _("You must acknowledge that password recovery is not possible")
         )
 
     # Check if user already exists
@@ -446,7 +449,7 @@ def register():
     # 4. Better UX with immediate feedback outweighs minor timing risk
     # See: https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html
     if not errors and username and db_manager.user_exists(username):
-        errors.append("Registration failed. Please try a different username.")
+        errors.append(_("Registration failed. Please try a different username."))
 
     if errors:
         for error in errors:
@@ -470,7 +473,7 @@ def register():
             logger.warning(f"Duplicate username attempted: {username}")
             auth_db.rollback()
             flash(
-                "Registration failed. Please try a different username.", "error"
+                _("Registration failed. Please try a different username."), "error"
             )
             return render_template(
                 "auth/register.html",
@@ -480,7 +483,7 @@ def register():
         except Exception:
             logger.exception(f"Registration failed for {username}")
             auth_db.rollback()
-            flash("Registration failed. Please try again.", "error")
+            flash(_("Registration failed. Please try again."), "error")
             return render_template(
                 "auth/register.html",
                 has_encryption=db_manager.has_encryption,
@@ -552,7 +555,7 @@ def register():
 
     except Exception:
         logger.exception(f"Registration failed for {username}")
-        flash("Registration failed. Please try again.", "error")
+        flash(_("Registration failed. Please try again."), "error")
         return render_template(
             "auth/register.html",
             has_encryption=db_manager.has_encryption,
@@ -623,7 +626,7 @@ def logout():
         session.clear()
 
         logger.info(f"User {username} logged out")
-        flash("You have been logged out successfully", "info")
+        flash(_("You have been logged out successfully"), "info")
 
     return redirect(url_for("auth.login"))
 
@@ -675,18 +678,18 @@ def change_password():
     errors = []
 
     if not current_password:
-        errors.append("Current password is required")
+        errors.append(_("Current password is required"))
 
     if not new_password:
-        errors.append("New password is required")
+        errors.append(_("New password is required"))
     else:
         errors.extend(PasswordValidator.validate_strength(new_password))
 
     if new_password != confirm_password:
-        errors.append("New passwords do not match")
+        errors.append(_("New passwords do not match"))
 
     if current_password == new_password:
-        errors.append("New password must be different from current password")
+        errors.append(_("New password must be different from current password"))
 
     if errors:
         for error in errors:
@@ -773,11 +776,13 @@ def change_password():
 
         logger.info(f"Password changed for user {username}")
         flash(
-            "Password changed successfully. Please login with your new password.",
+            _(
+                "Password changed successfully. Please login with your new password."
+            ),
             "success",
         )
         return redirect(url_for("auth.login"))
-    flash("Current password is incorrect", "error")
+    flash(_("Current password is incorrect"), "error")
     return render_template(
         "auth/change_password.html",
         password_requirements=PasswordValidator.get_requirements(),

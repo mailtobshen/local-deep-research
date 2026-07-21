@@ -133,25 +133,66 @@ class SearXNGSearchEngine(BaseSearchEngine):
         logger.info(
             f"SearXNG initialized with instance URL: {self.instance_url}"
         )
-        try:
-            # Make sure it's accessible.
-            # allow_private_ips=True since SearXNG is typically self-hosted on local network
-            response = safe_get(
-                self.instance_url, timeout=5, allow_private_ips=True
-            )
-            if response.status_code == 200:
-                logger.info("SearXNG instance is accessible.")
-                self.is_available = True
-            else:
-                self.is_available = False
-                logger.error(
-                    f"Failed to access SearXNG instance at {self.instance_url}. Status code: {response.status_code}"
+        # Lenient availability probe.
+        #
+        # SearXNG serves its landing page (``/``) via the same Flask app that
+        # runs searches, but that page can transiently return 5xx when one of
+        # SearXNG's *backend* engines (startpage, google_cse, …) is rate
+        # limited or times out — even though the instance itself is fully
+        # capable of answering /search for other engines. Treating a 5xx
+        # landing page as "engine unavailable" makes every search in the whole
+        # research run return empty, which is far worse than letting the
+        # actual /search request fail per-query.
+        #
+        # So we only mark the engine unavailable on a *connection-level*
+        # failure (instance unreachable / DNS / refused / timeout). A non-200
+        # status keeps is_available=True and lets run() attempt the real
+        # search; if the search itself fails it degrades gracefully there.
+        #
+        # The probe uses a short timeout, and a single transient timeout (cold
+        # connection, container warm-up, momentary proxy stall) must NOT flip
+        # is_available to False — doing so makes run() short-circuit to empty
+        # for the whole research, which is how a 5s blip produces an empty
+        # report. So on a connection-level failure we retry once after a short
+        # backoff; only a *second* consecutive failure marks the engine
+        # unavailable, preserving fast-fail when the instance is genuinely down.
+        probe_timeout = 15
+        probe_retries = 2  # total attempts: initial + 1 retry
+        for attempt in range(1, probe_retries + 1):
+            try:
+                response = safe_get(
+                    f"{self.instance_url}/search",
+                    params={"q": "test"},
+                    timeout=probe_timeout,
+                    allow_private_ips=True,
                 )
-        except requests.RequestException:
-            self.is_available = False
-            logger.exception(
-                f"Error while trying to access SearXNG instance at {self.instance_url}"
-            )
+                # Any HTTP response (even 5xx) means the instance is reachable;
+                # only connection-level errors below flip is_available to False.
+                self.is_available = True
+                if response.status_code != 200:
+                    logger.warning(
+                        f"SearXNG instance returned status {response.status_code} "
+                        f"on probe (will still attempt /search per query): "
+                        f"{self.instance_url}"
+                    )
+                else:
+                    logger.info("SearXNG instance is accessible.")
+                break  # got an HTTP response — done
+            except requests.RequestException as e:
+                if attempt < probe_retries:
+                    logger.warning(
+                        f"SearXNG probe attempt {attempt}/{probe_retries} failed "
+                        f"({type(e).__name__}); retrying after short backoff: "
+                        f"{self.instance_url}"
+                    )
+                    time.sleep(1.5)
+                    continue
+                self.is_available = False
+                logger.warning(
+                    f"Could not connect to SearXNG instance at "
+                    f"{self.instance_url} after {probe_retries} attempts "
+                    f"({type(e).__name__}); marking engine unavailable"
+                )
 
         # Add debug logging for all parameters
         logger.info(
@@ -224,8 +265,8 @@ class SearXNGSearchEngine(BaseSearchEngine):
             List of search results from SearXNG
         """
         if not self.is_available:
-            logger.error(
-                "SearXNG engine is disabled (no instance URL provided) - cannot run search"
+            logger.warning(
+                "SearXNG engine is unavailable (instance unreachable) - cannot run search"
             )
             return []
 
@@ -416,8 +457,8 @@ class SearXNGSearchEngine(BaseSearchEngine):
                     logger.exception("Error parsing HTML results")
                     return []
             else:
-                logger.error(
-                    f"SearXNG returned status code {response.status_code}"
+                logger.warning(
+                    f"SearXNG returned status code {response.status_code} for query: {query}"
                 )
                 return []
 
@@ -607,8 +648,9 @@ https://searxng.github.io/searxng/admin/installation.html
         Override BaseSearchEngine run method to add SearXNG-specific error handling.
         """
         if not self.is_available:
-            logger.error(
-                "SearXNG run method called but engine is not available (missing instance URL)"
+            logger.warning(
+                "SearXNG run method called but engine is not available "
+                "(instance unreachable during init)"
             )
             return []
 

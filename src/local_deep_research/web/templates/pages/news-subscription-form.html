@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% from "components/custom_dropdown.html" import render_dropdown %}
 
-{% block title %}{{ 'Edit' if subscription else 'Create' }} News Subscription - LDR{% endblock %}
+{% block title %}{{ _('Edit News Subscription') if subscription else _('Create News Subscription') }} - LDR{% endblock %}
 
 {% block extra_head %}
 <link rel="stylesheet" href="/static/css/custom_dropdown.css">
@@ -14,7 +14,7 @@
     <div class="ldr-page-header">
         <h1>
             <i aria-hidden="true" class="bi bi-bell-fill"></i>
-            {{ 'Edit' if subscription else 'Create' }} News Subscription
+            {{ _('Edit News Subscription') if subscription else _('Create News Subscription') }}
         </h1>
     </div>
 
@@ -25,43 +25,43 @@
         <!-- Basic Information Section -->
         <div class="ldr-form-section">
             <h2 class="ldr-section-title">
-                <i aria-hidden="true" class="bi bi-info-circle"></i> Basic Information
+                <i aria-hidden="true" class="bi bi-info-circle"></i> {{ _('Basic Information') }}
             </h2>
 
             <div class="mb-3">
-                <label for="subscription-query" class="ldr-form-label">Search Query or Topic</label>
+                <label for="subscription-query" class="ldr-form-label">{{ _("Search Query or Topic") }}</label>
                 <textarea class="form-control" id="subscription-query" rows="4" required
-                          placeholder="e.g., AI breakthroughs in healthcare, climate change impacts on agriculture, latest cryptocurrency regulations">{% if subscription %}{{ subscription.query_or_topic }}{% endif %}</textarea>
+                          placeholder="{{ _('e.g., AI breakthroughs in healthcare, climate change impacts on agriculture, latest cryptocurrency regulations') }}">{% if subscription %}{{ subscription.query_or_topic }}{% endif %}</textarea>
                 <div class="ldr-form-text">
-                    Enter keywords, topics, or detailed search queries. You can use natural language or specific terms.
-                    Use YYYY-MM-DD for dynamic date replacement.
+                    {{ _('Enter keywords, topics, or detailed search queries. You can use natural language or specific terms.') }}
+                    {{ _('Use YYYY-MM-DD for dynamic date replacement.') }}
                 </div>
             </div>
 
             <div class="mb-3">
-                <label for="subscription-name" class="ldr-form-label">Subscription Name</label>
+                <label for="subscription-name" class="ldr-form-label">{{ _("Subscription Name") }}</label>
                 <input type="text" class="form-control" id="subscription-name"
-                       placeholder="e.g., AI Healthcare News, Climate Agriculture Updates"
+                       placeholder="{{ _("e.g., AI Healthcare News, Climate Agriculture Updates") }}"
                        {% if subscription %}value="{{ subscription.name or '' }}"{% endif %}>
-                <div class="ldr-form-text">Optional - give your subscription a memorable name</div>
+                <div class="ldr-form-text">{{ _('Optional - give your subscription a memorable name') }}</div>
             </div>
 
             <div class="row">
                 <div class="col-md-6 mb-3">
-                    <label for="subscription-interval" class="ldr-form-label">Update Frequency (minutes)</label>
+                    <label for="subscription-interval" class="ldr-form-label">{{ _("Update Frequency (minutes)") }}</label>
                     <input type="number" class="form-control" id="subscription-interval"
                            min="1" step="1" value="{% if subscription %}{{ subscription.refresh_interval_minutes|int if subscription.refresh_interval_minutes else 1440 }}{% else %}1440{% endif %}" required>
                     <div class="ldr-form-text">
-                        Common values: 1 (every minute), 60 (hourly), 1440 (daily), 10080 (weekly)
+                        {{ _('Common values: 1 (every minute), 60 (hourly), 1440 (daily), 10080 (weekly)') }}
                         <br>
-                        <small class="text-muted">A random jitter will be added to prevent all subscriptions from running at once</small>
+                        <small class="text-muted">{{ _('A random jitter will be added to prevent all subscriptions from running at once') }}</small>
                     </div>
                 </div>
 
                 <div class="col-md-6 mb-3">
-                    <label for="subscription-folder" class="ldr-form-label">Folder</label>
+                    <label for="subscription-folder" class="ldr-form-label">{{ _('Folder') }}</label>
                     <select class="form-select" id="subscription-folder">
-                        <option value="">Uncategorized</option>
+                        <option value="">{{ _('Uncategorized') }}</option>
                         <!-- Folders will be loaded dynamically -->
                     </select>
                 </div>
@@ -71,38 +71,38 @@
         <!-- Model Configuration Section -->
         <div class="ldr-form-section">
             <h2 class="ldr-section-title">
-                <i aria-hidden="true" class="bi bi-cpu"></i> Model Configuration
+                <i aria-hidden="true" class="bi bi-cpu"></i> {{ _('Model Configuration') }}
             </h2>
 
             <div class="mb-3">
-                <label for="subscription-provider" class="ldr-form-label">Model Provider</label>
+                <label for="subscription-provider" class="ldr-form-label">{{ _("Model Provider") }}</label>
                 <select class="form-select" id="subscription-provider">
-                    <option value="">Loading providers...</option>
+                    <option value="">{{ _('Loading providers...') }}</option>
                 </select>
-                <div class="ldr-form-text">Select the LLM provider to use</div>
+                <div class="ldr-form-text">{{ _("Select the LLM provider to use") }}</div>
             </div>
 
             <div class="mb-3" id="custom-endpoint-container" style="display: none;">
-                <label for="subscription-custom-endpoint" class="ldr-form-label">Custom Endpoint</label>
+                <label for="subscription-custom-endpoint" class="ldr-form-label">{{ _("Custom Endpoint") }}</label>
                 <input type="url" class="form-control" id="subscription-custom-endpoint"
-                       placeholder="https://api.example.com/v1"
+                       placeholder="{{ _('https://api.example.com/v1') }}"
                        value="{% if subscription and subscription.custom_endpoint %}{{ subscription.custom_endpoint }}{% else %}{{ default_settings.custom_endpoint }}{% endif %}">
-                <div class="ldr-form-text">Enter the OpenAI-compatible API endpoint URL</div>
+                <div class="ldr-form-text">{{ _("Enter the OpenAI-compatible API endpoint URL") }}</div>
             </div>
 
             <div class="mb-3">
                 {{ render_dropdown(
                     input_id="subscription-model",
                     dropdown_id="subscription-model-dropdown",
-                    placeholder="Enter or select a model",
-                    label="Language Model",
-                    help_text="Select the AI model to use for this subscription (leave empty for default)",
+                    placeholder=_("Enter or select a model"),
+                    label=_("Language Model"),
+                    help_text=_("Select the AI model to use for this subscription (leave empty for default)"),
                     show_refresh=True,
                     data_initial_value=(subscription.model if subscription else '')
                 ) }}
                 <div class="ldr-form-text">
-                    Not sure which model to use? Compare community results on the
-                    <a href="https://huggingface.co/datasets/local-deep-research/ldr-benchmarks" target="_blank" rel="noopener noreferrer">LDR benchmarks dataset</a>.
+                    {{ _('Not sure which model to use? Compare community results on the') }}
+                    <a href="https://huggingface.co/datasets/local-deep-research/ldr-benchmarks" target="_blank" rel="noopener noreferrer">{{ _("LDR benchmarks dataset") }}</a>.
                 </div>
             </div>
 
@@ -110,51 +110,51 @@
                 {{ render_dropdown(
                     input_id="subscription-search-engine",
                     dropdown_id="subscription-search-engine-dropdown",
-                    placeholder="Select the search engine to use",
-                    label="Search Engine",
-                    help_text="Select the search engine to use for research",
+                    placeholder=_("Select the search engine to use"),
+                    label=_("Search Engine"),
+                    help_text=_("Select the search engine to use for research"),
                     data_initial_value=(subscription.search_engine if subscription else default_settings.search_engine)
                 ) }}
             </div>
 
             <div class="row">
                 <div class="col-md-6 mb-3">
-                    <label for="subscription-iterations" class="ldr-form-label">Search Iterations</label>
+                    <label for="subscription-iterations" class="ldr-form-label">{{ _("Search Iterations") }}</label>
                     <input type="number" class="form-control" id="subscription-iterations"
                            min="1" max="10" value="{{ subscription.search_iterations if subscription else default_settings.iterations }}">
-                    <div class="ldr-form-text">Number of research cycles to perform</div>
+                    <div class="ldr-form-text">{{ _("Number of research cycles to perform") }}</div>
                 </div>
 
                 <div class="col-md-6 mb-3">
-                    <label for="subscription-questions" class="ldr-form-label">Questions Per Iteration</label>
+                    <label for="subscription-questions" class="ldr-form-label">{{ _("Questions Per Iteration") }}</label>
                     <input type="number" class="form-control" id="subscription-questions"
                            min="1" max="20" value="{{ subscription.questions_per_iteration if subscription else default_settings.questions_per_iteration }}">
-                    <div class="ldr-form-text">Follow-up questions in each cycle</div>
+                    <div class="ldr-form-text">{{ _("Follow-up questions in each cycle") }}</div>
                 </div>
             </div>
 
             <div class="mb-3">
-                <label for="subscription-strategy" class="ldr-form-label">Search Strategy</label>
+                <label for="subscription-strategy" class="ldr-form-label">{{ _("Search Strategy") }}</label>
                 <select class="form-select" id="subscription-strategy">
                     {% for s in strategies %}
                     <option value="{{ s.name }}" {% if (subscription and subscription.search_strategy == s.name) or (not subscription and default_settings.search_strategy == s.name) %}selected{% endif %}>{{ s.label }}</option>
                     {% endfor %}
                 </select>
-                <div class="ldr-form-text">Choose the search strategy that best fits your needs</div>
+                <div class="ldr-form-text">{{ _("Choose the search strategy that best fits your needs") }}</div>
             </div>
         </div>
 
         <!-- Status Section -->
         <div class="ldr-form-section">
             <h2 class="ldr-section-title">
-                <i aria-hidden="true" class="bi bi-toggle-on"></i> Status & Options
+                <i aria-hidden="true" class="bi bi-toggle-on"></i> {{ _('Status & Options') }}
             </h2>
 
             <div class="form-check mb-3">
                 <input class="form-check-input" type="checkbox" id="subscription-active"
                        {% if not subscription or subscription.is_active %}checked{% endif %}>
                 <label class="form-check-label" for="subscription-active">
-                    Active (subscription will run automatically)
+                    {{ _('Active (subscription will run automatically)') }}
                 </label>
             </div>
         </div>
@@ -162,18 +162,18 @@
         <!-- Action Buttons -->
         <div class="ldr-btn-group-actions">
             <a href="/news" class="btn btn-secondary">
-                <i aria-hidden="true" class="bi bi-arrow-left"></i> Cancel
+                <i aria-hidden="true" class="bi bi-arrow-left"></i> {{ _('Cancel') }}
             </a>
             <button type="button" class="btn btn-info" id="test-subscription-btn">
-                <i aria-hidden="true" class="bi bi-play-circle"></i> Test Run
+                <i aria-hidden="true" class="bi bi-play-circle"></i> {{ _('Test Run') }}
             </button>
             {% if not subscription %}
             <button type="button" class="btn btn-success" id="create-and-run-btn">
-                <i aria-hidden="true" class="bi bi-rocket-takeoff"></i> Create & Run Now
+                <i aria-hidden="true" class="bi bi-rocket-takeoff"></i> {{ _('Create & Run Now') }}
             </button>
             {% endif %}
             <button type="submit" class="btn btn-primary">
-                <i aria-hidden="true" class="bi bi-save"></i> {{ 'Update' if subscription else 'Create' }} Subscription
+                <i aria-hidden="true" class="bi bi-save"></i> {{ _('Update Subscription') if subscription else _('Create Subscription') }}
             </button>
         </div>
     </form>
@@ -231,7 +231,7 @@ function initializeDropdowns() {
                     console.log('Model selected:', value);
                 },
                 true,  // allowCustomValues
-                'No models available'
+                i18n.t('No models available')
             );
             console.log('Model dropdown instance created:', modelDropdownInstance);
 
@@ -258,7 +258,7 @@ function initializeDropdowns() {
                     console.log('Search engine selected:', value);
                 },
                 false,  // don't allow custom values
-                'No search engines available'
+                i18n.t('No search engines available')
             );
             console.log('Search engine dropdown instance created:', searchEngineDropdownInstance);
 
@@ -310,7 +310,7 @@ async function loadSearchEngines() {
         }
     } catch (error) {
         console.error('Error loading search engines:', error);
-        searchEngineOptions = [{ value: 'auto', label: 'Auto' }];
+        searchEngineOptions = [{ value: 'auto', label: i18n.t('Auto') }];
     }
 }
 
@@ -335,7 +335,7 @@ async function loadModelsForProvider(provider) {
             console.log(`Found ${models.length} models for ${provider}`);
 
             // Update model options
-            modelOptions = models.length > 0 ? models : [{ value: '', label: 'No models available' }];
+            modelOptions = models.length > 0 ? models : [{ value: '', label: i18n.t('No models available') }];
             console.log('Model options for provider', provider, ':', modelOptions);
 
             // Update dropdown if it exists
@@ -356,7 +356,7 @@ async function loadModelsForProvider(provider) {
         }
     } catch (error) {
         console.error('Error loading models:', error);
-        modelOptions = [{ value: '', label: 'Error loading models' }];
+        modelOptions = [{ value: '', label: i18n.t('Error loading models') }];
 
         // Update dropdown with error state
         if (window.updateDropdownOptions) {
@@ -377,7 +377,7 @@ async function loadProviders() {
         const data = await response.json();
 
         if (data.provider_options) {
-            providerSelect.innerHTML = '<option value="">Select a provider</option>';
+            providerSelect.innerHTML = '<option value="">' + i18n.t('Select a provider') + '</option>';
 
             data.provider_options.forEach(provider => {
                 const option = document.createElement('option');
@@ -430,7 +430,7 @@ async function loadProviders() {
         }
     } catch (error) {
         console.error('Error loading providers:', error);
-        providerSelect.innerHTML = '<option value="">Error loading providers</option>';
+        providerSelect.innerHTML = '<option value="">' + i18n.t('Error loading providers') + '</option>';
     }
 }
 
@@ -551,7 +551,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     console.log('Subscription form initialization complete');
     } catch (error) {
         console.error('Error initializing subscription form:', error);
-        showAlert('Error initializing form: ' + error.message, 'error');
+        showAlert(i18n.t('Error initializing form: ') + error.message, 'error');
     }
 });
 
@@ -617,7 +617,7 @@ async function handleSubscriptionSubmit(e) {
 
     // Check if search engine was selected
     if (!searchEngine) {
-        showAlert('Please select a search engine', 'warning');
+        showAlert(i18n.t('Please select a search engine'), 'warning');
         return;
     }
 
@@ -656,7 +656,7 @@ async function handleSubscriptionSubmit(e) {
 
         if (response.ok) {
             const data = await response.json();
-            showAlert('Subscription {{ "updated" if subscription else "created" }} successfully!', 'success');
+            showAlert("{{ _('Subscription updated successfully!') if subscription else _('Subscription created successfully!') }}", 'success');
 
             // Redirect to appropriate page after a short delay
             setTimeout(() => {
@@ -670,10 +670,10 @@ async function handleSubscriptionSubmit(e) {
             }, 1500);
         } else {
             const error = await response.json();
-            showAlert('Error: ' + (error.error || 'Failed to save subscription'), 'error');
+            showAlert(i18n.t('Error: ') + (error.error || i18n.t('Failed to save subscription')), 'error');
         }
     } catch (error) {
-        showAlert('Error: ' + error.message, 'error');
+        showAlert(i18n.t('Error: ') + error.message, 'error');
     }
 }
 
@@ -690,7 +690,7 @@ async function handleTestRun(event) {
         const query = document.getElementById('subscription-query').value;
         console.log('Query value:', query);
         if (!query) {
-            showAlert('Please enter a query first', 'warning');
+            showAlert(i18n.t('Please enter a query first'), 'warning');
             return;
         }
 
@@ -707,7 +707,7 @@ async function handleTestRun(event) {
 
     // Check if search engine was selected
     if (!searchEngine) {
-        showAlert('Please select a search engine', 'warning');
+        showAlert(i18n.t('Please select a search engine'), 'warning');
         return;
     }
 
@@ -721,7 +721,7 @@ async function handleTestRun(event) {
     console.log('Search engine being used:', searchEngine);
 
     // Show loading state
-    showAlert('Starting test run...', 'info');
+    showAlert(i18n.t('Starting test run...'), 'info');
 
     try {
         // Prepare the request data
@@ -761,16 +761,16 @@ async function handleTestRun(event) {
         console.log('Research API response status:', response.status);
 
         if (!response.ok) {
-            let errorMessage = 'Error starting research';
+            let errorMessage = i18n.t('Error starting research');
             try {
                 const errorData = await response.json();
                 errorMessage = errorData.error || errorData.message || errorMessage;
             } catch (e) {
-                errorMessage = `${errorMessage}: ${response.statusText}`;
+                errorMessage = i18n.t('Error starting research') + ': ' + response.statusText;
             }
 
             if (response.status === 401) {
-                showAlert('Please log in to test subscriptions. Redirecting to login...', 'error');
+                showAlert(i18n.t('Please log in to test subscriptions. Redirecting to login...'), 'error');
                 setTimeout(() => {
                     window.location.href = '/auth/login?next=' + encodeURIComponent(window.location.href);
                 }, 2000);
@@ -785,7 +785,7 @@ async function handleTestRun(event) {
         console.log('Research started:', data);
 
         if (data.status === 'success' && data.research_id) {
-            showAlert('Research started successfully! Redirecting to news page...', 'success');
+            showAlert(i18n.t('Research started successfully! Redirecting to news page...'), 'success');
 
             // Store the research ID and query so the news page can track it
             sessionStorage.setItem('activeTestRunResearchId', data.research_id);
@@ -796,16 +796,16 @@ async function handleTestRun(event) {
                 window.location.href = '/news';
             }, 1500);
         } else {
-            showAlert('Unexpected response from server', 'error');
+            showAlert(i18n.t('Unexpected response from server'), 'error');
         }
 
     } catch (error) {
         console.error('Error starting test run:', error);
-        showAlert('Error: ' + error.message, 'error');
+        showAlert(i18n.t('Error: ') + error.message, 'error');
     }
     } catch (outerError) {
         console.error('Error in handleTestRun:', outerError);
-        showAlert('An unexpected error occurred', 'error');
+        showAlert(i18n.t('An unexpected error occurred'), 'error');
     }
 }
 
@@ -840,7 +840,7 @@ async function handleCreateAndRun(event) {
         const strategy = document.getElementById('subscription-strategy').value;
 
         // Show loading state
-        showAlert('Creating subscription and starting research...', 'info');
+        showAlert(i18n.t('Creating subscription and starting research...'), 'info');
 
         // Create subscription
         const createResponse = await fetch('/news/api/subscribe', {
@@ -870,7 +870,7 @@ async function handleCreateAndRun(event) {
 
         if (!createResponse.ok) {
             const error = await createResponse.json();
-            showAlert('Error: ' + (error.error || 'Failed to create subscription'), 'error');
+            showAlert(i18n.t('Error: ') + (error.error || i18n.t('Failed to create subscription')), 'error');
             return;
         }
 
@@ -884,7 +884,7 @@ async function handleCreateAndRun(event) {
 
     } catch (error) {
         console.error('Error in create and run:', error);
-        showAlert('Error: ' + error.message, 'error');
+        showAlert(i18n.t('Error: ') + error.message, 'error');
     }
 }
 
@@ -921,22 +921,22 @@ async function loadJitterInfo() {
 
             // Calculate jitter range in human-readable format
             const formatJitter = (seconds) => {
-                if (seconds === 0) return '0';
-                if (seconds < 60) return `${seconds} second${seconds !== 1 ? 's' : ''}`;
+                if (seconds === 0) return i18n.t('0');
+                if (seconds < 60) return `${seconds}` + i18n.t(' second') + (seconds !== 1 ? i18n.t('s') : '');
                 const minutes = Math.round(seconds/60);
-                if (minutes < 60) return `${minutes} minute${minutes !== 1 ? 's' : ''}`;
+                if (minutes < 60) return `${minutes}` + i18n.t(' minute') + (minutes !== 1 ? i18n.t('s') : '');
                 const hours = Math.round(seconds/3600);
-                return `${hours} hour${hours !== 1 ? 's' : ''}`;
+                return `${hours}` + i18n.t(' hour') + (hours !== 1 ? i18n.t('s') : '');
             };
 
             let jitterText;
             if (maxJitter === 0) {
-                jitterText = `<i aria-hidden="true" class="bi bi-info-circle"></i> No jitter configured. Subscriptions will run exactly at scheduled times.`;
+                jitterText = '<i aria-hidden="true" class="bi bi-info-circle"></i> ' + i18n.t('No jitter configured. Subscriptions will run exactly at scheduled times.');
             } else {
-                jitterText = `<i aria-hidden="true" class="bi bi-shuffle"></i> A random delay up to <strong>${formatJitter(maxJitter)}</strong> will be added to prevent all subscriptions from running simultaneously.`;
+                jitterText = '<i aria-hidden="true" class="bi bi-shuffle"></i> ' + i18n.t('A random delay up to ') + '<strong>' + formatJitter(maxJitter) + '</strong>' + i18n.t(' will be added to prevent all subscriptions from running simultaneously.');
             }
 
-            jitterText += ` <a href="/settings#news_scheduler" class="text-muted" style="font-size: 0.85em;"><i aria-hidden="true" class="bi bi-gear"></i> Change in settings</a>`;
+            jitterText += ' <a href="/settings#news_scheduler" class="text-muted" style="font-size: 0.85em;"><i aria-hidden="true" class="bi bi-gear"></i> ' + i18n.t('Change in settings') + '</a>';
 
             const element = document.getElementById('subscription-jitter-info');
             if (element) {

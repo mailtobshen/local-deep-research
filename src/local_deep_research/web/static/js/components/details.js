@@ -92,7 +92,7 @@
                 document.getElementById('academic-sources').textContent = categoryEntries[0]?.[1] || 0;
                 // Update label
                 const academicLabel = document.querySelector('#academic-sources').previousElementSibling;
-                if (academicLabel) academicLabel.textContent = categoryEntries[0]?.[0] || 'Category 1';
+                if (academicLabel) academicLabel.textContent = categoryEntries[0]?.[0] || i18n.t('Category 1');
             } else {
                 document.getElementById('academic-sources').textContent = 0;
             }
@@ -101,7 +101,7 @@
                 document.getElementById('news-sources').textContent = categoryEntries[1]?.[1] || 0;
                 // Update label
                 const newsLabel = document.querySelector('#news-sources').previousElementSibling;
-                if (newsLabel) newsLabel.textContent = categoryEntries[1]?.[0] || 'Category 2';
+                if (newsLabel) newsLabel.textContent = categoryEntries[1]?.[0] || i18n.t('Category 2');
             } else {
                 document.getElementById('news-sources').textContent = 0;
             }
@@ -131,12 +131,12 @@
                     // eslint-disable-next-line no-unsanitized/property -- audited 2026-03-28: all interpolations use escapeHtml/esc, numeric coercion, or hardcoded strings
                     domainList.innerHTML = domainHtml; // Already escaped individual fields above
                 } else {
-                    domainList.textContent = 'Domain data unavailable (security module not loaded)';
+                    domainList.textContent = i18n.t('Domain data unavailable (security module not loaded)');
                 }
             } else if (window.safeSetInnerHTML) {
                 window.safeSetInnerHTML(domainList, '<div style="text-align: center; color: var(--text-secondary); padding: 1rem;">No domain data available</div>', true);
             } else {
-                domainList.textContent = 'No domain data available';
+                domainList.textContent = i18n.t('No domain data available');
             }
 
             // Display resource samples
@@ -168,7 +168,7 @@
             } else if (window.safeSetInnerHTML) {
                 window.safeSetInnerHTML(resourceSample, '<div style="text-align: center; color: var(--text-secondary); padding: 1rem;">No resource samples available</div>', true);
             } else {
-                resourceSample.textContent = 'No resource samples available';
+                resourceSample.textContent = i18n.t('No resource samples available');
             }
 
             // Create generic source type pie chart
@@ -451,7 +451,7 @@
         if (details.strategy) {
             document.getElementById('research-strategy').textContent = details.strategy;
         } else {
-            document.getElementById('research-strategy').textContent = 'Not recorded';
+            document.getElementById('research-strategy').textContent = i18n.t('Not recorded');
         }
 
         // Update progress
@@ -483,15 +483,15 @@
         let totalPromptTokens = 0;
         let totalCompletionTokens = 0;
         let totalCalls = 0;
-        let model = 'Unknown';
+        let model = i18n.t('Unknown');
 
         if (metricsData.model_usage && metricsData.model_usage.length > 0) {
             metricsData.model_usage.forEach(usage => {
                 totalPromptTokens += usage.prompt_tokens || 0;
                 totalCompletionTokens += usage.completion_tokens || 0;
                 totalCalls += usage.calls || 0;
-                if (model === 'Unknown') {
-                    model = usage.model || 'Unknown';
+                if (model === i18n.t('Unknown')) {
+                    model = usage.model || i18n.t('Unknown');
                 }
             });
         }
@@ -514,8 +514,8 @@
         // Update research info from timeline data
         if (timelineData.research_details) {
             const details = timelineData.research_details;
-            document.getElementById('research-query').textContent = details.query || 'Unknown';
-            document.getElementById('research-mode').textContent = details.mode || 'Unknown';
+            document.getElementById('research-query').textContent = details.query || i18n.t('Unknown');
+            document.getElementById('research-mode').textContent = details.mode || i18n.t('Unknown');
             if (details.created_at) {
                 const date = new Date(details.created_at);
                 document.getElementById('research-date').textContent = date.toLocaleString();
@@ -576,8 +576,8 @@
                 // eslint-disable-next-line no-unsanitized/property -- audited 2026-03-28: all interpolations use escapeHtml/esc, numeric coercion, or hardcoded strings
                 item.innerHTML = `
                     <div class="ldr-search-engine-info">
-                        <div class="ldr-search-engine-name">${escapeHtml(call.engine || 'Unknown')}</div>
-                        <div class="ldr-search-engine-query">${escapeHtml(call.query || 'No query')}</div>
+                        <div class="ldr-search-engine-name">${escapeHtml(call.engine || i18n.t('Unknown'))}</div>
+                        <div class="ldr-search-engine-query">${escapeHtml(call.query || i18n.t('No query'))}</div>
                     </div>
                     <div class="ldr-search-engine-stats">
                         <div class="ldr-search-results">${formatNumber(call.results_count || 0)} results</div>
@@ -600,13 +600,13 @@
         if (!container) return;
         if (!enginePerformance || enginePerformance.length === 0) {
             // bearer:disable javascript_lang_dangerous_insert_html
-            container.innerHTML = '<p style="text-align: center; color: var(--text-secondary);">No search engine data available</p>';
+            container.innerHTML = '<p style="text-align: center; color: var(--text-secondary);">' + i18n.t('No search engine data available') + '</p>';
             return;
         }
         const html = enginePerformance.map(engine => `
             <div class="ldr-search-engine-item">
                 <div class="ldr-search-engine-info">
-                    <div class="ldr-search-engine-name">${escapeHtml(engine.engine || 'Unknown')}</div>
+                    <div class="ldr-search-engine-name">${escapeHtml(engine.engine || i18n.t('Unknown'))}</div>
                 </div>
                 <div class="ldr-search-engine-stats">
                     <span>${engine.call_count ?? 0} searches</span>
@@ -627,18 +627,18 @@
         if (!container) return;
         if (!searchTimeline || searchTimeline.length === 0) {
             // bearer:disable javascript_lang_dangerous_insert_html
-            container.innerHTML = '<p style="text-align: center; color: var(--text-secondary);">No search timeline data available</p>';
+            container.innerHTML = '<p style="text-align: center; color: var(--text-secondary);">' + i18n.t('No search timeline data available') + '</p>';
             return;
         }
         const html = searchTimeline.map(search => {
             const parsedDate = search.timestamp ? new Date(search.timestamp) : null;
             const timestamp = parsedDate && !isNaN(parsedDate) ? parsedDate.toLocaleTimeString() : '\u2014';
             const statusClass = search.success_status === 'success' ? 'ldr-search-status-success' : 'ldr-search-status-error';
-            const statusText = search.success_status === 'success' ? 'Success' : 'Failed';
+            const statusText = search.success_status === 'success' ? i18n.t('Success') : i18n.t('Failed');
             return `
                 <div class="ldr-search-timeline-item">
                     <div style="flex: 1;">
-                        <div class="ldr-search-timeline-query">${escapeHtml(search.engine || 'Unknown')}</div>
+                        <div class="ldr-search-timeline-query">${escapeHtml(search.engine || i18n.t('Unknown'))}</div>
                         <div class="ldr-search-timeline-meta">${timestamp} \u00b7 ${escapeHtml(search.query || 'N/A')}</div>
                     </div>
                     <div class="ldr-search-timeline-results">
@@ -668,7 +668,7 @@
 
         if (itemsWithCallStack.length === 0) {
             // bearer:disable javascript_lang_dangerous_insert_html
-            container.innerHTML = '<p style="text-align: center; color: var(--text-secondary);">No call stack traces available for this research</p>';
+            container.innerHTML = '<p style="text-align: center; color: var(--text-secondary);">' + i18n.t('No call stack traces available for this research') + '</p>';
             return;
         }
 
@@ -685,22 +685,22 @@
             trace.innerHTML = `
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
                     <div style="font-weight: 500; color: var(--text-primary);">
-                        ${escapeHtml(item.calling_function || 'Unknown Function')}
+                        ${escapeHtml(item.calling_function || i18n.t('Unknown Function'))}
                     </div>
                     <div style="font-size: 0.875rem; color: var(--text-secondary);">
                         ${timestamp} \u2014 ${item.prompt_tokens || 0} in + ${item.completion_tokens || 0} out = ${item.tokens || 0} tokens, ${item.response_time_ms || 0}ms
                     </div>
                 </div>
                 <div style="font-family: 'Courier New', monospace; font-size: 0.75rem; background: var(--bg-tertiary); padding: 0.5rem; border-radius: 4px; color: var(--text-secondary); overflow-x: auto; margin-bottom: 0.5rem;">
-                    ${escapeHtml(item.call_stack || 'No stack trace available')}
+                    ${escapeHtml(item.call_stack || i18n.t('No stack trace available'))}
                 </div>
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 0.5rem; font-size: 0.875rem;">
-                    <div><strong>File:</strong> ${escapeHtml((item.calling_file || 'Unknown').split('/').pop())}</div>
+                    <div><strong>File:</strong> ${escapeHtml((item.calling_file || i18n.t('Unknown')).split('/').pop())}</div>
                     <div><strong>Phase:</strong> ${escapeHtml(item.research_phase || 'N/A')}</div>
                     <div><strong>Model:</strong> ${escapeHtml(item.model_name || 'N/A')}</div>
                     <div><strong>Status:</strong>
                         <span style="color: ${item.success_status === 'success' ? 'var(--success-color)' : 'var(--error-color)'}">
-                            ${escapeHtml(item.success_status || 'Unknown')}
+                            ${escapeHtml(item.success_status || i18n.t('Unknown'))}
                         </span>
                     </div>
                 </div>
@@ -732,7 +732,7 @@
             // Shared tooltip callbacks
             function tooltipTitle(tooltipItems) {
                 const item = timeline[tooltipItems[0].dataIndex];
-                return `${item.research_phase || 'Unknown Phase'} - ${item.model_name || 'Unknown Model'}`;
+                return `${item.research_phase || i18n.t('Unknown Phase')} - ${item.model_name || i18n.t('Unknown Model')}`;
             }
             function tooltipAfterBody(tooltipItems) {
                 const item = timeline[tooltipItems[0].dataIndex];
@@ -759,35 +759,35 @@
                     data: {
                         labels: timeLabels,
                         datasets: [{
-                            label: 'Cumulative Total Tokens',
+                            label: i18n.t('Cumulative Total Tokens'),
                             data: timeline.map(item => item.cumulative_tokens),
                             borderColor: colors.success,
                             backgroundColor: `rgba(${colors.successRgb}, 0.1)`,
                             borderWidth: 3, fill: true, tension: 0.1,
                             pointRadius: 3, pointHoverRadius: 5,
                         }, {
-                            label: 'Cumulative Input Tokens',
+                            label: i18n.t('Cumulative Input Tokens'),
                             data: timeline.map(item => item.cumulative_prompt_tokens),
                             borderColor: colors.tertiary,
                             backgroundColor: `rgba(${colors.tertiaryRgb}, 0.05)`,
                             borderWidth: 2, fill: true, tension: 0.1,
                             pointRadius: 2, pointHoverRadius: 4,
                         }, {
-                            label: 'Cumulative Output Tokens',
+                            label: i18n.t('Cumulative Output Tokens'),
                             data: timeline.map(item => item.cumulative_completion_tokens),
                             borderColor: colors.error,
                             backgroundColor: `rgba(${colors.errorRgb}, 0.05)`,
                             borderWidth: 2, fill: true, tension: 0.1,
                             pointRadius: 2, pointHoverRadius: 4,
                         }, {
-                            label: 'Input Tokens per Call',
+                            label: i18n.t('Input Tokens per Call'),
                             data: timeline.map(item => item.prompt_tokens),
                             borderColor: `rgba(${colors.tertiaryRgb}, 0.8)`,
                             borderWidth: 1, fill: false, tension: 0.1,
                             pointRadius: 2, pointHoverRadius: 4,
                             yAxisID: 'y1', borderDash: [5, 5],
                         }, {
-                            label: 'Output Tokens per Call',
+                            label: i18n.t('Output Tokens per Call'),
                             data: timeline.map(item => item.completion_tokens),
                             borderColor: `rgba(${colors.errorRgb}, 0.8)`,
                             borderWidth: 1, fill: false, tension: 0.1,
@@ -799,11 +799,11 @@
                         responsive: true, maintainAspectRatio: false,
                         interaction: { intersect: false, mode: 'index' },
                         scales: {
-                            x: { title: { display: true, text: 'Time' } },
+                            x: { title: { display: true, text: i18n.t('Time') } },
                             y: { type: 'linear', position: 'left', beginAtZero: true,
-                                title: { display: true, text: 'Cumulative Tokens' } },
+                                title: { display: true, text: i18n.t('Cumulative Tokens') } },
                             y1: { type: 'linear', position: 'right', beginAtZero: true,
-                                title: { display: true, text: 'Tokens per Call' },
+                                title: { display: true, text: i18n.t('Tokens per Call') },
                                 grid: { drawOnChartArea: false } }
                         },
                         plugins: {
@@ -834,13 +834,13 @@
                     data: {
                         labels: chartData.map(item => item.phase),
                         datasets: [{
-                            label: 'Input Tokens',
+                            label: i18n.t('Input Tokens'),
                             data: chartData.map(item => item.promptTokens),
                             backgroundColor: `rgba(${colors.accentRgb}, 0.8)`,
                             borderColor: colors.accent,
                             borderWidth: 1, borderRadius: 4, borderSkipped: false,
                         }, {
-                            label: 'Output Tokens',
+                            label: i18n.t('Output Tokens'),
                             data: chartData.map(item => item.completionTokens),
                             backgroundColor: `rgba(${colors.successRgb}, 0.8)`,
                             borderColor: colors.success,
@@ -856,7 +856,7 @@
                                 ticks: { font: { size: 11 }, maxRotation: 45 } },
                             y: { stacked: true, beginAtZero: true,
                                 ticks: { callback(v) { return formatNumber(v); } },
-                                title: { display: true, text: 'Tokens' } }
+                                title: { display: true, text: i18n.t('Tokens') } }
                         },
                         plugins: {
                             legend: { display: true, position: 'top', align: 'end',
@@ -909,7 +909,7 @@
         const searchCalls = searchData.search_calls.map((call, index) => ({
             label: call.query ? call.query.substring(0, 20) + '...' : `Search ${index + 1}`,
             results: call.results_count || 0,
-            engine: call.engine || 'Unknown',
+            engine: call.engine || i18n.t('Unknown'),
             responseTime: call.response_time_ms || 0,
             timestamp: call.timestamp
         }));
@@ -922,7 +922,7 @@
             data: {
                 labels,
                 datasets: [{
-                    label: 'Results Found',
+                    label: i18n.t('Results Found'),
                     data: results,
                     borderColor: 'rgba(168, 85, 247, 1)',
                     backgroundColor: 'rgba(168, 85, 247, 0.1)',
@@ -975,7 +975,7 @@
                         },
                         title: {
                             display: true,
-                            text: 'Results',
+                            text: i18n.t('Results'),
                             font: {
                                 size: 11,
                                 weight: 'bold'
@@ -1132,7 +1132,7 @@
     function displayPhaseBreakdown(phaseStats) {
         const container = document.getElementById('co-phase-breakdown');
         if (!phaseStats || Object.keys(phaseStats).length === 0) {
-            container.innerHTML = '<p style="text-align: center; padding: 2rem; color: var(--text-secondary);">No phase data available</p>';
+            container.innerHTML = '<p style="text-align: center; padding: 2rem; color: var(--text-secondary);">' + i18n.t('No phase data available') + '</p>';
             return;
         }
 
@@ -1177,7 +1177,7 @@
     function displayRequestsTable(requests) {
         const tbody = document.getElementById('co-requests-table');
         if (!requests || requests.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; padding: 2rem; color: var(--text-secondary);">No request data available</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; padding: 2rem; color: var(--text-secondary);">' + i18n.t('No request data available') + '</td></tr>';
             return;
         }
 
@@ -1230,7 +1230,7 @@
                 labels,
                 datasets: [
                     {
-                        label: 'Total Tokens',
+                        label: i18n.t('Total Tokens'),
                         data: totalData,
                         borderColor: 'rgb(168, 85, 247)',
                         backgroundColor: 'rgba(168, 85, 247, 0.1)',
@@ -1238,14 +1238,14 @@
                         tension: 0.1
                     },
                     {
-                        label: 'Input Tokens',
+                        label: i18n.t('Input Tokens'),
                         data: promptData,
                         borderColor: 'rgb(59, 130, 246)',
                         backgroundColor: 'rgba(59, 130, 246, 0.1)',
                         tension: 0.1
                     },
                     {
-                        label: 'Output Tokens',
+                        label: i18n.t('Output Tokens'),
                         data: completionData,
                         borderColor: 'rgb(34, 197, 94)',
                         backgroundColor: 'rgba(34, 197, 94, 0.1)',
@@ -1286,7 +1286,7 @@
                         beginAtZero: true,
                         title: {
                             display: true,
-                            text: 'Tokens'
+                            text: i18n.t('Tokens')
                         }
                     }
                 }
@@ -1315,7 +1315,7 @@
         }
 
         // Update page title
-        document.title = `Research Details #${researchId} - Deep Research System`;
+        document.title = i18n.tf('Research Details #%s - Deep Research System', researchId);
 
         // Load research metrics
         loadResearchMetrics();

@@ -15,6 +15,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 from loguru import logger
 
+from local_deep_research.constants import ResearchStatus
+
 # Register MILESTONE log level used by progress_callback (normally done in log_utils)
 try:
     logger.level("MILESTONE")
@@ -423,7 +425,9 @@ class TestHandleTermination:
         assert kwargs["username"] == "alice"
         assert kwargs["research_id"] == "r1"
         assert kwargs["status"] == "suspended"
-        mock_cleanup.assert_called_once_with("r1", "alice")
+        mock_cleanup.assert_called_once_with(
+            "r1", "alice", final_status=ResearchStatus.SUSPENDED
+        )
 
     @patch(f"{RS}.cleanup_research_resources")
     def test_exception_in_queue_handled(self, mock_cleanup):
@@ -639,7 +643,9 @@ class TestRunResearchProcessTerminatedBeforeStart:
         ):
             raw_fn = _get_raw_run_research_process()
             raw_fn("r1", "query", "quick", username="alice")
-        mock_cleanup.assert_called_once_with("r1", "alice", user_password=None)
+        mock_cleanup.assert_called_once_with(
+            "r1", "alice", user_password=None, final_status=ResearchStatus.SUSPENDED
+        )
 
 
 class TestRunResearchProcessQuickMode:
@@ -756,7 +762,13 @@ class TestRunResearchProcessQuickMode:
         self._run_quick(results)
 
     def test_quick_mode_error_in_findings_token_limit(self):
-        """Error in formatted_findings with token limit should trigger fallback."""
+        """Error in formatted_findings with token limit should trigger fallback.
+
+        Synthesis errored but the fallback recovered usable content from
+        the prior "Final synthesis" finding, so the final status is
+        PARTIAL_SUCCESS (not COMPLETED) — the report is a fallback, not a
+        clean synthesis.
+        """
         results = {
             "findings": [
                 {
@@ -768,7 +780,7 @@ class TestRunResearchProcessQuickMode:
             "iterations": 2,
         }
         research, _, _ = self._run_quick(results)
-        assert research.status == "completed"
+        assert research.status == "partial_success"
 
     def test_quick_mode_error_in_findings_timeout(self):
         results = {
@@ -778,7 +790,7 @@ class TestRunResearchProcessQuickMode:
             "current_knowledge": "partial knowledge here",
         }
         research, _, _ = self._run_quick(results)
-        assert research.status == "completed"
+        assert research.status == "partial_success"
 
     def test_quick_mode_error_rate_limit(self):
         results = {
@@ -787,7 +799,7 @@ class TestRunResearchProcessQuickMode:
             "iterations": 1,
         }
         research, _, _ = self._run_quick(results)
-        assert research.status == "completed"
+        assert research.status == "partial_success"
 
     def test_quick_mode_error_connection(self):
         results = {
@@ -796,7 +808,7 @@ class TestRunResearchProcessQuickMode:
             "iterations": 1,
         }
         research, _, _ = self._run_quick(results)
-        assert research.status == "completed"
+        assert research.status == "partial_success"
 
     def test_quick_mode_error_llm_error(self):
         results = {
@@ -805,7 +817,7 @@ class TestRunResearchProcessQuickMode:
             "iterations": 1,
         }
         research, _, _ = self._run_quick(results)
-        assert research.status == "completed"
+        assert research.status == "partial_success"
 
     def test_quick_mode_error_unknown(self):
         results = {
@@ -814,10 +826,19 @@ class TestRunResearchProcessQuickMode:
             "iterations": 1,
         }
         research, _, _ = self._run_quick(results)
-        assert research.status == "completed"
+        assert research.status == "partial_success"
 
     def test_quick_mode_error_no_valid_fallback_all_errors(self):
-        """All findings have error content -> emergency fallback."""
+        """All findings have error content -> emergency fallback.
+
+        Even the emergency fallback assembles *something* (all finding
+        contents, errors included), so this is still PARTIAL_SUCCESS — a
+        report was produced despite the synthesis failure. FAILED is
+        reserved for the case where no report content could be produced
+        at all (the ``fallback_failed`` branch, which never triggers on
+        this path because the emergency fallback always yields non-error
+        text).
+        """
         results = {
             "findings": [
                 {"phase": "s1", "content": "Error: fail1"},
@@ -827,7 +848,7 @@ class TestRunResearchProcessQuickMode:
             "iterations": 1,
         }
         research, _, _ = self._run_quick(results)
-        assert research.status == "completed"
+        assert research.status == "partial_success"
 
     def test_quick_mode_error_valid_findings_combined(self):
         """Some findings are valid, some errors -> combined fallback."""
@@ -840,7 +861,7 @@ class TestRunResearchProcessQuickMode:
             "iterations": 1,
         }
         research, _, _ = self._run_quick(results)
-        assert research.status == "completed"
+        assert research.status == "partial_success"
 
     def test_quick_mode_news_search_generates_headlines(self):
         """News search metadata should trigger headline/topic generation."""

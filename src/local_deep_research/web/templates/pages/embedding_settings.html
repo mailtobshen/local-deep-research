@@ -1,26 +1,26 @@
 {% extends "base.html" %}
 {% from "components/help_macros.html" import tooltip, help_panel, help_step, help_tip, glossary_term %}
 
-{% block title %}Embedding Settings{% endblock %}
+{% block title %}{{ _("Embedding Settings") }}{% endblock %}
 
 {% block extra_head %}<link rel="stylesheet" href="/static/css/embedding_settings.css">{% endblock %}
 
 {% block content %}
 <div class="ldr-library-container">
     <div class="ldr-library-header">
-        <h1>Default Embedding Settings</h1>
-        <p class="ldr-subtitle">Configure default embedding models for new collections and semantic search</p>
+        <h1>{{ _("Default Embedding Settings") }}</h1>
+        <p class="ldr-subtitle">{{ _("Configure default embedding models for new collections and semantic search") }}</p>
     </div>
 
     <!-- Understanding Embeddings Help Panel -->
-    {% call help_panel('embedding-how', 'Understanding Embeddings', icon='brain', collapsed=true, dismissible=true) %}
+    {% call help_panel('embedding-how', _('Understanding Embeddings'), icon='brain', collapsed=true, dismissible=true) %}
     <div class="ldr-help-steps">
-        {{ help_step(1, "What are Embeddings?", "Embeddings convert text into numbers (vectors) that capture meaning. Similar concepts have similar vectors.") }}
-        {{ help_step(2, "Chunk Size", "Larger chunks = more context per search result but less precision. Smaller = more granular but may lose context.") }}
-        {{ help_step(3, "Text Splitter", "Recursive: uses natural breaks. Semantic: AI-powered grouping (slower). Token-based: respects LLM limits.") }}
-        {{ help_step(4, "Why Lock Settings?", "Mixing different embedding models causes inconsistent search results. Each collection uses one model.") }}
+        {{ help_step(1, _("What are Embeddings?"), _("Embeddings convert text into numbers (vectors) that capture meaning. Similar concepts have similar vectors.")) }}
+        {{ help_step(2, _("Chunk Size"), _("Larger chunks = more context per search result but less precision. Smaller = more granular but may lose context.")) }}
+        {{ help_step(3, _("Text Splitter"), _("Recursive: uses natural breaks. Semantic: AI-powered grouping (slower). Token-based: respects LLM limits.")) }}
+        {{ help_step(4, _("Why Lock Settings?"), _("Mixing different embedding models causes inconsistent search results. Each collection uses one model.")) }}
     </div>
-    {{ help_tip("<strong>Recommended:</strong> Start with defaults. Only change if you understand the trade-offs.") }}
+    {{ help_tip(_("<strong>Recommended:</strong> Start with defaults. Only change if you understand the trade-offs.")) }}
     {% endcall %}
 
     <!-- Important Warning -->
@@ -28,14 +28,14 @@
         <div style="display: flex; align-items: flex-start; gap: 1rem;">
             <i aria-hidden="true" class="fas fa-exclamation-triangle" style="font-size: 1.5rem; margin-top: 0.25rem;"></i>
             <div>
-                <h4 style="margin: 0 0 0.5rem 0;">Important: Existing Collections</h4>
+                <h4 style="margin: 0 0 0.5rem 0;">{{ _("Important: Existing Collections") }}</h4>
                 <p style="margin: 0 0 0.5rem 0;">
-                    <strong>Changing these settings will only affect NEW collections.</strong>
-                    Existing collections keep their original embedding settings to ensure data integrity and search consistency.
+                    <strong>{{ _("Changing these settings will only affect NEW collections.") }}</strong>
+                    {{ _("Existing collections keep their original embedding settings to ensure data integrity and search consistency.") }}
                 </p>
                 <p style="margin: 0;">
-                    <i aria-hidden="true" class="fas fa-lock"></i> Once a collection is indexed, its embedding settings are locked.
-                    To change settings for an existing collection, you must re-index the entire collection, which will delete the current index.
+                    <i aria-hidden="true" class="fas fa-lock"></i> {{ _("Once a collection is indexed, its embedding settings are locked.") }}
+                    {{ _("To change settings for an existing collection, you must re-index the entire collection, which will delete the current index.") }}
                 </p>
             </div>
         </div>
@@ -43,14 +43,14 @@
 
     <!-- Test Panel -->
     <div class="ldr-rag-operations-panel">
-        <h2><i aria-hidden="true" class="fas fa-vial"></i> Test Configuration</h2>
+        <h2><i aria-hidden="true" class="fas fa-vial"></i> {{ _("Test Configuration") }}</h2>
         <p class="ldr-text-muted" style="margin-bottom: 15px;">
-            Test the currently selected embedding model to ensure it's working correctly.
+            {{ _("Test the currently selected embedding model to ensure it's working correctly.") }}
         </p>
 
         <div class="ldr-operations-grid">
             <button class="ldr-btn ldr-btn-success ldr-btn-lg" onclick="testConfiguration()" id="test-config-btn">
-                <i aria-hidden="true" class="fas fa-play"></i> Test Embedding Model
+                <i aria-hidden="true" class="fas fa-play"></i> {{ _("Test Embedding Model") }}
             </button>
         </div>
 
@@ -61,51 +61,51 @@
 
     <!-- Configuration Panel -->
     <div class="ldr-rag-config-panel">
-        <h2><i aria-hidden="true" class="fas fa-cog"></i> Configuration</h2>
+        <h2><i aria-hidden="true" class="fas fa-cog"></i> {{ _("Configuration") }}</h2>
 
         <div class="ldr-config-grid">
             <!-- Saved Default Settings -->
             <div class="ldr-config-section">
-                <h3>Saved Default Settings</h3>
+                <h3>{{ _("Saved Default Settings") }}</h3>
                 <div id="saved-default-settings" class="ldr-info-box">
                     <div class="ldr-loading-spinner">
-                        <i aria-hidden="true" class="fas fa-spinner fa-spin"></i> Loading...
+                        <i aria-hidden="true" class="fas fa-spinner fa-spin"></i> {{ _("Loading...") }}
                     </div>
                 </div>
                 <p class="ldr-form-text ldr-text-muted">
-                    <i aria-hidden="true" class="fas fa-info-circle"></i> These are your saved defaults for new collections. Change them using the form below.
+                    <i aria-hidden="true" class="fas fa-info-circle"></i> {{ _("These are your saved defaults for new collections. Change them using the form below.") }}
                 </p>
             </div>
 
             <!-- Default Embedding Configuration -->
             <div class="ldr-config-section">
-                <h3>Default Embedding Configuration</h3>
+                <h3>{{ _("Default Embedding Configuration") }}</h3>
                 <div>
                     <div class="ldr-form-group">
-                        <label for="embedding-provider">Provider</label>
+                        <label for="embedding-provider">{{ _("Provider") }}</label>
                         <select id="embedding-provider" class="ldr-form-control">
-                            <option value="">Loading providers...</option>
+                            <option value="">{{ _("Loading providers...") }}</option>
                         </select>
                     </div>
 
                     <div class="ldr-form-group" id="ollama-url-group" style="display: none;">
-                        <label for="ollama-url">Ollama URL</label>
+                        <label for="ollama-url">{{ _("Ollama URL") }}</label>
                         <input type="text" id="ollama-url" class="ldr-form-control" placeholder="http://localhost:11434">
                         <small class="ldr-form-text ldr-text-muted">
-                            URL of the Ollama server for embedding models. Leave empty to use the default LLM Ollama URL.
+                            {{ _("URL of the Ollama server for embedding models. Leave empty to use the default LLM Ollama URL.") }}
                         </small>
                     </div>
 
                     <div class="ldr-form-group" id="ollama-num-ctx-group" style="display: none;">
-                        <label for="ollama-num-ctx">{{ tooltip("Ollama Context Window (num_ctx)", "Token budget passed to Ollama for each embedding call. If your chunks tokenize to more than this, Ollama returns HTTP 500 and indexing fails. Increase if you see 'input length exceeds the context length'. Default 8192 is safe for chunk sizes up to ~5000 characters.") }}</label>
+                        <label for="ollama-num-ctx">{{ tooltip(_("Ollama Context Window (num_ctx)"), _("Token budget passed to Ollama for each embedding call. If your chunks tokenize to more than this, Ollama returns HTTP 500 and indexing fails. Increase if you see 'input length exceeds the context length'. Default 8192 is safe for chunk sizes up to ~5000 characters.")) }}</label>
                         <input type="number" id="ollama-num-ctx" class="ldr-form-control" value="8192" min="512" max="131072" step="512">
                         <small class="ldr-form-text ldr-text-muted">
-                            Tokens. Must exceed the largest chunk after tokenization. Increase if Ollama returns "input length exceeds the context length".
+                            {{ _("Tokens. Must exceed the largest chunk after tokenization. Increase if Ollama returns \"input length exceeds the context length\".") }}
                         </small>
                     </div>
 
                     <div class="ldr-form-group">
-                        <label for="embedding-model">Model</label>
+                        <label for="embedding-model">{{ _("Model") }}</label>
                         <select id="embedding-model" class="ldr-form-control">
                             <!-- Options loaded dynamically -->
                         </select>
@@ -116,50 +116,50 @@
 
                     <div class="ldr-form-row">
                         <div class="ldr-form-group ldr-col-md-6">
-                            <label for="chunk-size">{{ tooltip("Chunk Size", "Larger chunks (1000+) keep more context but search is less precise. Smaller chunks (500-) are more granular but may cut off important context.") }}</label>
+                            <label for="chunk-size">{{ tooltip(_("Chunk Size"), _("Larger chunks (1000+) keep more context but search is less precise. Smaller chunks (500-) are more granular but may cut off important context.")) }}</label>
                             <input type="number" id="chunk-size" class="ldr-form-control" value="1000" min="100" max="5000" step="100">
-                            <small class="ldr-form-text ldr-text-muted">Characters per chunk</small>
+                            <small class="ldr-form-text ldr-text-muted">{{ _("Characters per chunk") }}</small>
                         </div>
                         <div class="ldr-form-group ldr-col-md-6">
-                            <label for="chunk-overlap">{{ tooltip("Chunk Overlap", "Characters shared between adjacent chunks. Prevents important info from being cut at boundaries. Usually 10-20% of chunk size.") }}</label>
+                            <label for="chunk-overlap">{{ tooltip(_("Chunk Overlap"), _("Characters shared between adjacent chunks. Prevents important info from being cut at boundaries. Usually 10-20% of chunk size.")) }}</label>
                             <input type="number" id="chunk-overlap" class="ldr-form-control" value="200" min="0" max="1000" step="50">
-                            <small class="ldr-form-text ldr-text-muted">Overlap between chunks</small>
+                            <small class="ldr-form-text ldr-text-muted">{{ _("Overlap between chunks") }}</small>
                         </div>
                     </div>
 
                     <div class="ldr-form-row">
                         <div class="ldr-form-group ldr-col-md-6">
-                            <label for="splitter-type">{{ tooltip("Text Splitter Type", "How to divide documents. Recursive: natural breaks (paragraphs, sentences). Semantic: AI groups related content (slow but smart). Token: respects model limits.") }}</label>
+                            <label for="splitter-type">{{ tooltip(_("Text Splitter Type"), _("How to divide documents. Recursive: natural breaks (paragraphs, sentences). Semantic: AI groups related content (slow but smart). Token: respects model limits.")) }}</label>
                             <select id="splitter-type" class="ldr-form-control">
-                                <option value="recursive">Recursive (Default - uses separators)</option>
-                                <option value="token">Token-based (Good for LLM context)</option>
-                                <option value="sentence">Sentence-based (Clean boundaries)</option>
-                                <option value="semantic">Semantic (Smart grouping - slower)</option>
+                                <option value="recursive">{{ _("Recursive (Default - uses separators)") }}</option>
+                                <option value="token">{{ _("Token-based (Good for LLM context)") }}</option>
+                                <option value="sentence">{{ _("Sentence-based (Clean boundaries)") }}</option>
+                                <option value="semantic">{{ _("Semantic (Smart grouping - slower)") }}</option>
                             </select>
                             <small class="ldr-form-text ldr-text-muted">
-                                How documents are split into chunks. Semantic uses AI to find natural breakpoints (slower but smarter)
+                                {{ _("How documents are split into chunks. Semantic uses AI to find natural breakpoints (slower but smarter)") }}
                             </small>
                         </div>
                         <div class="ldr-form-group ldr-col-md-6">
-                            <label for="distance-metric">Distance Metric</label>
+                            <label for="distance-metric">{{ _("Distance Metric") }}</label>
                             <select id="distance-metric" class="ldr-form-control">
-                                <option value="cosine">Cosine Similarity (Recommended)</option>
-                                <option value="l2">Euclidean Distance (L2)</option>
-                                <option value="dot_product">Dot Product</option>
+                                <option value="cosine">{{ _("Cosine Similarity (Recommended)") }}</option>
+                                <option value="l2">{{ _("Euclidean Distance (L2)") }}</option>
+                                <option value="dot_product">{{ _("Dot Product") }}</option>
                             </select>
                             <small class="ldr-form-text ldr-text-muted">
-                                Cosine similarity recommended for text embeddings
+                                {{ _("Cosine similarity recommended for text embeddings") }}
                             </small>
                         </div>
                         <div class="ldr-form-group ldr-col-md-6">
-                            <label for="index-type">{{ tooltip("Index Type", "Flat: exact but slow for large collections. HNSW: approximate but 50x faster for >10K docs. IVF: good balance for frequently updated collections.") }}</label>
+                            <label for="index-type">{{ tooltip(_("Index Type"), _("Flat: exact but slow for large collections. HNSW: approximate but 50x faster for >10K docs. IVF: good balance for frequently updated collections.")) }}</label>
                             <select id="index-type" class="ldr-form-control">
-                                <option value="flat">Flat (Exact search, &lt;10K docs)</option>
-                                <option value="hnsw">HNSW (Fast, large collections)</option>
-                                <option value="ivf">IVF (Balanced, updates)</option>
+                                <option value="flat">{{ _("Flat (Exact search, &lt;10K docs)") }}</option>
+                                <option value="hnsw">{{ _("HNSW (Fast, large collections)") }}</option>
+                                <option value="ivf">{{ _("IVF (Balanced, updates)") }}</option>
                             </select>
                             <small class="ldr-form-text ldr-text-muted">
-                                HNSW recommended for &gt;10K documents (50-60× faster)
+                                {{ _("HNSW recommended for &gt;10K documents (50-60× faster)") }}
                             </small>
                         </div>
                     </div>
@@ -167,25 +167,25 @@
                     <div class="ldr-form-group">
                         <label>
                             <input type="checkbox" id="normalize-vectors" checked>
-                            Normalize vectors (L2)
+                            {{ _("Normalize vectors (L2)") }}
                         </label>
                         <small class="ldr-form-text ldr-text-muted" style="display: block; margin-left: 25px;">
-                            <i aria-hidden="true" class="fas fa-info-circle"></i> Recommended: Ensures fair comparison regardless of document length
+                            <i aria-hidden="true" class="fas fa-info-circle"></i> {{ _("Recommended: Ensures fair comparison regardless of document length") }}
                         </small>
                     </div>
 
                     <div class="ldr-form-group">
-                        <label for="text-separators">Text Separators (Advanced)</label>
+                        <label for="text-separators">{{ _("Text Separators (Advanced)") }}</label>
                         <textarea id="text-separators" class="ldr-form-control" rows="3"
                             placeholder='["\n\n", "\n", ". ", " ", ""]'></textarea>
                         <small class="ldr-form-text ldr-text-muted">
-                            JSON array of separators. Default works for 80% of use cases.
-                            For code: add language-specific separators like "\nclass", "\ndef"
+                            {{ _("JSON array of separators. Default works for 80% of use cases.") }}
+                            {{ _("For code: add language-specific separators like \"\\nclass\", \"\\ndef\"") }}
                         </small>
                     </div>
 
                     <small class="ldr-form-text ldr-text-muted ldr-mt-2">
-                        <i aria-hidden="true" class="fas fa-info-circle"></i> Changes save automatically. These settings are used as defaults for new collections; existing collections continue using their current settings unless re-indexed.
+                        <i aria-hidden="true" class="fas fa-info-circle"></i> {{ _("Changes save automatically. These settings are used as defaults for new collections; existing collections continue using their current settings unless re-indexed.") }}
                     </small>
                 </div>
             </div>
@@ -194,10 +194,10 @@
 
     <!-- Provider Information Panel -->
     <div class="ldr-rag-stats-panel">
-        <h2><i aria-hidden="true" class="fas fa-info-circle"></i> Provider Information</h2>
+        <h2><i aria-hidden="true" class="fas fa-info-circle"></i> {{ _("Provider Information") }}</h2>
         <div id="provider-info" class="ldr-stats-grid">
             <div class="ldr-loading-spinner">
-                <i aria-hidden="true" class="fas fa-spinner fa-spin"></i> Loading provider information...
+                <i aria-hidden="true" class="fas fa-spinner fa-spin"></i> {{ _("Loading provider information...") }}
             </div>
         </div>
     </div>

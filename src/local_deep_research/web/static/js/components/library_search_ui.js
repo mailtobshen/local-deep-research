@@ -43,7 +43,7 @@ if (searchModeMenu) {
         searchModeMenu.querySelectorAll('.dropdown-item').forEach(function(i) { i.classList.remove('active'); });
         item.classList.add('active');
         const icons = { hybrid: 'fa-brain', text: 'fa-font', semantic: 'fa-brain' };
-        const labelTexts = { hybrid: 'AI Hybrid', text: 'Text Only', semantic: 'AI Only' };
+        const labelTexts = { hybrid: i18n.t('AI Hybrid'), text: i18n.t('Text Only'), semantic: i18n.t('AI Only') };
         const placeholders = { hybrid: 'AI Hybrid: titles & authors + AI content search...', text: 'Text: filter by title, authors, DOI...', semantic: 'AI: search inside document content...' };
         const btn = document.getElementById('search-mode-btn');
         if (btn && labelTexts[mode]) {
@@ -210,7 +210,7 @@ async function runSemanticSearch(query) {
     if (!window.LibrarySearch) return;
     if (semanticResultsContainer) {
         // bearer:disable javascript_lang_dangerous_insert_html
-        semanticResultsContainer.innerHTML = '<div class="ldr-hybrid-loading"><div class="ldr-spinner" style="width:16px;height:16px;border-width:2px;"></div> Searching content...</div>';
+        semanticResultsContainer.innerHTML = '<div class="ldr-hybrid-loading"><div class="ldr-spinner" style="width:16px;height:16px;border-width:2px;"></div> ' + i18n.t('Searching content...') + '</div>';
     }
     try {
         const collectionId = getActiveSearchCollectionId();
@@ -222,12 +222,12 @@ async function runSemanticSearch(query) {
             const ids = window.LibrarySearch.getIndexedCollectionIds();
             if (ids.length === 0) {
                 // bearer:disable javascript_lang_dangerous_insert_html
-                showSearchNotice('No collections have been indexed yet. <a href="/library/collections">Index a collection</a> to enable semantic search.');
+                showSearchNotice(i18n.t('No collections have been indexed yet.') + ' <a href="/library/collections">' + i18n.t('Index a collection') + '</a> ' + i18n.t('to enable semantic search.'));
                 if (semanticResultsContainer) semanticResultsContainer.innerHTML = '';
                 return;
             }
             // bearer:disable javascript_lang_dangerous_insert_html
-            showSearchNotice('Searching across ' + ids.length + ' indexed collection' + (ids.length > 1 ? 's' : '') + '.');
+            showSearchNotice(i18n.t('Searching across') + ' ' + ids.length + ' ' + i18n.t('indexed collection') + (ids.length > 1 ? i18n.t('s') : '') + '.');
             results = await window.LibrarySearch.searchAllCollections(ids, query, 20);
         }
         if (searchMode !== SM.SEMANTIC) return; // mode changed
@@ -237,7 +237,7 @@ async function runSemanticSearch(query) {
         if (typeof SafeLogger !== 'undefined') SafeLogger.error('Semantic search error:', err);
         if (semanticResultsContainer) {
             // bearer:disable javascript_lang_dangerous_insert_html
-            semanticResultsContainer.innerHTML = '<div class="ldr-empty-state"><i class="fas fa-exclamation-triangle fa-2x"></i><p>Search failed. Please try again.</p></div>';
+            semanticResultsContainer.innerHTML = '<div class="ldr-empty-state"><i class="fas fa-exclamation-triangle fa-2x"></i><p>' + i18n.t('Search failed. Please try again.') + '</p></div>';
         }
     }
 }
@@ -250,7 +250,7 @@ async function runHybridSearch(query, searchId) {
     loadingDiv.className = 'ldr-hybrid-loading';
     loadingDiv.id = 'hybrid-loading-indicator';
     // bearer:disable javascript_lang_dangerous_insert_html
-    loadingDiv.innerHTML = '<div class="ldr-spinner" style="width:16px;height:16px;border-width:2px;"></div> Searching content...';
+    loadingDiv.innerHTML = '<div class="ldr-spinner" style="width:16px;height:16px;border-width:2px;"></div> ' + i18n.t('Searching content...');
     if (documentsContainer) documentsContainer.appendChild(loadingDiv);
 
     try {
@@ -264,7 +264,7 @@ async function runHybridSearch(query, searchId) {
             if (ids.length === 0) {
                 removeHybridLoading();
                 // bearer:disable javascript_lang_dangerous_insert_html
-                showSearchNotice('No indexed collections. <a href="/library/collections">Index a collection</a> for AI search.');
+                showSearchNotice(i18n.t('No indexed collections.') + ' <a href="/library/collections">' + i18n.t('Index a collection') + '</a> ' + i18n.t('for AI search.'));
                 return;
             }
             semanticResults = await window.LibrarySearch.searchAllCollections(ids, query, 20);
@@ -312,7 +312,7 @@ function renderMergedLibraryResults(tiered, query) {
                 badge.className = 'ldr-ai-match-badge';
                 badge.dataset.similarity = entry.semanticMatch.similarity;
                 // bearer:disable javascript_lang_dangerous_insert_html
-                badge.innerHTML = '<i class="fas fa-brain" aria-hidden="true"></i> ' + esc(String(entry.semanticMatch.similarity)) + '% match';
+                badge.innerHTML = '<i class="fas fa-brain" aria-hidden="true"></i> ' + esc(String(entry.semanticMatch.similarity)) + '% ' + i18n.t('match');
                 header.appendChild(badge);
             }
             // Inject semantic snippet into card body
@@ -323,7 +323,7 @@ function renderMergedLibraryResults(tiered, query) {
                 snippetDiv.className = 'ldr-library-snippet';
                 // bearer:disable javascript_lang_dangerous_insert_html
                 // eslint-disable-next-line no-unsanitized/property -- audited 2026-03-28: all interpolations use escapeHtml/esc, numeric coercion, or hardcoded strings
-                snippetDiv.innerHTML = '<small class="text-muted"><i class="fas fa-brain" aria-hidden="true"></i> Matched content:</small>' +
+                snippetDiv.innerHTML = '<small class="text-muted"><i class="fas fa-brain" aria-hidden="true"></i> ' + i18n.t('Matched content:') + '</small>' +
                     '<div>' + renderSnippet(entry.semanticMatch.snippet, query) + '</div>';
                 const body = card.querySelector('.card-body');
                 if (body) body.appendChild(snippetDiv);
@@ -340,7 +340,7 @@ function renderMergedLibraryResults(tiered, query) {
     if (tiered.tier3.length > 0 && window.SemanticSearch) {
         const divider = document.createElement('div');
         divider.className = 'ldr-hybrid-divider';
-        divider.textContent = 'Also found in content';
+        divider.textContent = i18n.t('Also found in content');
         fragment.appendChild(divider);
 
         const config = window.LibrarySearch.getLibraryCardConfig();

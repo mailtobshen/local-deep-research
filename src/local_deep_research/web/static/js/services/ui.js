@@ -79,7 +79,7 @@ const escapeHtmlFallback = (str) => String(str).replace(/[&<>"']/g, (m) => ({'&'
  * @param {string|Element} container - The container ID or element to add the spinner to
  * @param {string} message - Optional message to show with the spinner
  */
-function showSpinner(container, message = 'Loading...') {
+function showSpinner(container, message = i18n.t('Loading...')) {
     const containerEl = typeof container === 'string' ? document.getElementById(container) : container;
 
     if (containerEl) {
@@ -347,10 +347,10 @@ function processSpecialMarkdown(html) {
         if (ref.startsWith('image-')) {
             return `<div class="ldr-generated-image" data-image-id="${ref}">
                 <img src="/static/img/generated/${ref}.png"
-                     alt="Generated image ${ref}"
+                     alt="${i18n.t('Generated image')} ${ref}"
                      class="img-fluid"
                      loading="lazy" />
-                <div class="ldr-image-caption">Generated image (${ref})</div>
+                <div class="ldr-image-caption">${i18n.t('Generated image')} (${ref})</div>
             </div>`;
         }
         return match;
@@ -438,6 +438,9 @@ function updateFavicon(status) {
 
         if (ResearchStates.isCompleted(status)) {
             bgColor = successColor;
+        } else if (ResearchStates.isPartialSuccess(status)) {
+            // Partial: borrow warning palette (same family as suspended)
+            bgColor = style.getPropertyValue('--warning-color').trim() || '#ffc107';
         } else if (ResearchStates.isFailed(status)) {
             bgColor = errorColor;
         } else if (ResearchStates.isCancelled(status)) {
@@ -573,7 +576,7 @@ function showInlineError(container, message, options = {}) {
         const closeBtn = document.createElement('button');
         closeBtn.type = 'button';
         closeBtn.className = 'ldr-inline-error-close';
-        closeBtn.setAttribute('aria-label', 'Dismiss error');
+        closeBtn.setAttribute('aria-label', i18n.t('Dismiss error'));
         closeBtn.textContent = '\u00d7';
         closeBtn.addEventListener('click', () => {
             errorEl.remove();

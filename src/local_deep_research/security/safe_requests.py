@@ -14,8 +14,28 @@ import requests
 from loguru import logger
 
 from . import ssrf_validator
+from .proxy_config import get_proxy_settings, should_bypass_proxy
 from ..constants import USER_AGENT
 from ..utilities.resource_utils import safe_close
+
+
+def _inject_proxy_kwargs(url: str, kwargs: dict) -> None:
+    """Add ``proxies=`` to ``kwargs`` when a proxy is configured and the
+    target is not a local/private service.
+
+    Mutates ``kwargs`` in place. Caller has already validated the URL with
+    SSRF rules; this only decides whether to route through the operator's
+    forward proxy. Local services (loopback/RFC1918) are bypassed so
+    Ollama/SearXNG/LMStudio are never tunneled through the external proxy.
+    """
+    if "proxies" in kwargs and kwargs["proxies"] is not None:
+        # Caller explicitly set proxies — respect it.
+        return
+    if should_bypass_proxy(url):
+        return
+    proxies = get_proxy_settings()
+    if proxies:
+        kwargs["proxies"] = proxies
 
 
 # Default timeout for all HTTP requests (prevents hanging)
@@ -195,6 +215,10 @@ def safe_get(
         headers["User-Agent"] = USER_AGENT
         kwargs["headers"] = headers
 
+    # Route through the operator's configured proxy when enabled (and the
+    # target isn't a local/private service). See app.network.proxy_* settings.
+    _inject_proxy_kwargs(url, kwargs)
+
     # Intercept allow_redirects — we handle redirects manually to validate
     # each redirect target against SSRF rules
     caller_wants_redirects = kwargs.pop("allow_redirects", True)
@@ -246,6 +270,9 @@ def safe_get(
                 # hops. Per HTTP spec, the server's Location header contains
                 # the complete target URL. Re-appending original query params
                 # would corrupt it.
+                # Re-evaluate proxy bypass for the redirect target (it may
+                # land on a different host than the original request).
+                _inject_proxy_kwargs(redirect_url, kwargs)
                 response = requests.get(redirect_url, **kwargs)
                 redirects_followed += 1
 
@@ -332,6 +359,10 @@ def safe_post(
         headers["User-Agent"] = USER_AGENT
         kwargs["headers"] = headers
 
+    # Route through the operator's configured proxy when enabled (and the
+    # target isn't a local/private service). See app.network.proxy_* settings.
+    _inject_proxy_kwargs(url, kwargs)
+
     # Intercept allow_redirects — we handle redirects manually to validate
     # each redirect target against SSRF rules
     caller_wants_redirects = kwargs.pop("allow_redirects", True)
@@ -386,9 +417,12 @@ def safe_post(
                     # 301/302/303: convert to GET, drop body
                     data = None
                     json = None
+                    # Re-evaluate proxy bypass for the redirect target.
+                    _inject_proxy_kwargs(redirect_url, kwargs)
                     response = requests.get(redirect_url, **kwargs)
                 else:
                     # 307/308: preserve current method and body
+                    _inject_proxy_kwargs(redirect_url, kwargs)
                     response = requests.post(
                         redirect_url, data=data, json=json, **kwargs
                     )
@@ -501,6 +535,10 @@ class SafeSession(requests.Session):
         ):
             headers["User-Agent"] = USER_AGENT
             kwargs["headers"] = headers
+
+        # Route through the operator's configured proxy when enabled (and the
+        # target isn't a local/private service). See app.network.proxy_* settings.
+        _inject_proxy_kwargs(url, kwargs)
 
         return super().request(method, url, **kwargs)
 

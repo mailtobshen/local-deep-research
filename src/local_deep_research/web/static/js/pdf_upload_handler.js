@@ -125,14 +125,14 @@ class PDFUploadHandler {
         fileInput.accept = '.pdf';
         fileInput.style.display = 'none';
         fileInput.id = 'pdf-file-input';
-        fileInput.setAttribute('aria-label', 'Upload PDF files');
+        fileInput.setAttribute('aria-label', i18n.t('Upload PDF files'));
 
         // Add upload button near the textarea with proper styling
         const uploadButton = document.createElement('button');
         uploadButton.type = 'button';
         uploadButton.className = 'btn btn-sm ldr-btn-outline ldr-pdf-upload-btn';
         uploadButton.id = 'pdf-upload-btn';
-        uploadButton.setAttribute('aria-label', 'Upload PDF files');
+        uploadButton.setAttribute('aria-label', i18n.t('Upload PDF files'));
 
         // Create button content safely (XSS prevention)
         const icon = document.createElement('i');
@@ -256,20 +256,20 @@ class PDFUploadHandler {
         );
 
         if (pdfFiles.length === 0) {
-            this.showError('Please select PDF files only');
+            this.showError(i18n.t('Please select PDF files only'));
             return;
         }
 
         // Check file count limit
         if (pdfFiles.length > this.maxFiles) {
-            this.showError(`Maximum ${this.maxFiles} PDF files allowed at once`);
+            this.showError(i18n.tf('Maximum %s PDF files allowed at once', this.maxFiles));
             return;
         }
 
         // Check file sizes
         const oversizedFiles = pdfFiles.filter(file => file.size > this.maxFileSize);
         if (oversizedFiles.length > 0) {
-            this.showError(`PDF files must be smaller than ${this.formatFileSize(this.maxFileSize)}`);
+            this.showError(i18n.tf('PDF files must be smaller than %s', this.formatFileSize(this.maxFileSize)));
             return;
         }
 
@@ -320,11 +320,11 @@ class PDFUploadHandler {
                 this.showSuccess(result.processed_files, result.errors);
                 this.updatePlaceholder();
             } else {
-                this.showError(result.message || 'Failed to process PDFs');
+                this.showError(result.message || i18n.t('Failed to process PDFs'));
             }
         } catch (error) {
             SafeLogger.error('Error uploading PDFs:', error);
-            this.showError('Failed to upload PDFs. Please try again.');
+            this.showError(i18n.t('Failed to upload PDFs. Please try again.'));
         } finally {
             this.hideProcessing();
         }
@@ -371,9 +371,9 @@ class PDFUploadHandler {
             const pdfCount = this.uploadedPDFs.length;
             const totalPages = this.uploadedPDFs.reduce((sum, pdf) => sum + pdf.pages, 0);
             this.queryTextarea.placeholder =
-                `Enter your research question... (${pdfCount} PDF${pdfCount > 1 ? 's' : ''} loaded, ${totalPages} pages total)`;
+                i18n.t('Enter your research question...') + ` (${pdfCount} PDF${pdfCount > 1 ? 's' : ''} ` + i18n.t('loaded') + `, ${totalPages} ` + i18n.t('pages total') + `)`;
         } else {
-            this.queryTextarea.placeholder = 'Enter your research topic or question\n\nFor example: drop a PDF paper here and ask LDR to search for similar sources';
+            this.queryTextarea.placeholder = i18n.t('Enter your research topic or question') + '\n\n' + i18n.t('For example: drop a PDF paper here and ask LDR to search for similar sources');
         }
     }
 
@@ -394,7 +394,7 @@ class PDFUploadHandler {
         icon.className = 'fas fa-spinner fa-spin';
 
         const text = document.createElement('span');
-        text.textContent = `Processing ${fileCount} PDF${fileCount > 1 ? 's' : ''}...`;
+        text.textContent = i18n.tf('Processing %s PDF(s)...', fileCount);
 
         container.appendChild(icon);
         container.appendChild(text);
@@ -448,7 +448,7 @@ class PDFUploadHandler {
             const br = document.createElement('br');
             const errorText = document.createElement('small');
             errorText.style.color = 'var(--text-muted)';
-            errorText.textContent = `Some files had issues: ${errors.join('; ')}`;
+            errorText.textContent = i18n.tf('Some files had issues: %s', errors.join('; '));
 
             container.appendChild(br);
             container.appendChild(errorText);
@@ -555,7 +555,7 @@ class PDFUploadHandler {
     formatFileSize(bytes) {
         if (bytes === 0) return '0 Bytes';
         const k = 1024;
-        const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+        const sizes = [i18n.t('Bytes'), i18n.t('KB'), i18n.t('MB'), i18n.t('GB')];
         const i = Math.floor(Math.log(bytes) / Math.log(k));
         return parseFloat((bytes / k ** i).toFixed(2)) + ' ' + sizes[i];
     }

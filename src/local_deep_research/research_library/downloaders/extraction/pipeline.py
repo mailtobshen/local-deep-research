@@ -18,11 +18,26 @@ from typing import Any, Dict, List, Optional
 from bs4 import BeautifulSoup
 from loguru import logger
 
+from ....web_search_engines.rate_limiting import RateLimitError
+
 from .trafilatura_extractor import TrafilaturaExtractor
 from .readability_extractor import ReadabilityExtractor
 from .justext_extractor import JustextExtractor
 from .newspaper_extractor import NewspaperExtractor
 from .metadata_extractor import extract_metadata, metadata_to_text
+from .firecrawl_client import FirecrawlClient
+from ....config.thread_settings import (
+    get_bool_setting_from_snapshot,
+    get_setting_from_snapshot,
+)
+from ....images.extractor import extract_images
+
+
+# Module-level placeholder so tests can ``patch.object(pipeline, "AutoHTMLDownloader", ...)``.
+# A top-level ``from ..playwright_html import AutoHTMLDownloader`` would create a circular
+# import (pipeline -> playwright_html -> html -> pipeline). The real class is
+# resolved lazily inside ``fetch_content_with_images`` when this placeholder is None.
+AutoHTMLDownloader = None
 
 
 # --- Pipeline thresholds ---
@@ -448,6 +463,165 @@ def fetch_and_extract(
             downloader.close()
         except Exception:
             logger.debug("Failed to close downloader in fetch_and_extract")
+
+
+def _firecrawl_enabled(settings_snapshot: Optional[dict]) -> bool:
+    """Both the master switch and the content-fetch switch must be on."""
+    enable = get_bool_setting_from_snapshot(
+        "search.engine.web.firecrawl.enable",
+        default=False,
+        settings_snapshot=settings_snapshot,
+    )
+    use_for_content = get_bool_setting_from_snapshot(
+        "search.engine.web.firecrawl.use_for_content_fetch",
+        default=False,
+        settings_snapshot=settings_snapshot,
+    )
+    return bool(enable and use_for_content)
+
+
+def _new_firecrawl_client_from_snapshot(
+    settings_snapshot: Optional[dict],
+) -> FirecrawlClient:
+    """Build a FirecrawlClient from settings (api_url / api_key)."""
+    api_url = get_setting_from_snapshot(
+        "search.engine.web.firecrawl.api_url",
+        default="http://localhost:3002",
+        settings_snapshot=settings_snapshot,
+    )
+    api_url = (
+        api_url
+        if isinstance(api_url, str) and api_url
+        else "http://localhost:3002"
+    )
+    # Use a non-None sentinel default so missing keys don't raise
+    # NoSettingsContextError (FirecrawlClient accepts None for api_key).
+    api_key = get_setting_from_snapshot(
+        "search.engine.web.firecrawl.api_key",
+        default="",
+        settings_snapshot=settings_snapshot,
+    )
+    api_key = api_key if isinstance(api_key, str) and api_key else None
+    return FirecrawlClient(api_url=api_url, api_key=api_key)
+
+
+def fetch_content(
+    urls: List[str],
+    settings_snapshot: Optional[dict] = None,
+    language: str = "English",
+    enable_js_rendering: bool = False,
+) -> Dict[str, Optional[str]]:
+    """Fetch + extract content for urls, preferring Firecrawl when enabled.
+
+    When the Firecrawl content-fetch switch is off (or the service fails),
+    this is a transparent passthrough to batch_fetch_and_extract.
+    """
+    if not urls:
+        return {}
+
+    if not _firecrawl_enabled(settings_snapshot):
+        return batch_fetch_and_extract(
+            urls, language=language, enable_js_rendering=enable_js_rendering
+        )
+
+    try:
+        client = _new_firecrawl_client_from_snapshot(settings_snapshot)
+        fc_results = client.batch_scrape(urls)
+    except RateLimitError:
+        # 429s must propagate so callers can back off — don't swallow into
+        # the silent legacy fallback below.
+        raise
+    except Exception:
+        logger.debug("Firecrawl dispatch failed; full fallback", exc_info=True)
+        fc_results = dict.fromkeys(urls)
+
+    final: Dict[str, Optional[str]] = {}
+    fallback_urls: List[str] = []
+    for u in urls:
+        if fc_results.get(u):
+            final[u] = fc_results[u]
+        else:
+            fallback_urls.append(u)
+
+    if fallback_urls:
+        legacy = batch_fetch_and_extract(
+            fallback_urls,
+            language=language,
+            enable_js_rendering=enable_js_rendering,
+        )
+        for u in fallback_urls:
+            final[u] = legacy.get(u)
+    else:
+        for u in urls:
+            final.setdefault(u, None)
+
+    return final
+
+
+def fetch_content_with_images(
+    urls: List[str],
+    titles: Optional[Dict[str, str]] = None,
+    settings_snapshot: Optional[dict] = None,
+    language: str = "English",
+    enable_js_rendering: bool = False,
+) -> Dict[str, Dict[str, Any]]:
+    """Fetch + extract text AND images from the same download.
+
+    Returns {url: {"text": Optional[str], "images": List[ExtractedImage]}}.
+    Image extraction never affects text extraction (isolated try/except).
+    No extra network request: images come from the already-fetched HTML.
+    """
+    result: Dict[str, Dict[str, Any]] = {}
+    if not urls:
+        return result
+
+    titles = titles or {}
+    # Lazy-resolve AutoHTMLDownloader: a top-level import would create a
+    # circular import (pipeline -> playwright_html -> html -> pipeline).
+    # If a previous attempt's deferred module-level binding left the
+    # placeholder as None, fall through to a real import so production
+    # calls still work. ImportError is intentionally NOT caught here — a
+    # real cycle means a real bug, suppression would hide it.
+    dl_cls = AutoHTMLDownloader
+    if dl_cls is None:
+        from ..playwright_html import AutoHTMLDownloader as _dl_cls
+
+        dl_cls = _dl_cls
+    downloader = dl_cls(
+        timeout=30,
+        language=language,
+        enable_js_rendering=enable_js_rendering,
+    )
+    try:
+        for url in urls:
+            text: Optional[str] = None
+            images = []
+            try:
+                text_bytes, raw_html = downloader.download_with_html(url)
+                if text_bytes:
+                    text = text_bytes.decode("utf-8", errors="replace")
+                if raw_html:
+                    try:
+                        images = extract_images(
+                            raw_html, url, titles.get(url, "")
+                        )
+                    except Exception:
+                        logger.debug(
+                            "extract_images failed for %s", url, exc_info=True
+                        )
+                        images = []
+            except Exception:
+                logger.debug(
+                    "fetch_content_with_images failed for %s", url, exc_info=True
+                )
+            result[url] = {"text": text, "images": images}
+    finally:
+        try:
+            downloader.close()
+        except Exception:
+            logger.debug("Failed to close downloader in fetch_content_with_images")
+
+    return result
 
 
 def batch_fetch_and_extract(

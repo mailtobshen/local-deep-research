@@ -1,7 +1,7 @@
 <div class="ldr-collapsible-log-panel">
     <div class="ldr-log-panel-header" id="log-panel-toggle">
         <i aria-hidden="true" class="fas fa-chevron-right ldr-toggle-icon"></i>
-        <span>Research Logs</span>
+        <span>{{ _("Research Logs") }}</span>
         <span class="ldr-log-indicator" id="log-indicator">0</span>
     </div>
     <div class="ldr-log-panel-content collapsed" id="log-panel-content">
@@ -21,15 +21,15 @@
                 </button>
                 <button class="ldr-small-btn ldr-selected"
                         id="log-autoscroll-button"
-                        title="Toggle automatic scrolling of logs"
-                        aria-label="Toggle automatic scrolling of logs">
+                        title="{{ _("Toggle automatic scrolling of logs") }}"
+                        aria-label="{{ _("Toggle automatic scrolling of logs") }}">
                     <i aria-hidden="true" class="fas fa-arrows-alt-v"></i>
                 </button>
             </div>
         </div>
         <div class="ldr-console-log" id="console-log-container">
             <!-- Logs will be added here dynamically -->
-            <div class="ldr-empty-log-message">No logs yet. Research logs will appear here as they occur.</div>
+            <div class="ldr-empty-log-message">{{ _("No logs yet. Research logs will appear here as they occur.") }}</div>
         </div>
     </div>
 </div>

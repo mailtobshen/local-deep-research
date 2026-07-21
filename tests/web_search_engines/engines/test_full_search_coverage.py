@@ -38,7 +38,7 @@ class TestGetFullContent:
             return_value=True,
         ):
             with patch(
-                "local_deep_research.web_search_engines.engines.full_search.batch_fetch_and_extract",
+                "local_deep_research.web_search_engines.engines.full_search.fetch_content",
                 return_value={
                     "https://example.com/1": "Content 1",
                     "https://example.com/2": "Content 2",
@@ -78,7 +78,7 @@ class TestGetFullContent:
             return_value=True,
         ):
             with patch(
-                "local_deep_research.web_search_engines.engines.full_search.batch_fetch_and_extract",
+                "local_deep_research.web_search_engines.engines.full_search.fetch_content",
                 side_effect=Exception("Network error"),
             ):
                 result = engine._get_full_content(items)
@@ -99,7 +99,7 @@ class TestGetFullContent:
             return_value=True,
         ):
             with patch(
-                "local_deep_research.web_search_engines.engines.full_search.batch_fetch_and_extract",
+                "local_deep_research.web_search_engines.engines.full_search.fetch_content",
                 return_value={
                     "https://example.com/1": "Content",
                 },
@@ -126,7 +126,7 @@ class TestGetFullContent:
             side_effect=mock_validate,
         ):
             with patch(
-                "local_deep_research.web_search_engines.engines.full_search.batch_fetch_and_extract",
+                "local_deep_research.web_search_engines.engines.full_search.fetch_content",
                 return_value={
                     "https://example.com/ok": "Content",
                 },
@@ -213,7 +213,7 @@ class TestRunSsrfBlocking:
                 return_value=True,
             ),
             patch(
-                "local_deep_research.web_search_engines.engines.full_search.batch_fetch_and_extract",
+                "local_deep_research.web_search_engines.engines.full_search.fetch_content",
                 return_value={
                     "https://example.com/1": "Page content",
                 },

@@ -9,6 +9,7 @@ from sqlalchemy import desc, func
 from sqlalchemy.orm import Session
 
 from ...database.models import TokenUsage
+from ..translations import _
 
 
 def check_context_below_history(
@@ -43,15 +44,17 @@ def check_context_below_history(
     return {
         "type": "context_below_history",
         "icon": "📉",
-        "title": "Context Below Historical Usage",
-        "message": (
-            f"Current context ({local_context:,}) is below the context window "
-            f"size that 99% of your past researches ran with "
-            f"(min safe: {min_safe_context:,}). This may cause truncation."
+        "title": _("Context Below Historical Usage"),
+        "message": _(
+            "Current context ({current}) is below the context window "
+            "size that 99% of your past researches ran with "
+            "(min safe: {safe}). This may cause truncation.",
+            current=f"{local_context:,}",
+            safe=f"{min_safe_context:,}",
         ),
         "dismissKey": "app.warnings.dismiss_context_reduced",
         "actionUrl": "/metrics/context-overflow",
-        "actionLabel": "View context metrics",
+        "actionLabel": _("View context metrics"),
     }
 
 
@@ -72,12 +75,13 @@ def check_context_truncation_history(
     return {
         "type": "context_truncation_history",
         "icon": "⚠️",
-        "title": "Previous Truncation Detected",
-        "message": (
-            f"Research was truncated {truncation_count} time(s) with similar "
-            f"or higher context. Consider increasing context window."
+        "title": _("Previous Truncation Detected"),
+        "message": _(
+            "Research was truncated {count} time(s) with similar "
+            "or higher context. Consider increasing context window.",
+            count=truncation_count,
         ),
         "dismissKey": "app.warnings.dismiss_context_reduced",
         "actionUrl": "/metrics/context-overflow",
-        "actionLabel": "View context metrics",
+        "actionLabel": _("View context metrics"),
     }

@@ -87,11 +87,11 @@ async function loadCollections() {
                 renderCollections();
             }
         } else {
-            showError('Failed to load collections: ' + data.error);
+            showError(i18n.tf('Failed to load collections: %s', data.error));
         }
     } catch (error) {
         SafeLogger.error('Error loading collections:', error);
-        showError('Failed to load collections');
+        showError(i18n.t('Failed to load collections'));
     }
 }
 
@@ -112,7 +112,7 @@ function renderCollections() {
             <div class="ldr-collection-stats">
                 <div class="ldr-stat-item">
                     <i class="fas fa-file"></i>
-                    <span>${collection.document_count || 0} documents</span>
+                    <span>${collection.document_count || 0} ${i18n.t('documents')}</span>
                 </div>
                 ${collection.created_at ? `
                 <div class="ldr-stat-item">
@@ -123,18 +123,18 @@ function renderCollections() {
                 ${collection.embedding ? `
                 <div class="ldr-stat-item ldr-embedding-info">
                     <i class="fas fa-microchip"></i>
-                    <span title="Embedding: ${escapeHtml(collection.embedding.provider)}/${escapeHtml(collection.embedding.model)}">${escapeHtml(collection.embedding.model)}</span>
+                    <span title="${i18n.t('Embedding:')} ${escapeHtml(collection.embedding.provider)}/${escapeHtml(collection.embedding.model)}">${escapeHtml(collection.embedding.model)}</span>
                 </div>
                 ` : `
                 <div class="ldr-stat-item ldr-embedding-warning">
                     <i class="fas fa-exclamation-triangle"></i>
-                    <span title="Collection not yet indexed">Not indexed</span>
+                    <span title="${i18n.t('Collection not yet indexed')}">${i18n.t('Not indexed')}</span>
                 </div>
                 `}
             </div>
 
             <div class="ldr-collection-view-link">
-                <span>View</span>
+                <span>${i18n.t('View')}</span>
                 <i class="fas fa-arrow-right"></i>
             </div>
         </a>
@@ -154,12 +154,12 @@ const escapeHtml = window.escapeHtml || function(str) {
  * Show success message
  */
 function showSuccess(message) {
-    alert('Success: ' + message);
+    alert(i18n.tf('Success: %s', message));
 }
 
 /**
  * Show error message
  */
 function showError(message) {
-    alert('Error: ' + message);
+    alert(i18n.tf('Error: %s', message));
 }

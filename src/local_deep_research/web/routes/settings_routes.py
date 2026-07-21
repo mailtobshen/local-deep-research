@@ -66,6 +66,7 @@ from ...utilities.db_utils import get_settings_manager
 from ...utilities.url_utils import normalize_url
 from ...security.decorators import require_json_body
 from ..auth.decorators import login_required
+from ..translations import _
 from ..utils.request_helpers import parse_bool_arg
 from ...security.rate_limiter import settings_limit
 from ...settings.manager import get_typed_setting_value, parse_boolean
@@ -723,18 +724,27 @@ def save_settings(db_session=None, settings_manager=None):
             db_session.commit()
 
             flash(
-                f"Settings saved successfully! Updated {updated_count} settings.",
+                _(
+                    "Settings saved successfully! Updated {updated_count} settings.",
+                    updated_count=updated_count,
+                ),
                 "success",
             )
             if failed_count > 0:
                 flash(
-                    f"Warning: {failed_count} settings failed to save.",
+                    _(
+                        "Warning: {failed_count} settings failed to save.",
+                        failed_count=failed_count,
+                    ),
                     "warning",
                 )
             if rejected_count > 0:
                 flash(
-                    f"Rejected {rejected_count} settings (unknown namespace). "
-                    "This may indicate a bug or an attempted injection.",
+                    _(
+                        "Rejected {rejected_count} settings (unknown namespace). "
+                        "This may indicate a bug or an attempted injection.",
+                        rejected_count=rejected_count,
+                    ),
                     "error",
                 )
             invalidate_settings_caches(session["username"])
@@ -742,13 +752,13 @@ def save_settings(db_session=None, settings_manager=None):
         except Exception:
             db_session.rollback()
             logger.exception("Failed to commit settings")
-            flash("Error saving settings. Please try again.", "error")
+            flash(_("Error saving settings. Please try again."), "error")
 
         return redirect(url_for("settings.settings_page"))
 
     except Exception:
         logger.exception("Error in save_settings")
-        flash("An internal error occurred while saving settings.", "error")
+        flash(_("An internal error occurred while saving settings."), "error")
         return redirect(url_for("settings.settings_page"))
 
 

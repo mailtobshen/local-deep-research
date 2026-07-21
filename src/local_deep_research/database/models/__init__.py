@@ -16,6 +16,7 @@ from .benchmark import (
 )
 from .cache import Cache, SearchCache
 from .citation import Paper, PaperAppearance
+from .images import Image
 from .journal import Journal
 from .logs import ResearchLog
 from .metrics import ModelUsage, ResearchRating, SearchCall, TokenUsage
@@ -178,4 +179,6 @@ __all__ = [
     "FileVerificationFailure",
     # Domain Classification
     "DomainClassification",
+    # Images
+    "Image",
 ]

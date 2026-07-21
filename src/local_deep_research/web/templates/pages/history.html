@@ -2,7 +2,7 @@
 
 {% set active_page = 'history' %}
 
-{% block title %}Research History - Deep Research System{% endblock %}
+{% block title %}{{ _('Research History') }} - {{ _('Deep Research System') }}{% endblock %}
 
 {% block extra_head %}
 <link rel="stylesheet" href="/static/css/components/history-icons.css">
@@ -12,29 +12,29 @@
 {% block content %}
 <div class="ldr-page active" id="history">
     <div class="ldr-page-header">
-        <h1>Research History</h1>
+        <h1>{{ _("Research History") }}</h1>
     </div>
 
     <!-- AI Search Indexing Panel -->
     <div class="ldr-card" id="semantic-search-panel" style="margin-bottom: 1rem;">
         <div class="ldr-card-header ldr-semantic-panel-header" id="semantic-panel-header" role="button" tabindex="0" aria-expanded="true" aria-controls="semantic-panel-content">
-            <h3><i aria-hidden="true" class="fas fa-brain"></i> AI Search</h3>
+            <h3><i aria-hidden="true" class="fas fa-brain"></i> {{ _("AI Search") }}</h3>
             <i aria-hidden="true" class="fas fa-chevron-down" id="semantic-panel-toggle" ></i>
         </div>
         <div class="ldr-card-content" id="semantic-panel-content">
             <p class="ldr-semantic-panel-description">
-                Index your completed research to enable <strong>AI Hybrid</strong> and <strong>AI Only</strong> search modes.
-                AI Hybrid (default) shows instant title matches, then appends AI content matches.
+                {{ _("Index your completed research to enable") }} <strong>{{ _("AI Hybrid") }}</strong> {{ _("and") }} <strong>{{ _("AI Only") }}</strong> {{ _("search modes.") }}
+                {{ _("AI Hybrid (default) shows instant title matches, then appends AI content matches.") }}
             </p>
             <!-- Indexing Status -->
             <div id="indexing-status" class="ldr-indexing-status">
                 <div class="ldr-indexing-status-row">
                     <span>
                         <i aria-hidden="true" class="fas fa-database"></i>
-                        <span id="indexed-count">0</span> / <span id="total-count">0</span> documents indexed
+                        <span id="indexed-count">0</span> / <span id="total-count">0</span> {{ _('documents indexed') }}
                     </span>
                     <button id="index-all-btn" class="btn btn-sm btn-primary">
-                        <i aria-hidden="true" class="fas fa-sync"></i> Index All
+                        <i aria-hidden="true" class="fas fa-sync"></i> {{ _('Index All') }}
                     </button>
                 </div>
                 <!-- Progress bar (hidden by default) -->
@@ -42,7 +42,7 @@
                     <div class="ldr-progress-track">
                         <div id="indexing-progress-bar" class="ldr-progress-bar" style="width: 0%;"></div>
                     </div>
-                    <small id="indexing-progress-text" style="color: var(--text-secondary);" aria-live="polite">Starting...</small>
+                    <small id="indexing-progress-text" style="color: var(--text-secondary);" aria-live="polite">{{ _("Starting...") }}</small>
                 </div>
             </div>
         </div>
@@ -53,38 +53,38 @@
         <div class="ldr-card-content">
             <div class="ldr-search-controls" style="margin-bottom: 1rem;">
                 <div class="ldr-search-row">
-                    <input type="text" id="history-search" placeholder="Search titles + content..." class="ldr-search-input" style="flex: 1;">
+                    <input type="text" id="history-search" placeholder="{{ _("Search titles + content...") }}" class="ldr-search-input" style="flex: 1;">
                     <div class="dropdown d-inline-block">
                         <button class="btn btn-sm ldr-btn-outline dropdown-toggle" type="button"
                                 id="search-mode-btn" data-bs-toggle="dropdown" aria-expanded="false">
-                            <i aria-hidden="true" class="fas fa-brain" ></i> AI Hybrid
+                            <i aria-hidden="true" class="fas fa-brain" ></i> {{ _('AI Hybrid') }}
                         </button>
-                        <ul class="dropdown-menu" aria-label="Search mode" id="search-mode-menu">
+                        <ul class="dropdown-menu" aria-label="{{ _("Search mode") }}" id="search-mode-menu">
                             <li><a class="dropdown-item active" href="#" data-mode="hybrid">
-                                <i aria-hidden="true" class="fas fa-brain" ></i> AI Hybrid <small class="text-muted">— titles + content</small>
+                                <i aria-hidden="true" class="fas fa-brain" ></i> {{ _("AI Hybrid") }} <small class="text-muted">{{ _("— titles + content") }}</small>
                             </a></li>
                             <li><a class="dropdown-item" href="#" data-mode="text">
-                                <i aria-hidden="true" class="fas fa-font" ></i> Text Only <small class="text-muted">— titles only</small>
+                                <i aria-hidden="true" class="fas fa-font" ></i> {{ _("Text Only") }} <small class="text-muted">{{ _("— titles only") }}</small>
                             </a></li>
                             <li><a class="dropdown-item" href="#" data-mode="semantic">
-                                <i aria-hidden="true" class="fas fa-brain" ></i> AI Only <small class="text-muted">— content search</small>
+                                <i aria-hidden="true" class="fas fa-brain" ></i> {{ _("AI Only") }} <small class="text-muted">{{ _("— content search") }}</small>
                             </a></li>
                         </ul>
                     </div>
                 </div>
                 <button id="clear-history-btn" class="btn btn-danger" style="display: none;">
-                    <i aria-hidden="true" class="fas fa-trash-alt"></i> Clear All
+                    <i aria-hidden="true" class="fas fa-trash-alt"></i> {{ _("Clear All") }}
                 </button>
             </div>
             <div class="ldr-history-list" id="history-items">
                 <!-- Will be populated dynamically -->
-                <div class="ldr-loading-spinner ldr-centered" role="status" aria-label="Loading research history">
+                <div class="ldr-loading-spinner ldr-centered" role="status" aria-label="{{ _("Loading research history") }}">
                     <div class="ldr-spinner"></div>
                 </div>
             </div>
             <div id="history-empty-message" class="ldr-empty-state" style="display: none;">
                 <i aria-hidden="true" class="fas fa-history ldr-empty-icon"></i>
-                <p>No research history found.</p>
+                <p>{{ _("No research history found.") }}</p>
             </div>
         </div>
     </div>

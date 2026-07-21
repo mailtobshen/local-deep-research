@@ -26,7 +26,7 @@ function formatNextUpdate(dateString) {
 
     // Check if the date is valid
     if (isNaN(date.getTime())) {
-        return 'Invalid date';
+        return i18n.t('Invalid date');
     }
 
     // If the date string doesn't contain timezone info, it might be interpreted incorrectly
@@ -121,11 +121,11 @@ async function loadSubscriptions() {
             updateStats();
         } else {
             SafeLogger.error('Failed to load subscriptions:', response.status, response.statusText);
-            showAlert('Failed to load subscriptions', 'error');
+            showAlert(i18n.t('Failed to load subscriptions'), 'error');
         }
     } catch (error) {
         SafeLogger.error('Error loading subscriptions:', error);
-        showAlert('Failed to load subscriptions', 'error');
+        showAlert(i18n.t('Failed to load subscriptions'), 'error');
     }
 }
 
@@ -153,13 +153,7 @@ function renderSubscriptions() {
     const filtered = filterSubscriptions();
 
     if (filtered.length === 0) {
-        grid.innerHTML = `
-            <div class="ldr-empty-state">
-                <i class="bi bi-bell-slash"></i>
-                <h3>No subscriptions found</h3>
-                <p>Create your first subscription to start tracking news topics</p>
-            </div>
-        `;
+        grid.innerHTML = '<div class="ldr-empty-state"><i class="bi bi-bell-slash"></i><h3>' + i18n.t('No subscriptions found') + '</h3><p>' + i18n.t('Create your first subscription to start tracking news topics') + '</p></div>';
         return;
     }
 
@@ -172,21 +166,21 @@ function createSubscriptionCard(subscription) {
     const statusClass = subscription.is_active ? 'active' : 'paused';
     const statusIcon = subscription.is_active ? 'bi-play-circle' : 'bi-pause-circle';
     const lastUpdated = subscription.last_refreshed ?
-        new Date(subscription.last_refreshed).toLocaleString() : 'Never';
+        new Date(subscription.last_refreshed).toLocaleString() : i18n.t('Never');
 
     // Use refresh_minutes directly
     const refreshMinutes = subscription.refresh_minutes;
     let refreshInterval;
     if (refreshMinutes === 1) {
-        refreshInterval = 'Every minute';
+        refreshInterval = i18n.t('Every minute');
     } else if (refreshMinutes < 60) {
         refreshInterval = `Every ${refreshMinutes} minutes`;
     } else if (refreshMinutes === 60) {
-        refreshInterval = 'Hourly';
+        refreshInterval = i18n.t('Hourly');
     } else if (refreshMinutes === 1440) {
-        refreshInterval = 'Daily';
+        refreshInterval = i18n.t('Daily');
     } else if (refreshMinutes === 10080) {
-        refreshInterval = 'Weekly';
+        refreshInterval = i18n.t('Weekly');
     } else if (refreshMinutes % 1440 === 0) {
         refreshInterval = `Every ${refreshMinutes / 1440} days`;
     } else if (refreshMinutes % 60 === 0) {
@@ -211,19 +205,19 @@ function createSubscriptionCard(subscription) {
             <div class="ldr-card-header">
                 <h4 title="${safeDisplayName}">${safeTruncatedName}</h4>
                 <div class="ldr-card-actions">
-                    <button class="btn btn-sm ldr-btn-icon" onclick="event.stopPropagation(); runSubscriptionNow('${escapeHtml(subscription.id)}')" title="Run now">
+                    <button class="btn btn-sm ldr-btn-icon" onclick="event.stopPropagation(); runSubscriptionNow('${escapeHtml(subscription.id)}')" title="${i18n.t('Run now')}">
                         <i class="bi bi-arrow-clockwise"></i>
                     </button>
-                    <button class="btn btn-sm ldr-btn-icon" onclick="event.stopPropagation(); toggleSubscription('${escapeHtml(subscription.id)}')" title="${statusClass === 'active' ? 'Pause' : 'Resume'}">
+                    <button class="btn btn-sm ldr-btn-icon" onclick="event.stopPropagation(); toggleSubscription('${escapeHtml(subscription.id)}')" title="${statusClass === 'active' ? i18n.t('Pause') : i18n.t('Resume')}">
                         <i class="bi ${statusIcon}"></i>
                     </button>
-                    <button class="btn btn-sm ldr-btn-icon" onclick="event.stopPropagation(); viewSubscriptionHistory('${escapeHtml(subscription.id)}')" title="View history">
+                    <button class="btn btn-sm ldr-btn-icon" onclick="event.stopPropagation(); viewSubscriptionHistory('${escapeHtml(subscription.id)}')" title="${i18n.t('View history')}">
                         <i class="bi bi-clock-history"></i>
                     </button>
-                    <a href="/news/subscriptions/${encodeURIComponent(subscription.id)}/edit" class="btn btn-sm ldr-btn-icon" onclick="event.stopPropagation();" title="Edit">
+                    <a href="/news/subscriptions/${encodeURIComponent(subscription.id)}/edit" class="btn btn-sm ldr-btn-icon" onclick="event.stopPropagation();" title="${i18n.t('Edit')}">
                         <i class="bi bi-pencil"></i>
                     </a>
-                    <button class="btn btn-sm ldr-btn-icon btn-danger" onclick="event.stopPropagation(); deleteSubscriptionDirect('${escapeHtml(subscription.id)}')" title="Delete">
+                    <button class="btn btn-sm ldr-btn-icon btn-danger" onclick="event.stopPropagation(); deleteSubscriptionDirect('${escapeHtml(subscription.id)}')" title="${i18n.t('Delete')}">
                         <i class="bi bi-trash"></i>
                     </button>
                 </div>
@@ -243,7 +237,7 @@ function createSubscriptionCard(subscription) {
                     ${subscription.source_id ? `
                         <div class="ldr-stat-item">
                             <i class="bi bi-link-45deg"></i>
-                            <a href="/progress/${encodeURIComponent(subscription.source_id)}" class="ldr-source-link">View original research</a>
+                            <a href="/progress/${encodeURIComponent(subscription.source_id)}" class="ldr-source-link">${i18n.t('View original research')}</a>
                         </div>
                     ` : ''}
                 </div>
@@ -303,7 +297,7 @@ async function runSubscriptionNow(subscriptionId) {
     try {
         const query = subscription.query || subscription.query_or_topic || '';
         SafeLogger.log('Running subscription:', subscriptionId, 'with query:', query);
-        showAlert('Starting research for: ' + query, 'info');
+        showAlert(i18n.tf('Starting research for: %s', query), 'info');
 
         const requestData = {
             query,
@@ -336,7 +330,7 @@ async function runSubscriptionNow(subscriptionId) {
             if ((data.status === 'success' || data.status === window.RESEARCH_STATUS.QUEUED) && data.research_id) {
                 // Validate research_id is a safe UUID format before using in URL
                 const safeResearchId = String(data.research_id).replace(/[^a-z0-9-]/gi, '');
-                showAlert(`Research started! <a href="/progress/${safeResearchId}" style="color: white; text-decoration: underline;">View progress</a>`, 'success');
+                showAlert(i18n.t('Research started!') + ' <a href="/progress/' + safeResearchId + '" style="color: white; text-decoration: underline;">' + i18n.t('View progress') + '</a>', 'success');
 
                 // Store active research in localStorage so news page can show progress
                 localStorage.setItem('active_news_research', JSON.stringify({
@@ -357,18 +351,18 @@ async function runSubscriptionNow(subscriptionId) {
             } else {
                 SafeLogger.error('Unexpected response:', data);
                 // Safe: showAlert escapes internally
-                showAlert('Failed to start research: ' + (data.message || 'Unknown error'), 'error');
+                showAlert(i18n.tf('Failed to start research: %s', data.message || i18n.t('Unknown error')), 'error');
             }
         } else {
             SafeLogger.error('Research API error:', response.status, response.statusText);
             const errorData = await response.json().catch(() => ({}));
             SafeLogger.error('Error data:', errorData);
             // Safe: showAlert escapes internally
-            showAlert(errorData.message || 'Failed to start research', 'error');
+            showAlert(errorData.message || i18n.t('Failed to start research'), 'error');
         }
     } catch (error) {
         SafeLogger.error('Error running subscription:', error);
-        showAlert('Failed to start research', 'error');
+        showAlert(i18n.t('Failed to start research'), 'error');
     }
 }
 
@@ -397,7 +391,7 @@ async function toggleSubscription(subscriptionId) {
         }
     } catch (error) {
         SafeLogger.error('Error toggling subscription:', error);
-        showAlert('Failed to update subscription', 'error');
+        showAlert(i18n.t('Failed to update subscription'), 'error');
     }
 }
 
@@ -413,11 +407,11 @@ async function viewSubscriptionHistory(subscriptionId) {
             const data = await response.json();
             showSubscriptionHistoryModal(subscription, data);
         } else {
-            showAlert('Failed to load subscription history', 'error');
+            showAlert(i18n.t('Failed to load subscription history'), 'error');
         }
     } catch (error) {
         SafeLogger.error('Error loading subscription history:', error);
-        showAlert('Failed to load subscription history', 'error');
+        showAlert(i18n.t('Failed to load subscription history'), 'error');
     }
 }
 
@@ -450,7 +444,7 @@ function showSubscriptionHistoryModal(subscription, historyData) {
                             ` : ''}
                         </div>
 
-                        <h6 class="mt-4">Recent Research Runs</h6>
+                        <h6 class="mt-4">${i18n.t('Recent Research Runs')}</h6>
                         <div class="ldr-history-list" style="max-height: 400px; overflow-y: auto;">
                             ${historyData.history && historyData.history.length > 0 ?
                                 historyData.history.map(item => {
@@ -478,7 +472,7 @@ function showSubscriptionHistoryModal(subscription, historyData) {
                                         </div>
                                     </div>
                                 `}).join('') :
-                                '<p class="text-muted">No research runs yet</p>'
+                                '<p class="text-muted">' + i18n.t('No research runs yet') + '</p>'
                             }
                         </div>
                     </div>
@@ -514,7 +508,7 @@ function showSubscriptionHistoryModal(subscription, historyData) {
 async function deleteSubscriptionDirect(subscriptionId) {
     const subscription = subscriptions.find(s => s.id === subscriptionId);
 
-    if (!subscription || !confirm(`Are you sure you want to delete the subscription "${subscription.name || subscription.query}"?`)) {
+    if (!subscription || !confirm(i18n.tf('Are you sure you want to delete the subscription "%s"?', subscription.name || subscription.query))) {
         return;
     }
 
@@ -528,17 +522,17 @@ async function deleteSubscriptionDirect(subscriptionId) {
         });
 
         if (response.ok) {
-            showAlert('Subscription deleted successfully', 'success');
+            showAlert(i18n.t('Subscription deleted successfully'), 'success');
             // Reload subscriptions
             await loadSubscriptions();
         } else {
             const error = await response.json();
             // Safe: showAlert escapes internally
-            showAlert(error.error || 'Failed to delete subscription', 'error');
+            showAlert(error.error || i18n.t('Failed to delete subscription'), 'error');
         }
     } catch (error) {
         SafeLogger.error('Error deleting subscription:', error);
-        showAlert('Failed to delete subscription', 'error');
+        showAlert(i18n.t('Failed to delete subscription'), 'error');
     }
 }
 
@@ -607,7 +601,7 @@ function selectFolder(folderId) {
 }
 
 async function createNewFolder() {
-    const name = prompt('Enter folder name:');
+    const name = prompt(i18n.t('Enter folder name:'));
     if (!name || !name.trim()) return;
 
     try {
@@ -626,7 +620,7 @@ async function createNewFolder() {
         if (response.ok) {
             const folder = await response.json();
             // Safe: showAlert escapes internally
-            showAlert(`Folder "${folder.name}" created successfully!`, 'success');
+            showAlert(i18n.tf('Folder "%s" created successfully!', folder.name), 'success');
 
             // Reload folders
             await loadFolders();
@@ -636,15 +630,15 @@ async function createNewFolder() {
         } else {
             const error = await response.json();
             if (response.status === 409) {
-                showAlert('A folder with that name already exists', 'warning');
+                showAlert(i18n.t('A folder with that name already exists'), 'warning');
             } else {
                 // Safe: showAlert escapes internally
-                showAlert(error.error || 'Failed to create folder', 'error');
+                showAlert(error.error || i18n.t('Failed to create folder'), 'error');
             }
         }
     } catch (error) {
         SafeLogger.error('Error creating folder:', error);
-        showAlert('Failed to create folder', 'error');
+        showAlert(i18n.t('Failed to create folder'), 'error');
     }
 }
 
@@ -691,7 +685,7 @@ async function checkSchedulerStatus() {
 
     // Set checking state
     statusIndicator.className = 'ldr-status-indicator ldr-checking';
-    statusText.textContent = 'Checking...';
+    statusText.textContent = i18n.t('Checking...');
 
     try {
         const response = await fetch('/news/api/scheduler/status', fetchOptions);
@@ -703,22 +697,22 @@ async function checkSchedulerStatus() {
                     // Check if user is tracked
                     if (data.active_users && data.active_users > 0) {
                         statusIndicator.className = 'ldr-status-indicator active';
-                        statusText.textContent = 'Active';
-                        schedulerDetails.textContent = `${data.active_users} active users, ${data.scheduled_jobs || 0} scheduled jobs`;
+                        statusText.textContent = i18n.t('Active');
+                        schedulerDetails.textContent = i18n.tf('%s active users, %s scheduled jobs', data.active_users, data.scheduled_jobs || 0);
                     } else {
                         statusIndicator.className = 'ldr-status-indicator ldr-inactive';
-                        statusText.textContent = 'Not Tracking Your Session';
-                        schedulerDetails.innerHTML = 'Log out and log back in to activate automatic scheduling. <a href="#" onclick="showSchedulerInfo(); return false;">Learn more</a>';
+                        statusText.textContent = i18n.t('Not Tracking Your Session');
+                        schedulerDetails.innerHTML = i18n.t('Log out and log back in to activate automatic scheduling.') + ' <a href="#" onclick="showSchedulerInfo(); return false;">' + i18n.t('Learn more') + '</a>';
                     }
                 } else {
                     statusIndicator.className = 'ldr-status-indicator ldr-inactive';
-                    statusText.textContent = 'Stopped';
-                    schedulerDetails.textContent = 'Auto-refresh is disabled. Set LDR_NEWS_SCHEDULER_ALLOW_API_CONTROL=true to enable manual control.';
+                    statusText.textContent = i18n.t('Stopped');
+                    schedulerDetails.textContent = i18n.t('Auto-refresh is disabled. Set LDR_NEWS_SCHEDULER_ALLOW_API_CONTROL=true to enable manual control.');
                 }
             } else {
                 statusIndicator.className = 'ldr-status-indicator ldr-inactive';
-                statusText.textContent = 'Not Available';
-                schedulerDetails.textContent = 'Install APScheduler: pip install apscheduler';
+                statusText.textContent = i18n.t('Not Available');
+                schedulerDetails.textContent = i18n.t('Install APScheduler: pip install apscheduler');
             }
         } else {
             throw new Error('Failed to check scheduler status');
@@ -726,8 +720,8 @@ async function checkSchedulerStatus() {
     } catch (error) {
         SafeLogger.error('Error checking scheduler status:', error);
         statusIndicator.className = 'ldr-status-indicator ldr-inactive';
-        statusText.textContent = 'Error';
-        schedulerDetails.textContent = 'Unable to check scheduler status';
+        statusText.textContent = i18n.t('Error');
+        schedulerDetails.textContent = i18n.t('Unable to check scheduler status');
     }
 
 }
@@ -735,15 +729,15 @@ async function checkSchedulerStatus() {
 // Show scheduler information
 function showSchedulerInfo() {
     showAlert(`
-        <h6>About the Subscription Scheduler</h6>
-        <p>The scheduler runs your subscriptions automatically in the background:</p>
+        <h6>${i18n.t('About the Subscription Scheduler')}</h6>
+        <p>${i18n.t('The scheduler runs your subscriptions automatically in the background:')}</p>
         <ul>
-            <li>Your subscriptions are stored in an encrypted database</li>
-            <li>When you log in, the scheduler securely stores access for 48 hours</li>
-            <li>Subscriptions run automatically based on their schedule</li>
-            <li>You don't need to stay logged in - the scheduler works in the background</li>
-            <li>Any overdue subscriptions will run shortly after login</li>
+            <li>${i18n.t('Your subscriptions are stored in an encrypted database')}</li>
+            <li>${i18n.t('When you log in, the scheduler securely stores access for 48 hours')}</li>
+            <li>${i18n.t('Subscriptions run automatically based on their schedule')}</li>
+            <li>${i18n.t("You don't need to stay logged in - the scheduler works in the background")}</li>
+            <li>${i18n.t('Any overdue subscriptions will run shortly after login')}</li>
         </ul>
-        <p>The scheduler will continue running subscriptions for 48 hours after your last login. Simply log in periodically to keep it active.</p>
+        <p>${i18n.t('The scheduler will continue running subscriptions for 48 hours after your last login. Simply log in periodically to keep it active.')}</p>
     `, 'info');
 }

@@ -357,6 +357,46 @@ class SettingsManager(ISettingsManager):
             logger.info("No settings found in database, loading defaults")
             self.load_from_defaults_file(commit=True)
             logger.info("Default settings loaded successfully")
+            return
+
+        # Reconcile UI-structure metadata (visible/editable/ui_element/category/
+        # name/description/options/min/max/step) for DB rows whose key exists in
+        # the current defaults. Older databases can carry stale values for these
+        # fields (notably visible=False) that hide config items in the WebUI.
+        # Only value/type/env_var are treated as user data and left untouched.
+        # See get_all_settings for the read-side mirror of this policy.
+        try:
+            defaults = self.default_settings
+            ui_fields = (
+                "visible",
+                "editable",
+                "ui_element",
+                "category",
+                "name",
+                "description",
+                "options",
+                "min_value",
+                "max_value",
+                "step",
+            )
+            dirty = False
+            for db_setting in self.db_session.query(Setting).all():
+                default_obj = defaults.get(str(db_setting.key))
+                if not default_obj:
+                    continue  # custom setting not in defaults — leave as-is
+                for field_name in ui_fields:
+                    default_val = default_obj.get(field_name)
+                    if getattr(db_setting, field_name, None) != default_val:
+                        setattr(db_setting, field_name, default_val)
+                        dirty = True
+            if dirty:
+                self.db_session.commit()
+                logger.info(
+                    "Synced stale setting UI metadata (visible/editable/etc.) "
+                    "from defaults to database."
+                )
+        except Exception:  # noqa: BLE001 — metadata sync must never block startup
+            logger.exception("Failed to sync setting UI metadata; continuing")
 
     def _check_thread_safety(self):
         """Check if this instance is being used in the same thread it was created in."""
@@ -799,20 +839,44 @@ class SettingsManager(ISettingsManager):
                     f"category={setting.category})"
                 )
 
-            # Override default with database value
+            # Override default with database value.
+            #
+            # Only ``value`` and ``type`` are user data and come from the DB.
+            # UI-structure fields (visible/editable/ui_element/category/name/
+            # description/options/min/max/step) are authoritative from
+            # ``default_settings.json`` (already populated in result[key] at
+            # line 762) — they must NOT be overridden by stale DB rows. Older
+            # databases can carry ``visible=False`` for settings that newer
+            # defaults mark visible, which silently hides config items in the
+            # WebUI (e.g. firecrawl api_url/search_mode disappeared while
+            # api_key remained). Pinning these fields to defaults prevents
+            # such drift from ever hiding settings again.
+            default_for_key = result.get(str(setting.key), {})
             result[str(setting.key)] = {
                 "value": setting.value,
                 "type": setting_type,
-                "name": setting.name,
-                "description": setting.description,
-                "category": setting.category,
-                "ui_element": setting.ui_element,
-                "options": setting.options,
-                "min_value": setting.min_value,
-                "max_value": setting.max_value,
-                "step": setting.step,
-                "visible": setting.visible,
-                "editable": False if self.settings_locked else setting.editable,
+                "name": default_for_key.get("name", setting.name),
+                "description": default_for_key.get(
+                    "description", setting.description
+                ),
+                "category": default_for_key.get("category", setting.category),
+                "ui_element": default_for_key.get(
+                    "ui_element", setting.ui_element
+                ),
+                "options": default_for_key.get("options", setting.options),
+                "min_value": default_for_key.get(
+                    "min_value", setting.min_value
+                ),
+                "max_value": default_for_key.get(
+                    "max_value", setting.max_value
+                ),
+                "step": default_for_key.get("step", setting.step),
+                "visible": default_for_key.get("visible", setting.visible),
+                "editable": (
+                    False
+                    if self.settings_locked
+                    else default_for_key.get("editable", setting.editable)
+                ),
             }
 
             # Override from the environment variables if needed.

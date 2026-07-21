@@ -52,6 +52,12 @@ window.ResearchStates = Object.freeze({
         return status === window.RESEARCH_STATUS.COMPLETED;
     },
 
+    /** True for partially-successful research — synthesis errored
+     *  but fallback recovered enough findings to produce a report. */
+    isPartialSuccess(status) {
+        return status === window.RESEARCH_STATUS.PARTIAL_SUCCESS;
+    },
+
     /** True for failed research (unrecoverable error, includes legacy 'error' status) */
     isFailed(status) {
         return status === window.RESEARCH_STATUS.FAILED
@@ -80,15 +86,16 @@ window.ResearchStates = Object.freeze({
     formatStatus(status) {
         const RS = window.RESEARCH_STATUS;
         const labels = {};
-        labels[RS.IN_PROGRESS] = 'In Progress';
-        labels[RS.COMPLETED] = 'Completed';
-        labels[RS.FAILED] = 'Failed';
-        labels[RS.SUSPENDED] = 'Cancelled';
-        labels[RS.CANCELLED] = 'Cancelled';
-        labels[RS.QUEUED] = 'Queued';
+        labels[RS.IN_PROGRESS] = i18n.t('In Progress');
+        labels[RS.COMPLETED] = i18n.t('Completed');
+        labels[RS.PARTIAL_SUCCESS] = i18n.t('Partial Success');
+        labels[RS.FAILED] = i18n.t('Failed');
+        labels[RS.SUSPENDED] = i18n.t('Cancelled');
+        labels[RS.CANCELLED] = i18n.t('Cancelled');
+        labels[RS.QUEUED] = i18n.t('Queued');
         labels[RS.PENDING] = 'Pending';
         labels[RS.ERROR] = 'Error';
-        labels['not_started'] = 'Not Started';
+        labels['not_started'] = i18n.t('Not Started');
 
         return labels[status] || (status
             ? status.charAt(0).toUpperCase() + status.slice(1).replace(/_/g, ' ')

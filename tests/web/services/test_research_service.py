@@ -570,9 +570,13 @@ class TestHandleTermination:
             handle_termination,
         )
 
+        from local_deep_research.constants import ResearchStatus
+
         handle_termination(123, username="testuser")
 
-        mock_cleanup.assert_called_once_with(123, "testuser")
+        mock_cleanup.assert_called_once_with(
+            123, "testuser", final_status=ResearchStatus.SUSPENDED
+        )
 
 
 class TestExportQuartoFormat:

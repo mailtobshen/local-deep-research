@@ -103,11 +103,11 @@
             nav.setAttribute('aria-label', 'Mobile navigation');
 
             const tabs = [
-                { id: 'research', icon: 'fas fa-search', label: 'Research', path: URLS.PAGES.HOME },
-                { id: 'history', icon: 'fas fa-history', label: 'History', path: URLS.PAGES.HISTORY },
-                { id: 'library', icon: 'fas fa-book', label: 'Library', path: URLS.PAGES.LIBRARY },
-                { id: 'news', icon: 'fas fa-newspaper', label: 'News', path: URLS.PAGES.NEWS },
-                { id: 'more', icon: 'fas fa-bars', label: 'More', action: 'sheet' }
+                { id: 'research', icon: 'fas fa-search', label: i18n.t('Research'), path: URLS.PAGES.HOME },
+                { id: 'history', icon: 'fas fa-history', label: i18n.t('History'), path: URLS.PAGES.HISTORY },
+                { id: 'library', icon: 'fas fa-book', label: i18n.t('Library'), path: URLS.PAGES.LIBRARY },
+                { id: 'news', icon: 'fas fa-newspaper', label: i18n.t('News'), path: URLS.PAGES.NEWS },
+                { id: 'more', icon: 'fas fa-bars', label: i18n.t('More'), action: 'sheet' }
             ];
 
             // eslint-disable-next-line no-unsanitized/property -- audited 2026-03-28: all values are hardcoded constants from tabs array and URLS config
@@ -132,7 +132,7 @@
             sheet.className = 'ldr-mobile-sheet-menu';
             sheet.setAttribute('role', 'dialog');
             sheet.setAttribute('aria-modal', 'true');
-            sheet.setAttribute('aria-label', 'More options menu');
+            sheet.setAttribute('aria-label', `${i18n.t('More options menu')}`);
             sheet.setAttribute('aria-hidden', 'true');
 
             const username = this.getUsername();
@@ -140,68 +140,68 @@
             // bearer:disable javascript_lang_dangerous_insert_html
             // eslint-disable-next-line no-unsanitized/property -- audited 2026-03-28: all values are hardcoded constants from tabs array and URLS config
             sheet.innerHTML = `
-                <div class="ldr-mobile-sheet-handle" aria-label="Drag to dismiss"></div>
+                <div class="ldr-mobile-sheet-handle" aria-label="${i18n.t('Drag to dismiss')}"></div>
 
                 <div class="ldr-mobile-sheet-content">
-                    <!-- Knowledge Base Section -->
+                    <!-- ${i18n.t('Knowledge Base')} Section -->
                     <div class="ldr-mobile-sheet-section">
-                        <h3 class="ldr-mobile-sheet-title">Knowledge Base</h3>
+                        <h3 class="ldr-mobile-sheet-title">${i18n.t('Knowledge Base')}</h3>
                         <div class="ldr-mobile-sheet-items">
                             <button class="ldr-mobile-sheet-item" data-item-id="collections" data-action="${URLS.PAGES.COLLECTIONS}">
                                 <i class="fas fa-folder-open"></i>
-                                <span class="ldr-mobile-sheet-label">Collections</span>
+                                <span class="ldr-mobile-sheet-label">${i18n.t('Collections')}</span>
                             </button>
                         </div>
                     </div>
 
-                    <!-- News Section -->
+                    <!-- ${i18n.t('News')} Section -->
                     <div class="ldr-mobile-sheet-section">
-                        <h3 class="ldr-mobile-sheet-title">News</h3>
+                        <h3 class="ldr-mobile-sheet-title">${i18n.t('News')}</h3>
                         <div class="ldr-mobile-sheet-items">
                             <button class="ldr-mobile-sheet-item" data-item-id="subscriptions" data-action="${URLS.PAGES.NEWS_SUBSCRIPTIONS}">
                                 <i class="fas fa-bell"></i>
-                                <span class="ldr-mobile-sheet-label">Subscriptions</span>
+                                <span class="ldr-mobile-sheet-label">${i18n.t('Subscriptions')}</span>
                             </button>
                         </div>
                     </div>
 
-                    <!-- Analytics Section -->
+                    <!-- ${i18n.t('Analytics')} Section -->
                     <div class="ldr-mobile-sheet-section">
-                        <h3 class="ldr-mobile-sheet-title">Analytics</h3>
+                        <h3 class="ldr-mobile-sheet-title">${i18n.t('Analytics')}</h3>
                         <div class="ldr-mobile-sheet-items">
                             <button class="ldr-mobile-sheet-item" data-item-id="metrics" data-action="${URLS.PAGES.METRICS}">
                                 <i class="fas fa-chart-bar"></i>
-                                <span class="ldr-mobile-sheet-label">Metrics</span>
+                                <span class="ldr-mobile-sheet-label">${i18n.t('Metrics')}</span>
                             </button>
                             <button class="ldr-mobile-sheet-item" data-item-id="benchmark" data-action="${URLS.PAGES.BENCHMARK}">
                                 <i class="fas fa-tachometer-alt"></i>
-                                <span class="ldr-mobile-sheet-label">Benchmark</span>
+                                <span class="ldr-mobile-sheet-label">${i18n.t('Benchmark')}</span>
                             </button>
                             <button class="ldr-mobile-sheet-item" data-item-id="benchmark-results" data-action="${URLS.PAGES.BENCHMARK_RESULTS}">
                                 <i class="fas fa-chart-line"></i>
-                                <span class="ldr-mobile-sheet-label">Results</span>
+                                <span class="ldr-mobile-sheet-label">${i18n.t('Results')}</span>
                             </button>
                         </div>
                     </div>
 
-                    <!-- Settings Section -->
+                    <!-- ${i18n.t('Settings')} Section -->
                     <div class="ldr-mobile-sheet-section">
-                        <h3 class="ldr-mobile-sheet-title">Settings</h3>
+                        <h3 class="ldr-mobile-sheet-title">${i18n.t('Settings')}</h3>
                         <div class="ldr-mobile-sheet-items">
                             <button class="ldr-mobile-sheet-item" data-item-id="embedding-settings" data-action="${URLS.PAGES.EMBEDDING_SETTINGS}">
                                 <i class="fas fa-brain"></i>
-                                <span class="ldr-mobile-sheet-label">Embeddings</span>
+                                <span class="ldr-mobile-sheet-label">${i18n.t('Embeddings')}</span>
                             </button>
                             <button class="ldr-mobile-sheet-item" data-item-id="settings" data-action="${URLS.PAGES.SETTINGS}">
                                 <i class="fas fa-cog"></i>
-                                <span class="ldr-mobile-sheet-label">Configuration</span>
+                                <span class="ldr-mobile-sheet-label">${i18n.t('Configuration')}</span>
                             </button>
                         </div>
                     </div>
 
-                    <!-- Account Section -->
+                    <!-- ${i18n.t('Account')} Section -->
                     <div class="ldr-mobile-sheet-section">
-                        <h3 class="ldr-mobile-sheet-title">Account</h3>
+                        <h3 class="ldr-mobile-sheet-title">${i18n.t('Account')}</h3>
                         <div class="ldr-mobile-sheet-items">
                             <button class="ldr-mobile-sheet-item" data-item-id="user" data-action="#">
                                 <i class="fas fa-user"></i>
@@ -209,7 +209,7 @@
                             </button>
                             <button class="ldr-mobile-sheet-item" data-item-id="logout" data-action="#logout">
                                 <i class="fas fa-sign-out-alt"></i>
-                                <span class="ldr-mobile-sheet-label">Logout</span>
+                                <span class="ldr-mobile-sheet-label">${i18n.t('Logout')}</span>
                             </button>
                         </div>
                     </div>
@@ -572,9 +572,9 @@
             const userInfo = document.querySelector('.ldr-user-info');
             if (userInfo) {
                 const text = userInfo.textContent || '';
-                return text.trim().replace(/[^\w\s@.-]/g, '').trim() || 'User';
+                return text.trim().replace(/[^\w\s@.-]/g, '').trim() || i18n.t('User');
             }
-            return 'User';
+            return i18n.t('User');
         }
 
         isCurrentPage(tab) {

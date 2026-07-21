@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="{{ current_language }}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Register - Local Deep Research</title>
+    <title>{{ _("Register - Local Deep Research") }}</title>
 
     <!-- Vite HMR for development -->
     {{ vite_hmr() }}
@@ -383,8 +383,8 @@
 <body>
     <div class="ldr-auth-container">
         <div class="ldr-auth-header">
-            <h1><i aria-hidden="true" class="fas fa-user-plus"></i> Create Account</h1>
-            <p>Join Local Deep Research</p>
+            <h1><i aria-hidden="true" class="fas fa-user-plus"></i> {{ _("Create Account") }}</h1>
+            <p>{{ _("Join Local Deep Research") }}</p>
         </div>
 
         <div class="ldr-card">
@@ -394,20 +394,19 @@
                     <div class="ldr-warning-banner">
                         <i aria-hidden="true" class="fas fa-exclamation-triangle"></i>
                         <div class="ldr-warning-banner-content">
-                            <strong>Important Security Notice</strong>
-                            <span>Your database will be encrypted with your password. There is NO way to recover your data if you forget your password. Please use a password manager.</span>
+                            <strong>{{ _("Important Security Notice") }}</strong>
+                            <span>{{ _("Your database will be encrypted with your password. There is NO way to recover your data if you forget your password. Please use a password manager.") }}</span>
                         </div>
                     </div>
                 {% else %}
                     <div class="ldr-danger-alert">
                         <i aria-hidden="true" class="fas fa-shield-alt"></i>
-                        <strong>Security Alert: No Encryption Available</strong>
-                        SQLCipher is not installed. Your database will be created WITHOUT encryption.
-                        Your API keys and data will be stored in plain text.
+                        <strong>{{ _("Security Alert: No Encryption Available") }}</strong>
+                        {{ _("SQLCipher is not installed. Your database will be created WITHOUT encryption. Your API keys and data will be stored in plain text.") }}
                         <br><br>
-                        <strong>This is NOT recommended for production use.</strong>
+                        <strong>{{ _("This is NOT recommended for production use.") }}</strong>
                         <br>
-                        Install SQLCipher before creating accounts for secure operation.
+                        {{ _("Install SQLCipher before creating accounts for secure operation.") }}
                     </div>
                 {% endif %}
 
@@ -426,7 +425,7 @@
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
 
                     <div class="form-group">
-                        <label for="username">Username</label>
+                        <label for="username">{{ _("Username") }}</label>
                         <!-- Note: The hyphen in the pattern must be escaped (\-) for Chrome's
                              unicodeSets (v) flag regex validation. Without escaping, Chrome
                              reports: "Invalid regular expression: Invalid character in character class" -->
@@ -434,24 +433,24 @@
                                class="ldr-form-control"
                                id="username"
                                name="username"
-                               placeholder="Choose a username"
+                               placeholder="{{ _("Choose a username") }}"
                                autocomplete="username"
                                required
                                autofocus
                                minlength="3"
                                pattern="[a-zA-Z0-9_\-]+"
                                aria-describedby="username-error">
-                        <small>At least 3 characters. Letters, numbers, underscores, and hyphens only.</small>
+                        <small>{{ _("At least 3 characters. Letters, numbers, underscores, and hyphens only.") }}</small>
                         <div class="ldr-error-message" id="username-error"></div>
                     </div>
 
                     <div class="form-group ldr-password-field">
-                        <label for="password">Password</label>
+                        <label for="password">{{ _("Password") }}</label>
                         <input type="password"
                                class="ldr-form-control"
                                id="password"
                                name="password"
-                               placeholder="Create a strong password"
+                               placeholder="{{ _("Create a strong password") }}"
                                autocomplete="new-password"
                                required
                                minlength="8"
@@ -461,22 +460,22 @@
                     </div>
 
                     <div class="ldr-password-requirements">
-                        <strong>Password Requirements:</strong>
+                        <strong>{{ _("Password Requirements:") }}</strong>
                         <ul>
                             {% for req in password_requirements %}
                             <li>{{ req }}</li>
                             {% endfor %}
-                            <li>Store it in your browser's password manager</li>
+                            <li>{{ _("Store it in your browser's password manager") }}</li>
                         </ul>
                     </div>
 
                     <div class="form-group">
-                        <label for="confirm_password">Confirm Password</label>
+                        <label for="confirm_password">{{ _("Confirm Password") }}</label>
                         <input type="password"
                                class="ldr-form-control"
                                id="confirm_password"
                                name="confirm_password"
-                               placeholder="Re-enter your password"
+                               placeholder="{{ _("Re-enter your password") }}"
                                autocomplete="new-password"
                                required
                                minlength="8"
@@ -492,23 +491,22 @@
                                    value="true"
                                    required>
                             <span>
-                                <i aria-hidden="true" class="fas fa-lock"></i> I understand that <strong>if I forget my password,
-                                I will permanently lose access to all my data</strong>. There is no password recovery.
+                                <i aria-hidden="true" class="fas fa-lock"></i> {{ _("I understand that") }} <strong>{{ _("if I forget my password, I will permanently lose access to all my data") }}</strong>. {{ _("There is no password recovery.") }}
                             </span>
                         </label>
                     </div>
 
                     <button type="submit" class="btn">
                         <i aria-hidden="true" class="fas fa-shield-alt"></i>
-                        Create Encrypted Account
+                        {{ _("Create Encrypted Account") }}
                     </button>
                 </form>
 
                 <div class="ldr-auth-links">
-                    <p>Already have an account? <a href="{{ url_for('auth.login') }}">Login here</a></p>
+                    <p>{{ _("Already have an account?") }} <a href="{{ url_for('auth.login') }}">{{ _("Login here") }}</a></p>
                     <div class="ldr-browser-hint">
                         <i aria-hidden="true" class="fas fa-info-circle"></i>
-                        <span>Your browser will offer to save your password</span>
+                        <span>{{ _("Your browser will offer to save your password") }}</span>
                     </div>
                 </div>
             </div>
@@ -553,9 +551,9 @@
             }
 
             if (value.length < 3) {
-                setFieldInvalid(this, usernameError, 'Username must be at least 3 characters');
+                setFieldInvalid(this, usernameError, '{{ _("Username must be at least 3 characters") }}');
             } else if (!usernamePattern.test(value)) {
-                setFieldInvalid(this, usernameError, 'Username can only contain letters, numbers, underscores, and hyphens');
+                setFieldInvalid(this, usernameError, '{{ _("Username can only contain letters, numbers, underscores, and hyphens") }}');
             } else {
                 setFieldValid(this, usernameError);
             }
@@ -564,11 +562,11 @@
         usernameInput.addEventListener('blur', function() {
             const value = this.value.trim();
             if (value.length === 0) {
-                setFieldInvalid(this, usernameError, 'Username is required');
+                setFieldInvalid(this, usernameError, '{{ _("Username is required") }}');
             } else if (value.length < 3) {
-                setFieldInvalid(this, usernameError, 'Username must be at least 3 characters');
+                setFieldInvalid(this, usernameError, '{{ _("Username must be at least 3 characters") }}');
             } else if (!usernamePattern.test(value)) {
-                setFieldInvalid(this, usernameError, 'Username can only contain letters, numbers, underscores, and hyphens');
+                setFieldInvalid(this, usernameError, '{{ _("Username can only contain letters, numbers, underscores, and hyphens") }}');
             } else {
                 setFieldValid(this, usernameError);
             }
@@ -650,7 +648,7 @@
             }
 
             if (confirmPassword !== password) {
-                setFieldInvalid(confirmPasswordInput, confirmPasswordError, 'Passwords do not match');
+                setFieldInvalid(confirmPasswordInput, confirmPasswordError, '{{ _("Passwords do not match") }}');
                 return false;
             } else {
                 setFieldValid(confirmPasswordInput, confirmPasswordError);
@@ -668,10 +666,10 @@
             // Validate username
             const username = usernameInput.value.trim();
             if (username.length === 0) {
-                setFieldInvalid(usernameInput, usernameError, 'Username is required');
+                setFieldInvalid(usernameInput, usernameError, '{{ _("Username is required") }}');
                 hasError = true;
             } else if (!usernamePattern.test(username)) {
-                setFieldInvalid(usernameInput, usernameError, 'Username can only contain letters, numbers, underscores, and hyphens');
+                setFieldInvalid(usernameInput, usernameError, '{{ _("Username can only contain letters, numbers, underscores, and hyphens") }}');
                 hasError = true;
             }
 
@@ -679,7 +677,7 @@
             const password = passwordInput.value;
             const result = await validatePasswordViaAPI(password, csrfToken);
             if (!result.valid) {
-                setFieldInvalid(passwordInput, passwordError, result.errors?.[0] ?? 'Password does not meet requirements');
+                setFieldInvalid(passwordInput, passwordError, result.errors?.[0] ?? '{{ _("Password does not meet requirements") }}');
                 hasError = true;
             }
 

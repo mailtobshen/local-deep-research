@@ -17,45 +17,45 @@ let currentCancelCallback = null;
  */
 const DELETE_ACTIONS = {
     deleteDocument: {
-        tooltip: "Permanently delete this document, including PDF and text content. This cannot be undone.",
-        title: "Delete Document?",
-        message: "This will permanently delete the document and all associated data.",
-        buttonText: "Delete Document",
+        tooltip: i18n.t("Permanently delete this document, including PDF and text content. This cannot be undone."),
+        title: i18n.t("Delete Document?"),
+        message: i18n.t("This will permanently delete the document and all associated data."),
+        buttonText: i18n.t("Delete Document"),
         dangerous: true
     },
     deleteBlob: {
-        tooltip: "Remove the PDF file to save space. Text content will be preserved for searching.",
-        title: "Remove PDF?",
-        message: "The PDF will be deleted but extracted text remains searchable.",
-        buttonText: "Remove PDF",
+        tooltip: i18n.t("Remove the PDF file to save space. Text content will be preserved for searching."),
+        title: i18n.t("Remove PDF?"),
+        message: i18n.t("The PDF will be deleted but extracted text remains searchable."),
+        buttonText: i18n.t("Remove PDF"),
         dangerous: false
     },
     removeFromCollection: {
-        tooltip: "Remove from this collection. If not in any other collection, the document will be deleted.",
-        title: "Remove from Collection?",
-        message: "Document will be removed from this collection.",
-        buttonText: "Remove",
+        tooltip: i18n.t("Remove from this collection. If not in any other collection, the document will be deleted."),
+        title: i18n.t("Remove from Collection?"),
+        message: i18n.t("Document will be removed from this collection."),
+        buttonText: i18n.t("Remove"),
         dangerous: false
     },
     deleteCollection: {
-        tooltip: "Delete this collection. Documents will remain in the library but will be unlinked from this collection.",
-        title: "Delete Collection?",
-        message: "All documents will be unlinked. RAG index will be deleted.",
-        buttonText: "Delete Collection",
+        tooltip: i18n.t("Delete this collection. Documents will remain in the library but will be unlinked from this collection."),
+        title: i18n.t("Delete Collection?"),
+        message: i18n.t("All documents will be unlinked. RAG index will be deleted."),
+        buttonText: i18n.t("Delete Collection"),
         dangerous: true
     },
     bulkDeleteDocuments: {
-        tooltip: "Permanently delete all selected documents and their associated data.",
-        title: "Delete Selected Documents?",
-        message: "This will permanently delete all selected documents.",
-        buttonText: "Delete All",
+        tooltip: i18n.t("Permanently delete all selected documents and their associated data."),
+        title: i18n.t("Delete Selected Documents?"),
+        message: i18n.t("This will permanently delete all selected documents."),
+        buttonText: i18n.t("Delete All"),
         dangerous: true
     },
     bulkDeleteBlobs: {
-        tooltip: "Remove PDF files from selected documents to free up database space. Text content is preserved.",
-        title: "Remove PDFs from Selected?",
-        message: "PDF files will be removed from selected documents. Text content is preserved.",
-        buttonText: "Remove PDFs",
+        tooltip: i18n.t("Remove PDF files from selected documents to free up database space. Text content is preserved."),
+        title: i18n.t("Remove PDFs from Selected?"),
+        message: i18n.t("PDF files will be removed from selected documents. Text content is preserved."),
+        buttonText: i18n.t("Remove PDFs"),
         dangerous: false
     }
 };
@@ -120,12 +120,12 @@ function showDeleteConfirmation(options) {
 
         // Set title
         if (titleEl) {
-            titleEl.textContent = options.title || actionConfig.title || 'Confirm Delete';
+            titleEl.textContent = options.title || actionConfig.title || i18n.t('Confirm Delete');
         }
 
         // Set message
         if (messageEl) {
-            messageEl.textContent = options.message || actionConfig.message || 'Are you sure you want to delete this item?';
+            messageEl.textContent = options.message || actionConfig.message || i18n.t('Are you sure you want to delete this item?');
         }
 
         // Set details
@@ -152,7 +152,7 @@ function showDeleteConfirmation(options) {
 
         // Set button text
         if (confirmBtnTextEl) {
-            confirmBtnTextEl.textContent = options.buttonText || actionConfig.buttonText || 'Delete';
+            confirmBtnTextEl.textContent = options.buttonText || actionConfig.buttonText || i18n.t('Delete');
         }
 
         // Set callbacks
@@ -173,8 +173,8 @@ function showDeleteConfirmation(options) {
         } else {
             // Fallback to native confirm
             const confirmed = confirm(
-                (options.title || actionConfig.title || 'Confirm Delete') + '\n\n' +
-                (options.message || actionConfig.message || 'Are you sure?')
+                (options.title || actionConfig.title || i18n.t('Confirm Delete')) + '\n\n' +
+                (options.message || actionConfig.message || i18n.t('Are you sure?'))
             );
             if (confirmed) {
                 if (options.onConfirm) options.onConfirm();

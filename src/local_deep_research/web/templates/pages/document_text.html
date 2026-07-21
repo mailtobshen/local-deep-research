@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Document Text - Deep Research System{% endblock %}
+{% block title %}{{ _('Document Text') }} - {{ _('Deep Research System') }}{% endblock %}
 
 {% block extra_head %}
 <link rel="stylesheet" href="/static/css/document_details.css">
@@ -13,12 +13,12 @@
         <div class="ldr-text-meta">
             {% if extraction_method %}
             <span class="ldr-text-meta-item">
-                <strong>Extraction Method:</strong> {{ extraction_method }}
+                <strong>{{ _("Extraction Method:") }}</strong> {{ extraction_method }}
             </span>
             {% endif %}
             {% if word_count %}
             <span class="ldr-text-meta-item">
-                <strong>Word Count:</strong> {{ "{:,}".format(word_count | int) }}
+                <strong>{{ _("Word Count:") }}</strong> {{ "{:,}".format(word_count | int) }}
             </span>
             {% endif %}
         </div>
@@ -26,10 +26,10 @@
 
     <div class="ldr-text-actions">
         <a href="/library/document/{{ document_id }}" class="ldr-btn ldr-btn-secondary">
-            <i aria-hidden="true" class="fas fa-arrow-left"></i> Back to Document Details
+            <i aria-hidden="true" class="fas fa-arrow-left"></i> {{ _('Back to Document Details') }}
         </a>
         <a href="/library" class="ldr-btn ldr-btn-secondary">
-            <i aria-hidden="true" class="fas fa-home"></i> Back to Library
+            <i aria-hidden="true" class="fas fa-home"></i> {{ _('Back to Library') }}
         </a>
     </div>
 

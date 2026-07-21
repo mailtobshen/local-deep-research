@@ -22,7 +22,7 @@
         researchId = getResearchIdFromUrl();
         if (!researchId) {
             saveBtn.disabled = true;
-            saveBtn.title = 'Research ID not found';
+            saveBtn.title = i18n.t('Research ID not found');
             return;
         }
 
@@ -86,7 +86,7 @@
             SafeLogger.error('Error loading collections:', error);
             document.getElementById('collection-list-loading').style.display = 'none';
             const errorDiv = document.getElementById('collection-error');
-            errorDiv.textContent = 'Failed to load collections: ' + error.message;
+            errorDiv.textContent = i18n.tf('Failed to load collections: %s', error.message);
             errorDiv.style.display = 'block';
         }
     }
@@ -176,7 +176,7 @@
                 spinner.className = 'fas fa-spinner fa-spin me-2';
                 spinDiv.appendChild(spinner);
                 const savingText = document.createElement('strong');
-                savingText.textContent = 'Saving...';
+                savingText.textContent = i18n.t('Saving...');
                 spinDiv.appendChild(savingText);
                 btn.appendChild(spinDiv);
             }
@@ -221,7 +221,7 @@
             successDiv.appendChild(document.createTextNode('!'));
             successDiv.appendChild(document.createElement('br'));
             const docsSmall = document.createElement('small');
-            docsSmall.textContent = String(data.documents_added || 0) + ' documents added.';
+            docsSmall.textContent = i18n.tf('%s documents added.', String(data.documents_added || 0));
             successDiv.appendChild(docsSmall);
             successDiv.style.display = 'block';
 

@@ -85,18 +85,18 @@ const HelpService = (function() {
 
                 // Show confirmation
                 if (window.ui && window.ui.showMessage) {
-                    window.ui.showMessage('Help panel dismissed', 'info');
+                    window.ui.showMessage(i18n.t('Help panel dismissed'), 'info');
                 }
             } else {
                 SafeLogger.error('Failed to dismiss panel:', response.status);
                 if (window.ui && window.ui.showMessage) {
-                    window.ui.showMessage('Failed to save preference', 'error');
+                    window.ui.showMessage(i18n.t('Failed to save preference'), 'error');
                 }
             }
         } catch (error) {
             SafeLogger.error('Error dismissing panel:', error);
             if (window.ui && window.ui.showMessage) {
-                window.ui.showMessage('Failed to save preference', 'error');
+                window.ui.showMessage(i18n.t('Failed to save preference'), 'error');
             }
         }
     }
@@ -229,7 +229,7 @@ const HelpService = (function() {
         });
 
         if (window.ui && window.ui.showMessage) {
-            window.ui.showMessage('Help panels reset', 'success');
+            window.ui.showMessage(i18n.t('Help panels reset'), 'success');
         }
     }
 
