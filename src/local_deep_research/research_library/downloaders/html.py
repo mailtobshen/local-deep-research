@@ -109,6 +109,27 @@ class HTMLDownloader(BaseDownloader):
             logger.exception(f"Failed to download HTML from {url}")
             return DownloadResult(skip_reason=f"Error: {str(e)}")
 
+    def download_with_html(
+        self, url: str
+    ) -> tuple[Optional[bytes], Optional[str]]:
+        """Fetch once; return (extracted_text_bytes, raw_html).
+
+        raw_html lets callers extract images from the same fetch without a
+        second network request. Either element may be None on failure.
+        """
+        try:
+            html_content = self._fetch_html(url)
+            if not html_content:
+                return None, None
+            extracted = self._extract_content(html_content, url)
+            if extracted:
+                text = self._format_extracted_content(extracted)
+                return text.encode("utf-8"), html_content
+            return None, html_content
+        except Exception:
+            logger.exception(f"Failed to download HTML from {url}")
+            return None, None
+
     def _fetch_html(self, url: str) -> Optional[str]:
         """Fetch raw HTML content from URL."""
         logger.debug(f"Static fetch: {url}")
