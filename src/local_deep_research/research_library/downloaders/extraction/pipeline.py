@@ -624,6 +624,74 @@ def fetch_content_with_images(
     return result
 
 
+def _fetch_content_dispatcher(
+    urls: List[str],
+    titles: Optional[Dict[str, str]] = None,
+    settings_snapshot: Optional[dict] = None,
+    language: str = "English",
+    enable_js_rendering: bool = False,
+    enable_images: bool = False,
+) -> Dict[str, Dict[str, Any]]:
+    """Single fetcher+image-extraction dispatcher.
+
+    For each url:
+      1. Playwright download (text + raw_html) via download_with_html()
+      2. If Playwright yields text → extract images if enable_images
+      3. Else if _firecrawl_enabled(snapshot) →
+         single scrape(link, include_html=enable_images); text=markdown, images from html
+      4. Else → {text: None, images: []}
+    """
+    result: Dict[str, Dict[str, Any]] = {}
+    if not urls:
+        return result
+
+    titles = titles or {}
+    # Lazy-resolve AutoHTMLDownloader: see fetch_content_with_images for the
+    # circular-import rationale (pipeline -> playwright_html -> html -> pipeline).
+    dl_cls = AutoHTMLDownloader
+    if dl_cls is None:
+        from ..playwright_html import AutoHTMLDownloader as _dl_cls
+
+        dl_cls = _dl_cls
+    downloader = dl_cls(
+        timeout=30,
+        language=language,
+        enable_js_rendering=enable_js_rendering,
+    )
+    try:
+        for url in urls:
+            text: Optional[str] = None
+            images: List = []
+            try:
+                text_bytes, raw_html = downloader.download_with_html(url)
+                if text_bytes:
+                    text = text_bytes.decode("utf-8", errors="replace")
+                if enable_images and raw_html:
+                    try:
+                        images = extract_images(
+                            raw_html, url, titles.get(url, "")
+                        )
+                    except Exception:
+                        logger.debug(
+                            "extract_images failed for %s", url, exc_info=True
+                        )
+                        images = []
+            except Exception:
+                logger.debug(
+                    "_fetch_content_dispatcher Playwright path failed for %s",
+                    url,
+                    exc_info=True,
+                )
+            result[url] = {"text": text, "images": images}
+    finally:
+        try:
+            downloader.close()
+        except Exception:
+            logger.debug("Failed to close downloader in dispatcher")
+
+    return result
+
+
 def batch_fetch_and_extract(
     urls: List[str],
     timeout: int = 30,
