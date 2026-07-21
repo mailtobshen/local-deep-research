@@ -658,14 +658,31 @@ def _fetch_content_dispatcher(
         language=language,
         enable_js_rendering=enable_js_rendering,
     )
+    # Pre-compute once before the loop (snapshot doesn't change per URL).
+    firecrawl_enabled = _firecrawl_enabled(settings_snapshot)
+    firecrawl_client = None
+    if firecrawl_enabled:
+        try:
+            firecrawl_client = _new_firecrawl_client_from_snapshot(
+                settings_snapshot
+            )
+        except Exception:
+            logger.debug("Failed to build Firecrawl client in dispatcher",
+                         exc_info=True)
+            firecrawl_client = None
+            firecrawl_enabled = False
+
     try:
         for url in urls:
             text: Optional[str] = None
             images: List = []
+            pw_failed = False
             try:
                 text_bytes, raw_html = downloader.download_with_html(url)
                 if text_bytes:
                     text = text_bytes.decode("utf-8", errors="replace")
+                else:
+                    pw_failed = True
                 if enable_images and raw_html:
                     try:
                         images = extract_images(
@@ -682,6 +699,40 @@ def _fetch_content_dispatcher(
                     url,
                     exc_info=True,
                 )
+                pw_failed = True
+
+            if pw_failed and firecrawl_enabled and firecrawl_client is not None:
+                try:
+                    response = firecrawl_client.scrape(
+                        url, include_html=enable_images
+                    )
+                except Exception:
+                    logger.debug(
+                        "Firecrawl fallback failed for %s", url, exc_info=True
+                    )
+                    response = None
+                if isinstance(response, dict):
+                    md = response.get("markdown")
+                    if isinstance(md, str) and md.strip():
+                        text = md
+                    html_from_fc = response.get("html")
+                    if (
+                        enable_images
+                        and isinstance(html_from_fc, str)
+                        and html_from_fc
+                    ):
+                        try:
+                            images = extract_images(
+                                html_from_fc, url, titles.get(url, "")
+                            )
+                        except Exception:
+                            logger.debug(
+                                "extract_images failed on Firecrawl html for %s",
+                                url,
+                                exc_info=True,
+                            )
+                            images = []
+
             result[url] = {"text": text, "images": images}
     finally:
         try:
