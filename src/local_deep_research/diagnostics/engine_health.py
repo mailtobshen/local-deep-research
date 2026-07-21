@@ -43,8 +43,9 @@ _FALLBACK_ENGINES = [
     "duckduckgo",
     "wikipedia",
     "brave",
-    "startpage",
     "wikidata",
+    "mwmbl",
+    "yahoo",
 ]
 DEFAULT_SEARXNG_URL = "http://localhost:8080"
 DEFAULT_FIRECRAWL_URL = "http://localhost:3002"

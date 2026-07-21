@@ -57,6 +57,15 @@ services:
 
     volumes:
       - ldr_local_data:/data
+      # --- 源码热挂载 (免重建镜像即可生效) ---
+      # 把宿主仓库源码整树挂入容器, 覆盖 site-packages 里的包目录。
+      # 改动任意 .py / .js / .json / .html 后:
+      #   - 静态资源 (JS/JSON/CSS/模板): 浏览器刷新即生效 (Flask must-revalidate)
+      #   - Python 后端: `docker compose -f docker-compose.ldr-local.yml restart local-deep-research`
+      # 路径里的 python3.14 必须与镜像 venv 版本一致 (升级 Python 时需同步修改)。
+      # dist/ (vite 构建产物) 已与镜像同步, 挂载不会丢失; 若改动涉及构建,
+      # 在宿主跑 `npm run build` 重新生成 dist 即可。
+      - ./src/local_deep_research:/install/.venv/lib/python3.14/site-packages/local_deep_research:ro
 
     # SQLCipher mlock 免告警
     ulimits:
