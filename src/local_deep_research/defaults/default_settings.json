@@ -827,7 +827,7 @@
         "step": null,
         "type": "REPORT",
         "ui_element": "checkbox",
-        "value": false,
+        "value": true,
         "visible": true
     },
     "report.image_vision_model": {
@@ -3916,7 +3916,7 @@
         "step": null,
         "type": "SEARCH",
         "ui_element": "checkbox",
-        "value": false,
+        "value": true,
         "visible": true
     },
     "search.engine.web.firecrawl.api_url": {
@@ -4070,7 +4070,7 @@
         "step": null,
         "type": "SEARCH",
         "ui_element": "checkbox",
-        "value": false,
+        "value": true,
         "visible": true
     },
     "search.engine.web.firecrawl.use_in_auto_search": {
