@@ -2191,6 +2191,7 @@
                         id="${settingId}" name="${setting.key}"
                         class="ldr-settings-input ldr-form-control"
                         value="${escapeHtml(String(setting.value !== null ? setting.value : ''))}"
+                        ${setting.placeholder ? `placeholder="${escapeHtml(i18n.t(setting.placeholder))}"` : ''}
                         ${!setting.editable ? 'disabled' : ''}
                     >
                 `;
