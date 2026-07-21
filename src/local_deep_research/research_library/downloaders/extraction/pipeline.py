@@ -539,61 +539,18 @@ def fetch_content_with_images(
 ) -> Dict[str, Dict[str, Any]]:
     """Fetch + extract text AND images from the same download.
 
-    Returns {url: {"text": Optional[str], "images": List[ExtractedImage]}}.
-    Image extraction never affects text extraction (isolated try/except).
-    No extra network request: images come from the already-fetched HTML.
+    Thin wrapper over `_fetch_content_dispatcher` with `enable_images=True`;
+    Playwright-first, Firecrawl-fallback per URL, image extraction from the
+    same html used for text (no extra network request).
     """
-    result: Dict[str, Dict[str, Any]] = {}
-    if not urls:
-        return result
-
-    titles = titles or {}
-    # Lazy-resolve AutoHTMLDownloader: a top-level import would create a
-    # circular import (pipeline -> playwright_html -> html -> pipeline).
-    # If a previous attempt's deferred module-level binding left the
-    # placeholder as None, fall through to a real import so production
-    # calls still work. ImportError is intentionally NOT caught here — a
-    # real cycle means a real bug, suppression would hide it.
-    dl_cls = AutoHTMLDownloader
-    if dl_cls is None:
-        from ..playwright_html import AutoHTMLDownloader as _dl_cls
-
-        dl_cls = _dl_cls
-    downloader = dl_cls(
-        timeout=30,
+    return _fetch_content_dispatcher(
+        urls,
+        titles=titles,
+        settings_snapshot=settings_snapshot,
         language=language,
         enable_js_rendering=enable_js_rendering,
+        enable_images=True,
     )
-    try:
-        for url in urls:
-            text: Optional[str] = None
-            images = []
-            try:
-                text_bytes, raw_html = downloader.download_with_html(url)
-                if text_bytes:
-                    text = text_bytes.decode("utf-8", errors="replace")
-                if raw_html:
-                    try:
-                        images = extract_images(
-                            raw_html, url, titles.get(url, "")
-                        )
-                    except Exception:
-                        logger.debug(
-                            "extract_images failed for %s", url, exc_info=True
-                        )
-                        images = []
-            except Exception:
-                logger.debug(
-                    "fetch_content_with_images failed for %s", url, exc_info=True
-                )
-            result[url] = {"text": text, "images": images}
-    finally:
-        try:
-            downloader.close()
-        except Exception:
-            logger.debug("Failed to close downloader in fetch_content_with_images")
-
-    return result
 
 
 def _fetch_content_dispatcher(
