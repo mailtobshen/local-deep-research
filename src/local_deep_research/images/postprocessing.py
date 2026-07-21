@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from .bank import ImageBank
 from .enhancer import ImageEnhancer
@@ -22,6 +22,8 @@ def enhance_report_with_images(
     db_session,
     enable_images: bool,
     vision_model: str,
+    vision_url: Optional[str] = None,
+    vision_api_key: Optional[str] = None,
 ) -> str:
     """Return markdown with real images inserted + mirrored locally.
 
@@ -40,7 +42,11 @@ def enhance_report_with_images(
             return clean_markdown
 
         llm = get_llm()
-        vision = VisionDescriber(vision_model)
+        vision = VisionDescriber(
+            model_name=vision_model,
+            base_url=vision_url,
+            api_key=vision_api_key,
+        )
         enhanced = ImageEnhancer(llm, vision).enhance(clean_markdown, bank)
 
         # Persist the real URLs that survived into the enhanced markdown.
