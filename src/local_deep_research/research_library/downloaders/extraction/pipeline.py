@@ -30,6 +30,7 @@ from ....config.thread_settings import (
     get_bool_setting_from_snapshot,
     get_setting_from_snapshot,
 )
+from ....images.extractor import extract_images
 
 
 # --- Pipeline thresholds ---
@@ -550,6 +551,61 @@ def fetch_content(
     return final
 
 
+def fetch_content_with_images(
+    urls: List[str],
+    titles: Optional[Dict[str, str]] = None,
+    settings_snapshot: Optional[dict] = None,
+    language: str = "English",
+    enable_js_rendering: bool = False,
+) -> Dict[str, Dict[str, Any]]:
+    """Fetch + extract text AND images from the same download.
+
+    Returns {url: {"text": Optional[str], "images": List[ExtractedImage]}}.
+    Image extraction never affects text extraction (isolated try/except).
+    No extra network request: images come from the already-fetched HTML.
+    """
+    result: Dict[str, Dict[str, Any]] = {}
+    if not urls:
+        return result
+
+    titles = titles or {}
+    downloader = AutoHTMLDownloader(
+        timeout=30,
+        language=language,
+        enable_js_rendering=enable_js_rendering,
+    )
+    try:
+        for url in urls:
+            text: Optional[str] = None
+            images = []
+            try:
+                text_bytes, raw_html = downloader.download_with_html(url)
+                if text_bytes:
+                    text = text_bytes.decode("utf-8", errors="replace")
+                if raw_html:
+                    try:
+                        images = extract_images(
+                            raw_html, url, titles.get(url, "")
+                        )
+                    except Exception:
+                        logger.debug(
+                            "extract_images failed for %s", url, exc_info=True
+                        )
+                        images = []
+            except Exception:
+                logger.debug(
+                    "fetch_content_with_images failed for %s", url, exc_info=True
+                )
+            result[url] = {"text": text, "images": images}
+    finally:
+        try:
+            downloader.close()
+        except Exception:
+            logger.debug("Failed to close downloader in fetch_content_with_images")
+
+    return result
+
+
 def batch_fetch_and_extract(
     urls: List[str],
     timeout: int = 30,
@@ -629,3 +685,16 @@ def batch_fetch_and_extract(
                 )
 
     return results
+
+
+# Deferred module-level binding for tests (patching target):
+# `pipeline.AutoHTMLDownloader` must be importable as a module attribute, but
+# a top-level `from ..playwright_html import AutoHTMLDownloader` triggers a
+# circular import (pipeline -> playwright_html -> html -> pipeline). Resolved
+# here at module-bottom after downloaders/__init__.py has finished loading
+# playwright_html, breaking the cycle.
+try:
+    from ..playwright_html import AutoHTMLDownloader as _AutoHTMLDownloader
+except ImportError:
+    _AutoHTMLDownloader = None  # type: ignore[assignment]
+AutoHTMLDownloader = _AutoHTMLDownloader
