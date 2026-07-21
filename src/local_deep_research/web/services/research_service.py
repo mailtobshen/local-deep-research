@@ -1089,6 +1089,7 @@ def run_research_process(research_id, query, mode, **kwargs):
                         from ...images.postprocessing import (
                             enhance_report_with_images,
                         )
+                        from ...images.vision import VisionDescriber
                         from ...config.thread_settings import (
                             get_setting_from_snapshot,
                         )
@@ -1102,6 +1103,29 @@ def run_research_process(research_id, query, mode, **kwargs):
                             "report.image_vision_model",
                             "",
                             settings_snapshot=settings_snapshot,
+                        )
+                        vision_url = get_setting_from_snapshot(
+                            "report.image_vision_url",
+                            "",
+                            settings_snapshot=settings_snapshot,
+                        )
+                        vision_key = get_setting_from_snapshot(
+                            "report.image_vision_api_key",
+                            "",
+                            settings_snapshot=settings_snapshot,
+                        )
+                        # Backward compat: if URL empty but model set,
+                        # fall back to the main Ollama endpoint.
+                        if vision_model and not vision_url:
+                            vision_url = get_setting_from_snapshot(
+                                "llm.ollama.url",
+                                "http://localhost:11434",
+                                settings_snapshot=settings_snapshot,
+                            )
+                        vision = VisionDescriber(
+                            model_name=vision_model,
+                            base_url=vision_url or None,
+                            api_key=vision_key or None,
                         )
                         if enable_images:
                             progress_callback(
