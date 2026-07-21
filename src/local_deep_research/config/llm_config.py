@@ -1,4 +1,5 @@
 from functools import cache
+from typing import Optional
 
 from langchain_anthropic import ChatAnthropic
 from langchain_core.language_models import BaseChatModel
@@ -233,6 +234,51 @@ def _get_context_window_for_provider(provider_type, settings_snapshot=None):
         settings_snapshot=settings_snapshot,
     )
     return int(window_size) if window_size is not None else 128000
+
+
+def _build_chat_model(
+    provider: str,
+    model_name: str,
+    base_url: Optional[str] = None,
+    api_key: Optional[str] = None,
+    settings_snapshot: Optional[dict] = None,
+) -> BaseChatModel:
+    """Construct a LangChain chat model for a given provider.
+
+    Vision and other callers use this helper to get a chat model with a
+    specific base_url + api_key, without going through the full get_llm()
+    path (which would also resolve temperature, token tracking, etc.).
+
+    For openai_endpoint (which covers Ollama-via-OpenAI-compat, OpenRouter,
+    LM Studio, vLLM, etc.), base_url is required to be non-empty.
+    """
+    provider = normalize_provider(provider or "")
+    if provider in ("openai", "openai_endpoint"):
+        return ChatOpenAI(
+            model_name=model_name,
+            base_url=base_url or None,
+            api_key=api_key or None,
+        )
+    if provider == "anthropic":
+        return ChatAnthropic(model=model_name, api_key=api_key or None)
+    if provider == "ollama":
+        # Ollama supports an OpenAI-compat endpoint at /v1.
+        # Prefer explicit base_url; else fall back to llm.ollama.url.
+        url = base_url
+        if not url:
+            from .thread_settings import get_setting_from_snapshot
+            url = get_setting_from_snapshot(
+                "llm.ollama.url",
+                "http://localhost:11434",
+                settings_snapshot=settings_snapshot,
+            )
+        # Use OpenAI-compat path so chat + vision both work.
+        return ChatOpenAI(
+            model_name=model_name,
+            base_url=url.rstrip("/") + "/v1",
+            api_key=api_key or "ollama",
+        )
+    raise ValueError(f"Unsupported provider for chat model: {provider!r}")
 
 
 def get_llm(
