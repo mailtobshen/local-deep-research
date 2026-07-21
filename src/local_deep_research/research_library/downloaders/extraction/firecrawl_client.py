@@ -39,12 +39,16 @@ class FirecrawlClient:
             h["Authorization"] = f"Bearer {self.api_key}"
         return h
 
-    def scrape(self, url: str) -> Optional[Dict[str, Any]]:
+    def scrape(
+        self, url: str, include_html: bool = False
+    ) -> Optional[Dict[str, Any]]:
         """Scrape a single URL; return {markdown, html} or None on failure.
 
-        Raises RateLimitError on HTTP 429 so the engine layer can propagate it.
+        html is requested only when include_html is True (gated upstream by
+        report.enable_images). Raises RateLimitError on HTTP 429.
         """
-        payload = {"url": url, "formats": ["markdown", "html"]}
+        formats = ["markdown", "html"] if include_html else ["markdown"]
+        payload = {"url": url, "formats": formats}
         try:
             resp = safe_post(
                 f"{self.api_url}/v1/scrape",

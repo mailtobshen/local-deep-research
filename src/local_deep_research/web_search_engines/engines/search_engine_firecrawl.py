@@ -4,6 +4,9 @@ from langchain_core.language_models import BaseLLM
 from loguru import logger
 
 from ...config.thread_settings import get_setting_from_snapshot
+from ....config.thread_settings import get_bool_setting_from_snapshot
+from ....images.extractor import extract_images
+from ....images.serialize import dumps_images
 from ...research_library.downloaders.extraction.firecrawl_client import FirecrawlClient
 from ..rate_limiting import RateLimitError  # noqa: F401  (re-exported convention)
 from ..search_engine_base import BaseSearchEngine
@@ -140,6 +143,11 @@ class FirecrawlSearchEngine(BaseSearchEngine):
     def _get_full_content(
         self, relevant_items: List[Dict[str, Any]]
     ) -> List[Dict[str, Any]]:
+        enable_images = get_bool_setting_from_snapshot(
+            "report.enable_images",
+            default=False,
+            settings_snapshot=self.settings_snapshot,
+        )
         results = []
         for item in relevant_items:
             full = item.get("_full_result") or {}
@@ -149,7 +157,7 @@ class FirecrawlSearchEngine(BaseSearchEngine):
                 link = item.get("link")
                 if link:
                     try:
-                        scraped = self._client.scrape(link)
+                        scraped = self._client.scrape(link, include_html=enable_images)
                     except Exception:
                         logger.debug(
                             f"Firecrawl scrape failed for {link}", exc_info=True
@@ -160,6 +168,16 @@ class FirecrawlSearchEngine(BaseSearchEngine):
                         html = scraped.get("html")
             item = dict(item)
             item["content"] = md or item.get("content", "")
-            item["html_content"] = html  # may be None; consumed in post-processing
+            if enable_images:
+                images = []
+                if isinstance(html, str) and html:
+                    try:
+                        images = extract_images(
+                            html, item.get("link", ""), item.get("title", "")
+                        )
+                    except Exception:
+                        logger.debug("extract_images failed", exc_info=True)
+                        images = []
+                item["html_content"] = dumps_images(images)
             results.append(item)
         return results
