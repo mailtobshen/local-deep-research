@@ -1141,6 +1141,8 @@ def run_research_process(research_id, query, mode, **kwargs):
                                     db_session=img_db_session,
                                     enable_images=True,
                                     vision_model=vision_model,
+                                    vision_url=vision_url or None,
+                                    vision_api_key=vision_key or None,
                                 )
                     except Exception:
                         logger.exception(
