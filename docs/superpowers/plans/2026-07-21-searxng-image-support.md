@@ -19,6 +19,29 @@
 - Source is hot-mounted into the container (edits to `src/` are visible immediately; no rebuild).
 - Each task: `git add` only that task's exact files (a working tree with pre-existing unrelated changes must not be swept in).
 
+## Out of Scope (reused unchanged)
+
+Per upstream §4 four-stage architecture, this plan only touches **Stage 0**
+(data sourcing: HTML is now captured for the generic HTML pipeline too) and
+**Stage 1 input parsing** (consumes image-list JSON instead of raw HTML).
+The following are unchanged and require no edits in this plan:
+- **Stage 2** (`ImageEnhancer.enhance` — LLM inserts images into markdown).
+  Operates on `ImageBank`, which is fed by `loads_images(...)` in Task 6 —
+  the API contract is preserved (a list of `ExtractedImage` either way).
+- **Stage 3a** (`VisionDescriber.describe` for alt-less images).
+- **Stage 3b** (`ImageStore.persist` + `rewrite_markdown` + cascade delete).
+  Persists only the URLs that survived Stage 2; routing layer unchanged.
+
+## Caller Pre-Verification (already checked 2026-07-21)
+
+- `FirecrawlClient.scrape()` has exactly one caller:
+  `web_search_engines/engines/search_engine_firecrawl.py:152`.
+  Task 5's `include_html` default change is safe.
+- `images.extractor.extract_images` has exactly one caller:
+  `images/postprocessing.py:39`.
+  Task 6 may drop the `from .extractor import extract_images` import in
+  `postprocessing.py`.
+
 ---
 
 ## File Structure

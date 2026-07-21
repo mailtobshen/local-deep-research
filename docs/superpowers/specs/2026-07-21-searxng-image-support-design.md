@@ -32,8 +32,13 @@ fetch paths identically:
 | **ON** | scrape requests `formats:["markdown","html"]`; extract images from HTML → store image-list JSON | extract images from the already-downloaded HTML → store image-list JSON |
 | **OFF (default)** | scrape requests `formats:["markdown"]` only (today's behavior) | `fetch_content` text-only; HTML never parsed for images |
 
-**When OFF, behavior is byte-for-byte identical to today** for both paths.
-This is the most important invariant and is locked by tests.
+**When OFF, observable downstream behavior is byte-for-byte identical to today**
+for both paths (SearXNG returns text only — unchanged; Firecrawl scrape's
+parsed text + `html_content` semantics unchanged because the previously-fetched
+html is no longer stored on the SearchResult row). Wire-level: Firecrawl
+previously requested `["markdown","html"]` unconditionally; OFF now requests
+`["markdown"]` only (saves bandwidth on the Firecrawl call, no behavioral
+difference to the report). This invariant is locked by tests.
 
 ## Architecture & Data Flow
 
@@ -171,3 +176,11 @@ TDD via host-write → `docker cp` → in-container pytest (existing image workf
 No metadata passthrough beyond `titles`; no top-N limit (full coverage chosen);
 no new settings; no new migration; no changes to non-Firecrawl engines that don't
 go through the generic HTML pipeline.
+
+## Confirmed Scope (no caller outside these files)
+
+Verified against current shipped source:
+- `FirecrawlClient.scrape()` callers: only `search_engine_firecrawl.py:152`.
+  Task 5 may change the `include_html` default freely.
+- `images.extractor.extract_images` callers: only `images/postprocessing.py:39`.
+  Task 6 may remove this import from `postprocessing.py`.
