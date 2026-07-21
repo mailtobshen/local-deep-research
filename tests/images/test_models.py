@@ -37,6 +37,6 @@ def test_settings_registered():
     with open(path) as f:
         d = json.load(f)
     assert "report.enable_images" in d
-    assert d["report.enable_images"]["value"] is False
+    assert d["report.enable_images"]["value"] is True
     assert "report.image_vision_model" in d
     assert d["report.image_vision_model"]["value"] == ""
