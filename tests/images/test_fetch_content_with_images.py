@@ -30,3 +30,26 @@ def test_image_extraction_failure_does_not_break_text():
 
 def test_empty_urls_returns_empty():
     assert pipeline.fetch_content_with_images([]) == {}
+
+
+def test_lazy_resolution_when_module_attr_is_none():
+    """If module-level placeholder is None (deferred), real call still resolves the class."""
+    from local_deep_research.research_library.downloaders import playwright_html
+
+    # Force the failure mode: pipeline.AutoHTMLDownloader stuck at None
+    original = pipeline.AutoHTMLDownloader
+    pipeline.AutoHTMLDownloader = None
+    try:
+        # Use a real downloader instance (no full network — just verify resolution works)
+        # Easiest: monkeypatch AutoHTMLDownloader on the playwright_html module
+        fake_instance = MagicMock()
+        fake_instance.download_with_html.return_value = (b"text", "<html></html>")
+        with patch.object(
+            playwright_html, "AutoHTMLDownloader", return_value=fake_instance
+        ) as cls_mock:
+            out = pipeline.fetch_content_with_images(["https://x/page"])
+        # Real class was resolved and called
+        cls_mock.assert_called_once()
+        assert out["https://x/page"]["text"] == "text"
+    finally:
+        pipeline.AutoHTMLDownloader = original

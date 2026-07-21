@@ -33,6 +33,13 @@ from ....config.thread_settings import (
 from ....images.extractor import extract_images
 
 
+# Module-level placeholder so tests can ``patch.object(pipeline, "AutoHTMLDownloader", ...)``.
+# A top-level ``from ..playwright_html import AutoHTMLDownloader`` would create a circular
+# import (pipeline -> playwright_html -> html -> pipeline). The real class is
+# resolved lazily inside ``fetch_content_with_images`` when this placeholder is None.
+AutoHTMLDownloader = None
+
+
 # --- Pipeline thresholds ---
 # Minimum extracted text length to consider extraction successful
 MIN_CONTENT_LENGTH = 50
@@ -569,7 +576,18 @@ def fetch_content_with_images(
         return result
 
     titles = titles or {}
-    downloader = AutoHTMLDownloader(
+    # Lazy-resolve AutoHTMLDownloader: a top-level import would create a
+    # circular import (pipeline -> playwright_html -> html -> pipeline).
+    # If a previous attempt's deferred module-level binding left the
+    # placeholder as None, fall through to a real import so production
+    # calls still work. ImportError is intentionally NOT caught here — a
+    # real cycle means a real bug, suppression would hide it.
+    dl_cls = AutoHTMLDownloader
+    if dl_cls is None:
+        from ..playwright_html import AutoHTMLDownloader as _dl_cls
+
+        dl_cls = _dl_cls
+    downloader = dl_cls(
         timeout=30,
         language=language,
         enable_js_rendering=enable_js_rendering,
@@ -685,16 +703,3 @@ def batch_fetch_and_extract(
                 )
 
     return results
-
-
-# Deferred module-level binding for tests (patching target):
-# `pipeline.AutoHTMLDownloader` must be importable as a module attribute, but
-# a top-level `from ..playwright_html import AutoHTMLDownloader` triggers a
-# circular import (pipeline -> playwright_html -> html -> pipeline). Resolved
-# here at module-bottom after downloaders/__init__.py has finished loading
-# playwright_html, breaking the cycle.
-try:
-    from ..playwright_html import AutoHTMLDownloader as _AutoHTMLDownloader
-except ImportError:
-    _AutoHTMLDownloader = None  # type: ignore[assignment]
-AutoHTMLDownloader = _AutoHTMLDownloader
