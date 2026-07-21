@@ -42,6 +42,18 @@ The following are unchanged and require no edits in this plan:
   Task 6 may drop the `from .extractor import extract_images` import in
   `postprocessing.py`.
 
+## Execution Mode (locked 2026-07-21)
+
+- **Driver**: `superpowers:subagent-driven-development` — one subagent per task.
+- **Review**: two-stage — after each implementation subagent, dispatch a
+  code-reviewer subagent before moving on. Surface inconsistencies, then
+  proceed only after the review passes.
+- **Checkpoints** (pause + report to user):
+  1. After Task 3 (serialization + downloader + pipeline in place).
+  2. After Task 6 (search-engine + firecrawl + post-processing wired).
+  3. After Task 8 (final verification summary).
+- **Push**: each commit is immediately pushed to `origin/i18n-zh-translation`.
+
 ---
 
 ## File Structure
