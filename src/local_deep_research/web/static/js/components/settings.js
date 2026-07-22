@@ -2104,11 +2104,15 @@
                             if (typeof option === 'object' && option !== null) {
                                 // Object format: {value: "basic", label: "Basic"}
                                 optionValue = option.value;
-                                optionLabel = option.label || option.value;
+                                // Translate the option label via i18n so
+                                // the dropdown reads in the active UI
+                                // language. Falls back to the raw label
+                                // when no translation key is registered.
+                                optionLabel = i18n.t(option.label || option.value);
                             } else {
                                 // String format: "basic"
                                 optionValue = option;
-                                optionLabel = option;
+                                optionLabel = i18n.t(option);
                             }
                             const selected = optionValue === setting.value ? 'selected' : '';
                             // Escape HTML to prevent XSS attacks

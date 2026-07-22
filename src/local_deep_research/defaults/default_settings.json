@@ -849,10 +849,7 @@
             {"label": "Qwen-VL-Max (Alibaba)", "value": "qwen-vl-max"},
             {"label": "Qwen-VL-Plus (Alibaba)", "value": "qwen-vl-plus"},
             {"label": "Qwen3-VL 8B (Ollama)", "value": "qwen3-vl:8b"},
-            {"label": "LLaVA (Ollama)", "value": "llava"},
-            {"label": "LLaVA 13B (Ollama)", "value": "llava:13b"},
-            {"label": "LLaVA-LLaMA3 (Ollama)", "value": "llava-llama3"},
-            {"label": "BakLLaVA (Ollama)", "value": "bakllava"},
+            {"label": "Qwen3-VL 4B (Ollama)", "value": "qwen3-vl:4b"},
             {"label": "MiniCPM-V (Ollama)", "value": "minicpm-v"},
             {"label": "Moondream2 (Ollama)", "value": "moondream2"},
             {"label": "OpenAI-Compatible Endpoint (llama.cpp, vLLM, etc.)", "value": "openai-compatible"}
