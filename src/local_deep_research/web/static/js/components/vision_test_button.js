@@ -99,7 +99,7 @@
                 } catch (parseErr) {
                     const text = await resp.text();
                     showAlert(
-                        i18n.t(
+                        i18n.tf(
                             "Vision connection failed: HTTP %s — %s",
                             String(resp.status),
                             text.slice(0, 200)
@@ -112,7 +112,7 @@
 
                 if (data.success) {
                     showAlert(
-                        i18n.t(
+                        i18n.tf(
                             "Vision connected (%sms)",
                             data.latency_ms != null
                                 ? String(data.latency_ms)
@@ -123,7 +123,7 @@
                     );
                 } else {
                     showAlert(
-                        i18n.t(
+                        i18n.tf(
                             "Vision connection failed: %s",
                             data.error || "unknown error"
                         ),
@@ -134,7 +134,7 @@
             } catch (e) {
                 // Network failure / CORS / etc.
                 showAlert(
-                    i18n.t(
+                    i18n.tf(
                         "Vision connection failed: %s",
                         String(e && e.message ? e.message : e)
                     ),
