@@ -104,7 +104,8 @@
                             String(resp.status),
                             text.slice(0, 200)
                         ),
-                        "error"
+                        "error",
+                        false
                     );
                     return;
                 }
@@ -117,7 +118,8 @@
                                 ? String(data.latency_ms)
                                 : "?"
                         ),
-                        "success"
+                        "success",
+                        false
                     );
                 } else {
                     showAlert(
@@ -125,7 +127,8 @@
                             "Vision connection failed: %s",
                             data.error || "unknown error"
                         ),
-                        "error"
+                        "error",
+                        false
                     );
                 }
             } catch (e) {
@@ -135,7 +138,8 @@
                         "Vision connection failed: %s",
                         String(e && e.message ? e.message : e)
                     ),
-                    "error"
+                    "error",
+                    false
                 );
             } finally {
                 btn.disabled = false;
@@ -167,7 +171,7 @@
      *   4. console.{log,error}           — last-resort, lets the user
      *                                       inspect via DevTools
      */
-    function showAlert(message, type) {
+    function showAlert(message, type, skipIfToastShown) {
         const variants = [
             window.ui && window.ui.showAlert,
             window.api && window.api.showAlert,
@@ -176,7 +180,12 @@
         for (const fn of variants) {
             if (typeof fn === "function") {
                 try {
-                    fn(message, type);
+                    // Pass skipIfToastShown through so the caller can
+                    // force the toast to appear even when the LDR UI
+                    // service thinks another toast is already on screen.
+                    // vision_test_connection results are always worth
+                    // surfacing; we pass `false` from every call site.
+                    fn(message, type, skipIfToastShown);
                     return;
                 } catch (_) {
                     /* try next variant */
