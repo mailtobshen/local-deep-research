@@ -74,8 +74,8 @@
 
         const btn = document.createElement("button");
         btn.type = "button";
-        btn.className = "ldr-btn ldr-btn-secondary vision-test-btn";
-        btn.textContent = "Test Connection";
+        btn.className = "btn btn-secondary btn-sm vision-test-btn";
+        btn.textContent = "链接测试";
         btn.style.marginLeft = "0.5rem";
         parent.appendChild(btn);
 
@@ -104,8 +104,8 @@
 
             btn.disabled = true;
             const originalText = btn.textContent;
-            btn.textContent = "Testing…";
-            setStatus(status, "pending", " Testing…");
+            btn.textContent = "测试中…";
+            setStatus(status, "pending", " 测试中…");
 
             // CSRF token — same pattern the rest of LDR uses.
             let csrfToken = "";
@@ -170,11 +170,11 @@
                         data.latency_ms != null
                             ? String(data.latency_ms)
                             : "?";
-                    finish("ok", ` ✓ connected (${ms} ms)`);
+                    finish("ok", ` ✓ 连接成功 (${ms} 毫秒)`);
                 } else {
                     finish(
                         "err",
-                        ` ✗ ${(data.error || "unknown error").slice(0, 200)}`
+                        ` ✗ ${(data.error || "未知错误").slice(0, 200)}`
                     );
                 }
             } catch (e) {

@@ -3736,8 +3736,20 @@
                 processedSetting.value = JSON.stringify(processedSetting.value, null, 2);
             }
 
-            // Handle corrupted JSON values (e.g., just "{" or "[" or "[object Object]")
-            if (typeof processedSetting.value === 'string' &&
+            // Handle corrupted JSON values (e.g., just "{" or "[" or "[object Object]").
+            //
+            // Special case: ui_element === 'password' fields legitimately
+            // carry an empty string when the user hasn't filled them in.
+            // The previous version of this block normalized any report.*
+            // value of '{}' (the literal serialization of an empty input
+            // some legacy path emitted) to '{}' again, creating a round-
+            // trip bug where the field could never be cleared. Skip the
+            // corruption rewrite for password fields so the value the
+            // user sees matches what they typed.
+            if (processedSetting.ui_element === 'password' &&
+                processedSetting.value === '{}') {
+                processedSetting.value = '';
+            } else if (typeof processedSetting.value === 'string' &&
                 (processedSetting.value === '{' ||
                  processedSetting.value === '[' ||
                  processedSetting.value === '{}' ||
