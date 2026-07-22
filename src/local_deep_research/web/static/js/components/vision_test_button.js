@@ -2,41 +2,93 @@
     "use strict";
 
     /**
-     * Attach a "Test Connection" button next to the vision URL field.
-     * On click, reads the three vision fields, POSTs to
-     * /api/vision/test_connection with the LDR CSRF token, and
-     * shows a toast with the result.
+     * Inline status display for the Vision Endpoint Test Connection
+     * button.
      *
-     * IMPORTANT: LDR's CSRFProtect requires either a "csrf_token"
-     * form field or an "X-CSRFToken" header on every POST. We use
-     * window.api.getCsrfToken() (the same helper other components
-     * like history.js / results.js / settings_sync.js use) so the
-     * test button works in the WebUI out of the box.
+     * Design decisions (deliberately conservative):
+     * - No toast service dependency. Previous revisions called
+     *   window.ui.showAlert, which on the settings page lands inside
+     *   an off-screen container (~53,000 px below the fold) and
+     *   disappears before the user can scroll to it. Using an inline
+     *   status node placed right after the button keeps feedback
+     *   inside the user's viewport by construction.
+     * - No i18n.t (positional args silently dropped). Use
+     *   document.createTextNode with literal message + status
+     *   indicator. Concise English is fine for a developer-facing
+     *   test surface.
+     * - Idempotent attachment. renderSettingsByTab runs on every tab
+     *   switch; the same button must not stack up.
      */
+
+    /**
+     * Build (or reuse) an inline status <span> placed right after the
+     * Test Connection button. Updates its text + color in place.
+     */
+    function getStatusEl(btn) {
+        // The status lives in the same flex row as the button; if it's
+        // missing we create it. Reuse an existing one if present so
+        // repeated clicks don't multiply status nodes.
+        let status = btn.parentElement.querySelector(
+            ".vision-test-status"
+        );
+        if (!status) {
+            status = document.createElement("span");
+            status.className = "vision-test-status";
+            status.style.marginLeft = "0.5rem";
+            status.style.fontSize = "0.9em";
+            status.style.fontWeight = "500";
+            // Insert right after the button.
+            btn.insertAdjacentElement("afterend", status);
+        }
+        return status;
+    }
+
+    function setStatus(statusEl, kind, text) {
+        // kind in {"idle","pending","ok","err"} — color mapping.
+        // Use inline styles so we don't depend on a CSS file.
+        statusEl.textContent = "";
+        statusEl.appendChild(document.createTextNode(text));
+        statusEl.dataset.kind = kind;
+        if (kind === "pending") {
+            statusEl.style.color = "#666";
+        } else if (kind === "ok") {
+            statusEl.style.color = "#1a7f37";
+        } else if (kind === "err") {
+            statusEl.style.color = "#b91c1c";
+        } else {
+            statusEl.style.color = "#666";
+        }
+    }
+
     function attachTestButton(urlInput) {
         if (!urlInput) return;
-        // Idempotency: remove any previously injected button in this
-        // setting item (renderSettingsByTab is called on every tab
-        // switch, so without this we'd accumulate one button per render).
         const parent = urlInput.parentElement;
-        if (parent) {
-            const existing = parent.querySelector(".vision-test-btn");
-            if (existing) existing.remove();
-        }
+        if (!parent) return;
+
+        // Idempotency: remove any previously injected button + status
+        // in this setting item. renderSettingsByTab fires on every
+        // tab switch and would otherwise stack buttons / statuses.
+        parent
+            .querySelectorAll(".vision-test-btn, .vision-test-status")
+            .forEach((el) => el.remove());
 
         const btn = document.createElement("button");
         btn.type = "button";
         btn.className = "ldr-btn ldr-btn-secondary vision-test-btn";
-        btn.textContent = i18n.t("Test Connection");
+        btn.textContent = "Test Connection";
         btn.style.marginLeft = "0.5rem";
+        parent.appendChild(btn);
+
+        const status = getStatusEl(btn);
 
         btn.addEventListener("click", async function () {
+            // Read the three vision fields. Vision model is rendered
+            // either as <select> (allowCustom select with hidden
+            // input) or as a plain <input> depending on the dropdown
+            // path — try both.
             const apiKeyInput = document.querySelector(
                 "input[name='report.image_vision_api_key']"
             );
-            // Vision model may render as a <select> (allowCustom select
-            // with hidden input) or as a plain <input> depending on the
-            // settings UI implementation.
             const modelSelect = document.querySelector(
                 "select[name='report.image_vision_model']"
             );
@@ -52,17 +104,19 @@
 
             btn.disabled = true;
             const originalText = btn.textContent;
-            btn.textContent = i18n.t("Testing...");
+            btn.textContent = "Testing…";
+            setStatus(status, "pending", " Testing…");
 
-            // Resolve CSRF token via the same helper other components
-            // use (settings_sync.js, history.js, results.js). Fallback
-            // to a meta tag if window.api isn't ready yet.
+            // CSRF token — same pattern the rest of LDR uses.
             let csrfToken = "";
-            if (window.api && typeof window.api.getCsrfToken === "function") {
+            if (
+                window.api &&
+                typeof window.api.getCsrfToken === "function"
+            ) {
                 try {
                     csrfToken = window.api.getCsrfToken() || "";
-                } catch (e) {
-                    csrfToken = "";
+                } catch (_) {
+                    /* fall through */
                 }
             }
             if (!csrfToken) {
@@ -70,6 +124,12 @@
                     'meta[name="csrf-token"]'
                 );
                 if (meta) csrfToken = meta.content || "";
+            }
+
+            function finish(kind, text) {
+                btn.disabled = false;
+                btn.textContent = originalText;
+                setStatus(status, kind, text);
             }
 
             try {
@@ -90,117 +150,40 @@
                     }
                 );
 
-                // Try to parse JSON; if the server returned a non-JSON
-                // HTML error page, surface the raw text instead of
-                // letting the catch block turn it into "TypeError".
+                // Read the body as text first so a non-JSON HTML
+                // error page (e.g. proxy 502) surfaces something
+                // useful instead of becoming "SyntaxError".
                 let data;
+                const text = await resp.text();
                 try {
-                    data = await resp.json();
-                } catch (parseErr) {
-                    const text = await resp.text();
-                    showAlert(
-                        i18n.tf(
-                            "Vision connection failed: HTTP %s — %s",
-                            String(resp.status),
-                            text.slice(0, 200)
-                        ),
-                        "error",
-                        false
+                    data = JSON.parse(text);
+                } catch (_) {
+                    finish(
+                        "err",
+                        ` HTTP ${resp.status} — ${text.slice(0, 160)}`
                     );
                     return;
                 }
 
                 if (data.success) {
-                    showAlert(
-                        i18n.tf(
-                            "Vision connected (%sms)",
-                            data.latency_ms != null
-                                ? String(data.latency_ms)
-                                : "?"
-                        ),
-                        "success",
-                        false
-                    );
+                    const ms =
+                        data.latency_ms != null
+                            ? String(data.latency_ms)
+                            : "?";
+                    finish("ok", ` ✓ connected (${ms} ms)`);
                 } else {
-                    showAlert(
-                        i18n.tf(
-                            "Vision connection failed: %s",
-                            data.error || "unknown error"
-                        ),
-                        "error",
-                        false
+                    finish(
+                        "err",
+                        ` ✗ ${(data.error || "unknown error").slice(0, 200)}`
                     );
                 }
             } catch (e) {
-                // Network failure / CORS / etc.
-                showAlert(
-                    i18n.tf(
-                        "Vision connection failed: %s",
-                        String(e && e.message ? e.message : e)
-                    ),
-                    "error",
-                    false
+                finish(
+                    "err",
+                    ` ✗ ${String((e && e.message) || e).slice(0, 200)}`
                 );
-            } finally {
-                btn.disabled = false;
-                btn.textContent = originalText;
             }
         });
-
-        // Insert the button right after the URL input in its parent.
-        if (parent) {
-            parent.appendChild(btn);
-        } else {
-            urlInput.insertAdjacentElement("afterend", btn);
-        }
-    }
-
-    /**
-     * Show a toast using the WebUI's actual exported UI service
-     * (window.ui.showAlert from src/local_deep_research/web/static/js/
-     * services/ui.js). settings.js keeps its own showAlert private
-     * inside an IIFE, so window.showAlert is undefined; routing
-     * through window.ui.showAlert is what makes the toast actually
-     * visible to the user.
-     *
-     * Fallback chain (each level is independently guarded):
-     *   1. window.ui.showAlert           — the LDR UI service
-     *   2. window.api.showAlert           — older alias used by some
-     *                                       legacy components
-     *   3. window.showAlert               — third-party / older scripts
-     *   4. console.{log,error}           — last-resort, lets the user
-     *                                       inspect via DevTools
-     */
-    function showAlert(message, type, skipIfToastShown) {
-        const variants = [
-            window.ui && window.ui.showAlert,
-            window.api && window.api.showAlert,
-            window.showAlert,
-        ];
-        for (const fn of variants) {
-            if (typeof fn === "function") {
-                try {
-                    // Pass skipIfToastShown through so the caller can
-                    // force the toast to appear even when the LDR UI
-                    // service thinks another toast is already on screen.
-                    // vision_test_connection results are always worth
-                    // surfacing; we pass `false` from every call site.
-                    fn(message, type, skipIfToastShown);
-                    return;
-                } catch (_) {
-                    /* try next variant */
-                }
-            }
-        }
-        try {
-            if (type === "error") {
-                console.error("[vision-test]", message);
-            } else {
-                console.log("[vision-test]", message);
-            }
-        } catch (_) {
-            /* no console either; genuinely nothing we can do */
-        }
     }
 
     // Expose
