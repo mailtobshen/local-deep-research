@@ -260,14 +260,26 @@ def _build_chat_model(
         # "Missing credentials" when api_key is None, even for local
         # servers that don't validate it. Use a placeholder so the
         # call goes through; the local server ignores the value.
-        # Heuristic: a base_url pointing at localhost / 127.0.0.1 / a
-        # private IP, OR an explicitly empty api_key with a base_url
-        # set, gets the "ollama" placeholder.
+        #
+        # Match the common non-routable / private address ranges that
+        # self-hosted LLM servers bind to: localhost, loopback, any
+        # RFC1918 private (10/8, 172.16/12, 192.168/16), link-local
+        # (169.254/16), and the Docker bridge gateway (172.17.0.1).
+        import re
+
         url_str = (base_url or "").lower()
-        is_local = (
-            "localhost" in url_str
-            or "127.0.0.1" in url_str
-            or "0.0.0.0" in url_str
+        is_local = bool(
+            re.search(
+                r"://("
+                r"localhost|127\.0\.0\.1|0\.0\.0\.0|"
+                r"10\.\d{1,3}\.\d{1,3}\.\d{1,3}|"
+                r"172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|"
+                r"192\.168\.\d{1,3}\.\d{1,3}|"
+                r"169\.254\.\d{1,3}\.\d{1,3}|"
+                r"[^/]*\.local"
+                r")(:\d+)?",
+                url_str,
+            )
         )
         effective_key = api_key
         if not effective_key and is_local:
