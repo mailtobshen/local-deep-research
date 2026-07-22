@@ -67,6 +67,7 @@ class IntegratedReportGenerator:
         )
 
         # Load context settings from snapshot or use defaults
+        self.settings_snapshot = settings_snapshot or {}
         self.max_context_sections = get_setting_from_snapshot(
             "report.max_context_sections",
             default=DEFAULT_MAX_CONTEXT_SECTIONS,
@@ -76,6 +77,27 @@ class IntegratedReportGenerator:
             "report.max_context_chars",
             default=DEFAULT_MAX_CONTEXT_CHARS,
             settings_snapshot=settings_snapshot,
+        )
+
+    def _get_language_directive(self) -> str:
+        """Return an LLM instruction forcing the report output language.
+
+        Reads ``report.language`` (default zh-CN). Returns "" for unknown
+        values. Used to inject language into the IntegratedReportGenerator's
+        own prompts (which bypass the citation handler's prefix).
+        """
+        lang = get_setting_from_snapshot(
+            "report.language", default="zh-CN", settings_snapshot=self.settings_snapshot
+        )
+        label = {
+            "zh-CN": "Simplified Chinese (简体中文)",
+            "en": "English",
+        }.get(lang)
+        if not label:
+            return ""
+        return (
+            f"IMPORTANT: Write the entire report in {label}, "
+            f"regardless of the language of the sources. "
         )
 
     def close(self) -> None:
@@ -161,7 +183,7 @@ class IntegratedReportGenerator:
         Make the structure specific to the content, not generic.
         Each subsection must include its purpose after the | symbol.
         DO NOT include sections about sources, citations, references, or methodology.
-        """
+        {self._get_language_directive()}"""
 
         response = search_utilities.remove_think_tags(
             str(self.model.invoke(prompt).content)
@@ -430,7 +452,8 @@ class IntegratedReportGenerator:
                         f"Include unique insights, specific examples, and concrete data. "
                         f"Use tables to organize information where applicable. "
                         f"For conclusion sections: synthesize key findings and provide forward-looking insights. "
-                        f"Build upon the research findings from earlier sections to create a cohesive narrative."
+                        f"Build upon the research findings from earlier sections to create a cohesive narrative. "
+                        f"{self._get_language_directive()}"
                     )
                 else:
                     # Subsection-level prompt - more focused
@@ -447,7 +470,8 @@ class IntegratedReportGenerator:
                         f"Include unique details, specific examples, and concrete data. "
                         f"Use tables to organize information where applicable. "
                         f"IMPORTANT: Avoid repeating information that would logically be covered in other sections - focus on what makes this subsection unique. "
-                        f"Previous research exists - find specific angles for this subsection."
+                        f"Previous research exists - find specific angles for this subsection. "
+                        f"{self._get_language_directive()}"
                     )
 
                 logger.info(

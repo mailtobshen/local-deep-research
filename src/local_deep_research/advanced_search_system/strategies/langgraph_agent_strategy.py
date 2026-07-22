@@ -20,6 +20,7 @@ from langgraph.errors import GraphRecursionError
 from loguru import logger
 
 from ...citation_handler import CitationHandler
+from ...config.thread_settings import get_bool_setting_from_snapshot
 from ...exceptions import ResearchTerminatedException
 from ...utilities.search_utilities import (
     extract_links_from_search_results,
@@ -776,6 +777,78 @@ class LangGraphAgentStrategy(BaseSearchStrategy):
             logger.exception("Fallback synthesis failed")
             return f"Research collected {len(results)} sources but synthesis failed: {exc}"
 
+    def _ensure_images_for_results(
+        self, all_search_results: list, max_n: int = 10
+    ) -> None:
+        """Ensure top URLs have html_content for the report-stage image enhancer.
+
+        The langgraph agent may decide not to invoke the ``fetch_content`` tool,
+        leaving ``search_results[].html_content`` empty — which causes the
+        report to be text-only even when ``report.enable_images`` is on. This
+        method proactively fetches images for the first ``max_n`` URLs that
+        don't yet have ``html_content``, so image extraction is independent
+        of the agent's tool-call decisions.
+        """
+        if not get_bool_setting_from_snapshot(
+            "report.enable_images",
+            default=False,
+            settings_snapshot=self.settings_snapshot,
+        ):
+            logger.info(
+                "[IMG-TRACE] langgraph auto-image-fill: skipped (report.enable_images=off)"
+            )
+            return
+
+        # Collect top URLs that don't yet have html_content.
+        urls_to_fetch: list[str] = []
+        titles_attr = getattr(self, "titles", None)
+        titles = titles_attr if isinstance(titles_attr, dict) else {}
+        for r in all_search_results:
+            if not isinstance(r, dict):
+                continue
+            url = r.get("link") or r.get("url")
+            if not url or r.get("html_content"):
+                continue
+            if url not in urls_to_fetch:
+                urls_to_fetch.append(url)
+            if len(urls_to_fetch) >= max_n:
+                break
+        if not urls_to_fetch:
+            logger.info(
+                f"[IMG-TRACE] langgraph auto-image-fill: skipped (all {len(all_search_results)} results already have html_content or no URLs)"
+            )
+            return
+
+        logger.info(
+            f"[IMG-TRACE] langgraph auto-image-fill: fetching {len(urls_to_fetch)} URLs for image extraction"
+        )
+        try:
+            from local_deep_research.images.serialize import dumps_images
+            from local_deep_research.research_library.downloaders.extraction.pipeline import (
+                fetch_content_with_images,
+            )
+
+            data = fetch_content_with_images(
+                urls_to_fetch,
+                titles={u: titles.get(u, "") for u in urls_to_fetch},
+                settings_snapshot=self.settings_snapshot,
+            )
+        except Exception:
+            logger.exception(
+                "langgraph auto-image-fill: fetch_content_with_images failed"
+            )
+            return
+
+        filled = 0
+        for url in urls_to_fetch:
+            entry = data.get(url) if isinstance(data, dict) else None
+            images = entry.get("images", []) if entry else []
+            if self.collector.attach_html_content(url, dumps_images(images)):
+                filled += 1
+        logger.info(
+            f"[IMG-TRACE] langgraph auto-image-fill: done filled={filled}/{len(urls_to_fetch)}"
+        )
+
     def _finalize(
         self,
         query: str,
@@ -794,6 +867,11 @@ class LangGraphAgentStrategy(BaseSearchStrategy):
         all_search_results = self.collector.results
         synthesized_content = final_answer
         documents: list = []
+
+        # Bypass LLM tool-call decisions: if report.enable_images is on,
+        # proactively fetch images for top URLs that don't yet have
+        # html_content, so the report-stage image enhancer has data.
+        self._ensure_images_for_results(all_search_results)
 
         # Citation handling — only if we have results
         if all_search_results:

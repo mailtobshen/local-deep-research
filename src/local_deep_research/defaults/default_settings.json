@@ -830,6 +830,23 @@
         "value": true,
         "visible": true
     },
+    "report.language": {
+        "category": "report_parameters",
+        "description": "研究报告输出语言。通过系统提示词注入控制最终报告的语言，不影响搜索引擎。Report output language, injected into the synthesis system prompt.",
+        "editable": true,
+        "max_value": null,
+        "min_value": null,
+        "name": "报告语言 / Report Language",
+        "options": [
+            {"label": "中文简体 (Simplified Chinese)", "value": "zh-CN"},
+            {"label": "English", "value": "en"}
+        ],
+        "step": null,
+        "type": "REPORT",
+        "ui_element": "select",
+        "value": "zh-CN",
+        "visible": true
+    },
     "report.image_vision_provider": {
         "category": "report_parameters",
         "description": "Provider for vision descriptions. Drives the default Vision Endpoint URL (auto-filled when this changes) and filters the Vision Model dropdown. Pick 'OpenAI-Compatible' for self-hosted llama.cpp / vLLM / LM Studio servers.",

@@ -253,6 +253,15 @@
                             <span class="ldr-input-help">{{ _("Focused Iteration works best with >16,000 context window") }}</span>
                         </div>
 
+                        <div class="ldr-form-row">
+                            <label for="report_language">{{ _("报告语言 / Report Language") }}</label>
+                            <select id="report_language" name="report_language" class="ldr-form-control">
+                                <option value="zh-CN" {% if settings.report_language == 'zh-CN' or not settings.report_language %}selected{% endif %}>{{ _("中文简体 (Simplified Chinese)") }}</option>
+                                <option value="en" {% if settings.report_language == 'en' %}selected{% endif %}>{{ _("English") }}</option>
+                            </select>
+                            <span class="ldr-input-help">{{ _("通过系统提示词注入控制最终报告语言，不影响搜索") }}</span>
+                        </div>
+
                     </div>
                 </div>
 

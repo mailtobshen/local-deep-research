@@ -2374,6 +2374,10 @@
         const questionsInput = document.getElementById('questions_per_iteration');
         const questionsPerIteration = questionsInput ? parseInt(questionsInput.value, 10) : 3;
 
+        // Get report language (per-research override of the global report.language setting)
+        const reportLanguageSelect = document.getElementById('report_language');
+        const reportLanguage = reportLanguageSelect ? reportLanguageSelect.value : 'zh-CN';
+
         // Prepare the data for submission
         const formData = {
             query,
@@ -2385,7 +2389,8 @@
             search_engine: searchEngine,
             strategy,
             iterations,
-            questions_per_iteration: questionsPerIteration
+            questions_per_iteration: questionsPerIteration,
+            report_language: reportLanguage
         };
 
         SafeLogger.log('Submitting research with data:', formData);

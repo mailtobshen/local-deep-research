@@ -75,7 +75,24 @@ def enhance_report_with_images(
             f"chosen={len(chosen)} urls={_shown}"
         )
         store = ImageStore(research_id, db_session)
-        url_to_route = store.persist(chosen)
+        # Pull alt + source-page metadata from the bank for each chosen URL
+        # so DB records (research_images.alt/source_url/source_title) are
+        # populated for post-hoc analysis (e.g. re-fetching source HTML to
+        # backfill alt for past research).
+        url_to_meta = {
+            url: bank._by_url[url]
+            for url in chosen
+            if url in bank._by_url
+        }
+        url_to_alt = {u: m.alt for u, m in url_to_meta.items() if m.alt}
+        url_to_source = {
+            u: (m.source_url, m.source_title)
+            for u, m in url_to_meta.items()
+            if m.source_url
+        }
+        url_to_route = store.persist(
+            chosen, url_to_alt=url_to_alt, url_to_source=url_to_source
+        )
         logger.info(
             f"[IMG-TRACE] PERSIST research={research_id} chosen={len(chosen)} "
             f"persisted={len(url_to_route)} failed={len(chosen) - len(url_to_route)}"
