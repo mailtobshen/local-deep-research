@@ -254,10 +254,28 @@ def _build_chat_model(
     """
     provider = normalize_provider(provider or "")
     if provider in ("openai", "openai_endpoint"):
+        # Detect local self-hosted endpoints that don't require an API
+        # key (Ollama-via-OpenAI-compat, LM Studio, llama.cpp, vLLM).
+        # The LangChain ChatOpenAI / openai SDK throws
+        # "Missing credentials" when api_key is None, even for local
+        # servers that don't validate it. Use a placeholder so the
+        # call goes through; the local server ignores the value.
+        # Heuristic: a base_url pointing at localhost / 127.0.0.1 / a
+        # private IP, OR an explicitly empty api_key with a base_url
+        # set, gets the "ollama" placeholder.
+        url_str = (base_url or "").lower()
+        is_local = (
+            "localhost" in url_str
+            or "127.0.0.1" in url_str
+            or "0.0.0.0" in url_str
+        )
+        effective_key = api_key
+        if not effective_key and is_local:
+            effective_key = "ollama"
         return ChatOpenAI(
             model_name=model_name,
             base_url=base_url or None,
-            api_key=api_key or None,
+            api_key=effective_key or None,
         )
     if provider == "anthropic":
         return ChatAnthropic(model=model_name, api_key=api_key or None)
