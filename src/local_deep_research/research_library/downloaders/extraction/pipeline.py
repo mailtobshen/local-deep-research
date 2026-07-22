@@ -596,54 +596,73 @@ def _fetch_content_dispatcher(
                 settings_snapshot
             )
         except Exception:
-            logger.debug("Failed to build Firecrawl client in dispatcher",
-                         exc_info=True)
+            logger.exception("Failed to build Firecrawl client in dispatcher")
             firecrawl_client = None
             firecrawl_enabled = False
+
+    # [IMG-TRACE] Firecrawl fallback availability for this batch.
+    if firecrawl_enabled and firecrawl_client is not None:
+        logger.info("[IMG-TRACE] firecrawl_config=READY")
+    elif firecrawl_enabled and firecrawl_client is None:
+        logger.info("[IMG-TRACE] firecrawl_config=BROKEN(client build failed)")
+    else:
+        logger.info("[IMG-TRACE] firecrawl_config=DISABLED")
 
     try:
         for url in urls:
             text: Optional[str] = None
             images: List = []
             pw_failed = False
+            via = "none"
+            text_status = "empty"
+            image_status = "empty"
+            fc_triggered = False
             try:
                 text_bytes, raw_html = downloader.download_with_html(url)
                 if text_bytes:
                     text = text_bytes.decode("utf-8", errors="replace")
+                    via = "playwright"
+                    text_status = "ok"
                 else:
                     pw_failed = True
+                    text_status = "FAIL(pw_no_text)"
                 if enable_images and raw_html:
                     try:
                         images = extract_images(
                             raw_html, url, titles.get(url, "")
                         )
+                        image_status = "ok" if images else "empty"
                     except Exception:
-                        logger.debug(
-                            "extract_images failed for %s", url, exc_info=True
+                        logger.exception(
+                            f"extract_images failed for {url}"
                         )
                         images = []
+                        image_status = "EXTRACT_FAIL"
             except Exception:
-                logger.debug(
-                    "_fetch_content_dispatcher Playwright path failed for %s",
-                    url,
-                    exc_info=True,
+                logger.exception(
+                    f"_fetch_content_dispatcher Playwright path failed for {url}"
                 )
                 pw_failed = True
+                text_status = "FAIL(pw_exception)"
 
             if pw_failed and firecrawl_enabled and firecrawl_client is not None:
+                fc_triggered = True
                 try:
                     response = firecrawl_client.scrape(
                         url, include_html=enable_images
                     )
                 except Exception:
-                    logger.debug(
-                        "Firecrawl fallback failed for %s", url, exc_info=True
-                    )
+                    logger.exception(f"Firecrawl fallback failed for {url}")
                     response = None
+                    text_status = "FAIL(fc_exception)"
                 if isinstance(response, dict):
                     md = response.get("markdown")
                     if isinstance(md, str) and md.strip():
                         text = md
+                        via = "firecrawl"
+                        text_status = "ok"
+                    else:
+                        text_status = "FAIL(fc_no_markdown)"
                     html_from_fc = response.get("html")
                     if (
                         enable_images
@@ -654,14 +673,23 @@ def _fetch_content_dispatcher(
                             images = extract_images(
                                 html_from_fc, url, titles.get(url, "")
                             )
+                            image_status = "ok" if images else "empty"
                         except Exception:
-                            logger.debug(
-                                "extract_images failed on Firecrawl html for %s",
-                                url,
-                                exc_info=True,
+                            logger.exception(
+                                f"extract_images failed on Firecrawl html for {url}"
                             )
                             images = []
+                            image_status = "EXTRACT_FAIL"
+                elif text_status != "FAIL(fc_exception)":
+                    text_status = "FAIL(fc_no_response)"
 
+            # [IMG-TRACE] Per-URL fetch outcome: which fetcher won, text
+            # status, image count, and image-extraction status.
+            logger.info(
+                f"[IMG-TRACE] url={url} via={via} "
+                f"text={text_status} images={len(images)} "
+                f"image_status={image_status} fc_triggered={fc_triggered}"
+            )
             result[url] = {"text": text, "images": images}
     finally:
         try:

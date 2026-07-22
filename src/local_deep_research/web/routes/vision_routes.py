@@ -4,6 +4,11 @@ Sends a 1x1 transparent PNG + "Reply with the single word: ok" through
 the configured endpoint and reports whether the call succeeded. Useful
 for users to validate their vision model + URL + API key before running
 a full research.
+
+GET /api/vision/available-models — list models exposed by a provider,
+parameterized by the same three vision fields (provider, url, api_key)
+so the Vision Model dropdown can be populated live (refresh button in
+the WebUI). Mirrors the LLM-side /api/available-models endpoint.
 """
 from __future__ import annotations
 
@@ -15,13 +20,37 @@ from typing import Any, Dict
 from flask import Blueprint, jsonify, request
 
 from ...config.llm_config import _build_chat_model
+from ...llm.providers.implementations.anthropic import AnthropicProvider
+from ...llm.providers.implementations.custom_openai_endpoint import (
+    CustomOpenAIEndpointProvider,
+)
+from ...llm.providers.implementations.google import GoogleProvider
+from ...llm.providers.implementations.ollama import OllamaProvider
+from ...llm.providers.implementations.openai import OpenAIProvider
+from ...llm.providers.base import normalize_provider
 
 logger = logging.getLogger(__name__)
 
-# 1x1 transparent PNG. Minimal valid base64 image — does not need to be
-# rendered by the model, just needs to be parseable.
-_1X1_PNG_BASE64 = (
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+# Map from the lowercase vision provider key (as stored in
+# report.image_vision_provider) to the LLM provider class whose
+# list_models_for_api() implements the live model fetch.
+_VISION_PROVIDER_CLASSES = {
+    "ollama": OllamaProvider,
+    "openai": OpenAIProvider,
+    "anthropic": AnthropicProvider,
+    "google": GoogleProvider,
+    "openai_endpoint": CustomOpenAIEndpointProvider,
+}
+
+# 8x8 sky-blue (135, 206, 235) solid-color PNG. Used as the probe
+# image for the link test. We intentionally avoid the 1x1
+# transparent PNG here because some upstream vision providers (e.g.
+# MiniMax-M3) run content-moderation on the input and reject the
+# degenerate 1x1 transparent image as "image is sensitive". A
+# small solid-color image is universally non-sensitive and the
+# cost is identical (74 bytes base64 vs 67).
+_PROBE_PNG_BASE64 = (
+    "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR42mNoP/caK2IYWhIAKxCQAe0bgvgAAAAASUVORK5CYII="
 )
 
 # 1-char "vision probe" message. Asks for a 1-word reply so the call
@@ -36,8 +65,20 @@ vision_bp = Blueprint("vision", __name__)
 
 @vision_bp.route("/test_connection", methods=["POST"])
 def test_vision_connection():
-    """Verify a vision endpoint is reachable and accepts multimodal input."""
+    """Verify a vision endpoint is reachable and accepts multimodal input.
+
+    The request body carries the four vision settings:
+    ``provider`` (ollama / openai / anthropic / google / openai_endpoint),
+    ``url`` (endpoint base URL), ``api_key`` (optional), and ``model``
+    (the model name from the dropdown — already filtered by provider on
+    the client side). The backend forwards all of these to
+    ``_build_chat_model`` so chat dispatch matches the user's selected
+    provider instead of always forcing ``openai_endpoint`` (which would
+    fail for native Anthropic / Google endpoints that don't speak the
+    OpenAI wire format).
+    """
     body = request.get_json(silent=True) or {}
+    provider = (body.get("provider") or "openai_endpoint").strip()
     url = (body.get("url") or "").strip()
     api_key = body.get("api_key") or ""
     model = (body.get("model") or "").strip()
@@ -53,7 +94,7 @@ def test_vision_connection():
     t0 = time.time()
     try:
         llm = _build_chat_model(
-            provider="openai_endpoint",
+            provider=provider,
             model_name=model,
             base_url=url,
             api_key=api_key,
@@ -67,7 +108,7 @@ def test_vision_connection():
                 {"type": "text", "text": _PROBE_TEXT},
                 {
                     "type": "image_url",
-                    "image_url": {"url": f"data:image/png;base64,{_1X1_PNG_BASE64}"},
+                    "image_url": {"url": f"data:image/png;base64,{_PROBE_PNG_BASE64}"},
                 },
             ]
         )
@@ -199,6 +240,21 @@ def _classify_vision_error(
     elif err_status == 429:
         err_kind = "rate_limited"
         err_msg = "请求被限流 (429) — 稍后重试"
+    elif err_status == 422:
+        # 422 from upstream vision providers usually means the request
+        # was syntactically valid but semantically rejected — most
+        # often content-policy / moderation. e.g. MiniMax-M3 returns
+        # "input new_sensitive, messages[0]'s content[1] image is
+        # sensitive, please check your input (1026)" when our 1x1
+        # probe PNG trips its moderation. Surface the upstream message
+        # so the user knows this is a provider-side decision, not a
+        # misconfigured URL / key.
+        err_kind = "content_policy"
+        upstream = nested or body_text[:200]
+        err_msg = (
+            f"内容被上游拒绝 (422) — {upstream}。"
+            "这是服务端的内容策略决定,与 URL / API Key 无关。"
+        )
     elif err_status in (500, 502, 503):
         err_kind = "server_error"
         err_msg = f"服务端错误 ({err_status}) — Ollama 可能 OOM/未启动/崩溃"
@@ -249,3 +305,101 @@ def _classify_vision_error(
         err_msg = f"{err_msg} — {nested}"
 
     return err_msg, err_kind, err_status
+
+
+@vision_bp.route("/available-models", methods=["GET"])
+def available_vision_models():
+    """List models exposed by a vision provider.
+
+    Query parameters:
+        provider — required, one of ollama/openai/anthropic/google/
+                   openai_endpoint (matches report.image_vision_provider)
+        url      — required, the provider base URL (matches
+                   report.image_vision_url)
+        api_key  — optional, the provider API key (matches
+                   report.image_vision_api_key)
+
+    The response shape mirrors the LLM-side /api/available-models
+    ``models`` array, with each entry carrying ``value``, ``label``,
+    and ``provider`` (so the WebUI's vision_provider_link.js can
+    rebuild the Vision Model <select> with the returned list).
+
+    The WebUI uses this to power a refresh button next to the Vision
+    Model field — clicking it calls this endpoint with the currently
+    selected provider/url/api_key, populates the dropdown with the
+    provider's live model list, and remembers the user's current
+    selection when it's still in the new list.
+    """
+    provider = normalize_provider(request.args.get("provider", ""))
+    url = (request.args.get("url") or "").strip()
+    api_key = (request.args.get("api_key") or "").strip()
+
+    if not provider:
+        return jsonify(
+            {"error": "Missing required 'provider' parameter."}
+        ), 400
+    if not url:
+        return jsonify(
+            {"error": "Missing required 'url' parameter."}
+        ), 400
+
+    provider_cls = _VISION_PROVIDER_CLASSES.get(provider)
+    if provider_cls is None:
+        return jsonify(
+            {
+                "error": (
+                    f"Unsupported vision provider {provider!r}. "
+                    f"Supported providers: "
+                    f"{sorted(_VISION_PROVIDER_CLASSES)}."
+                )
+            }
+        ), 400
+
+    try:
+        raw_models = provider_cls.list_models_for_api(
+            api_key=api_key or None, base_url=url
+        )
+    except Exception:
+        logger.exception(
+            "available_vision_models: list_models_for_api raised for "
+            "provider=%s url=%s",
+            provider,
+            url,
+        )
+        return jsonify(
+            {
+                "error": (
+                    f"Failed to fetch model list from {provider} at "
+                    f"{url}. Check the URL / API key and try again."
+                )
+            }
+        ), 502
+
+    # Normalize: each model becomes {value, label, provider}. The
+    # provider tag is what vision_provider_link.js uses to decide
+    # which options stay visible after the user changes the
+    # provider dropdown. The tag is always lowercased to match the
+    # filter key (the JS linkage reads
+    # `select[name='report.image_vision_provider'].value` which is
+    # lowercase — ollama, openai, anthropic, google, openai_endpoint).
+    # Without this normalization, OllamaProvider's "OLLAMA" tag
+    # would not match the lowercase filter key and the live list
+    # would all get hidden.
+    models = []
+    for m in raw_models or []:
+        value = m.get("value")
+        if not value:
+            continue
+        label = m.get("label") or value
+        provider_tag = m.get("provider", provider.upper())
+        models.append(
+            {
+                "value": value,
+                "label": label,
+                "provider": provider_tag.lower()
+                if isinstance(provider_tag, str)
+                else provider_tag,
+            }
+        )
+
+    return jsonify({"provider": provider, "models": models}), 200

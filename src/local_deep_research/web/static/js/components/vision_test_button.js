@@ -75,17 +75,21 @@
         const btn = document.createElement("button");
         btn.type = "button";
         btn.className = "btn btn-secondary btn-sm vision-test-btn";
-        btn.textContent = "链接测试";
+        btn.textContent = "连接测试";
         btn.style.marginLeft = "0.5rem";
         parent.appendChild(btn);
 
         const status = getStatusEl(btn);
 
         btn.addEventListener("click", async function () {
-            // Read the three vision fields. Vision model is rendered
-            // either as <select> (allowCustom select with hidden
-            // input) or as a plain <input> depending on the dropdown
-            // path — try both.
+            // Read the four vision fields:
+            //   - report.image_vision_provider (new — drives chat dispatch)
+            //   - report.image_vision_model    (filtered by provider)
+            //   - report.image_vision_url      (auto-prefilled per provider)
+            //   - report.image_vision_api_key
+            const providerSelect = document.querySelector(
+                "select[name='report.image_vision_provider']"
+            );
             const apiKeyInput = document.querySelector(
                 "input[name='report.image_vision_api_key']"
             );
@@ -99,8 +103,15 @@
                 (modelSelect && modelSelect.value) ||
                 (modelHidden && modelHidden.value) ||
                 "";
+            const provider = providerSelect ? providerSelect.value || "openai_endpoint" : "openai_endpoint";
             const url = urlInput.value || "";
             const apiKey = apiKeyInput ? apiKeyInput.value || "" : "";
+
+            // The model dropdown is filtered by provider, so the
+            // selected value is always a real model name. We do NOT
+            // need a custom-prompt flow here (the previous
+            // '__custom__' sentinel was removed when the
+            // provider-tagged option list shipped).
 
             btn.disabled = true;
             const originalText = btn.textContent;
@@ -143,6 +154,7 @@
                         headers: headers,
                         credentials: "same-origin",
                         body: JSON.stringify({
+                            provider: provider,
                             url: url,
                             api_key: apiKey,
                             model: model,

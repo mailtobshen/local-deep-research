@@ -42,6 +42,41 @@ class TestSearchResultsCollector:
         assert collector.results[0]["index"] == "1"
         assert collector.results[1]["index"] == "2"
 
+    def test_attach_html_content_updates_existing_record(self):
+        collector, all_links = self._make_collector()
+        collector.add_results(
+            [{"title": "A", "link": "http://a.com", "snippet": "a"}],
+            engine_name="test",
+        )
+
+        updated = collector.attach_html_content(
+            "http://a.com", '[{"url": "http://a.com/img.jpg"}]'
+        )
+
+        assert updated is True
+        assert (
+            collector.results[0]["html_content"]
+            == '[{"url": "http://a.com/img.jpg"}]'
+        )
+        # The shared all_links record must see the same field.
+        assert (
+            all_links[0]["html_content"] == '[{"url": "http://a.com/img.jpg"}]'
+        )
+
+    def test_attach_html_content_returns_false_for_unknown_url(self):
+        collector, _ = self._make_collector()
+        collector.add_results(
+            [{"title": "A", "link": "http://a.com", "snippet": "a"}],
+            engine_name="test",
+        )
+
+        updated = collector.attach_html_content("http://unknown.com", "[]")
+
+        assert updated is False
+        # No new record created, existing record untouched.
+        assert len(collector.results) == 1
+        assert "html_content" not in collector.results[0]
+
     def test_add_results_continues_indexing(self):
         collector, _ = self._make_collector()
         collector.add_results(

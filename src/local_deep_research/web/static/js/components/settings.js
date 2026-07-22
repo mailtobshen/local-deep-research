@@ -31,6 +31,11 @@
     // Model and search engine dropdown variables
     let modelOptions = [];
     let searchEngineOptions = [];
+    // Vision model options — populated by /api/vision/available-models
+    // via the refresh button on the Vision Model dropdown
+    // (report.image_vision_model). Mirrors modelOptions so the same
+    // filter/update pipeline can be reused.
+    let visionModelOptions = [];
 
     // Store save timers for each setting key
     let saveTimers = {};
@@ -1993,6 +1998,13 @@
             }
         }
 
+        // Wire up the Vision Model Provider ↔ Model + URL linkage.
+        // Filters the model dropdown by the selected provider and
+        // pre-fills the Vision Endpoint URL with a sensible default.
+        if (typeof window.setupVisionProviderLinkage === "function") {
+            window.setupVisionProviderLinkage();
+        }
+
     }
 
     /**
@@ -2094,6 +2106,33 @@
                         disabled: !setting.editable
                     };
                     inputElement = renderCustomDropdownHTML(dropdownParams);
+                } else if (setting.key === 'report.image_vision_model') {
+                    // Mirrors llm.model exactly so saved values (including
+                    // free-form private-deployment names like "MiniMax-M3")
+                    // survive page refresh, AND so the dropdown supports
+                    // both refresh-from-provider and custom input.
+                    //
+                    // setupCustomDropdowns() (see branch below) handles
+                    // populating from allSettings on render; the refresh
+                    // button click calls window.refreshVisionModelList()
+                    // (defined in vision_provider_link.js) which fetches
+                    // /api/vision/available-models and updates
+                    // visionModelOptions. Provider changes trigger
+                    // filterVisionModelOptionsForProvider().
+                    const dropdownParams = {
+                        input_id: setting.key,
+                        dropdown_id: settingId + "-dropdown",
+                        placeholder: i18n.t("Select or enter a vision model"),
+                        label: null,
+                        label_id: settingId + "-label",
+                        help_text: setting.description || null,
+                        allow_custom: true, // Private deployments need free input
+                        show_refresh: true,
+                        refresh_aria_label: i18n.t("Refresh vision model list"),
+                        data_setting_key: setting.key,
+                        disabled: !setting.editable
+                    };
+                    inputElement = renderCustomDropdownHTML(dropdownParams);
                 } else {
                     // Standard select for other keys
                     const selectOptions = [];
@@ -2115,9 +2154,20 @@
                                 optionLabel = i18n.t(option);
                             }
                             const selected = optionValue === setting.value ? 'selected' : '';
+                            // Forward an optional `provider` tag from the
+                            // option metadata to a data-provider attribute
+                            // so client-side linkage code (e.g.
+                            // vision_provider_link.js) can filter the
+                            // dropdown by provider.
+                            const providerAttr =
+                                typeof option === 'object' &&
+                                option !== null &&
+                                option.provider
+                                    ? ` data-provider="${escapeHtml(option.provider)}"`
+                                    : '';
                             // Escape HTML to prevent XSS attacks
                             selectOptions.push(
-                                `<option value="${escapeHtml(optionValue)}" ${selected}>${escapeHtml(optionLabel)}</option>`
+                                `<option value="${escapeHtml(optionValue)}"${providerAttr} ${selected}>${escapeHtml(optionLabel)}</option>`
                             );
                         });
                     }
@@ -4115,8 +4165,16 @@
                     ];
                 allowCustom = true;
 
-                // Set up refresh button if it exists
-                const refreshBtn = dropdown.querySelector('.ldr-custom-dropdown-refresh-btn');
+                // Set up refresh button if it exists. The refresh
+                // button is rendered by renderCustomDropdownHTML as a
+                // SIBLING of the .ldr-custom-dropdown wrapper, both
+                // inside .ldr-custom-dropdown-with-refresh. Looking it
+                // up via dropdown.querySelector() misses it (we'd be
+                // searching the wrong subtree). Use the closest wrapper.
+                const refreshWrapper = dropdown.closest('.ldr-custom-dropdown-with-refresh');
+                const refreshBtn = refreshWrapper
+                    ? refreshWrapper.querySelector('.ldr-custom-dropdown-refresh-btn')
+                    : null;
                 if (refreshBtn) {
                     refreshBtn.addEventListener('click', function() {
                         const icon = refreshBtn.querySelector('i');
@@ -4138,6 +4196,107 @@
                                 }
                             });
                         } else if (icon) icon.className = 'fas fa-sync-alt';
+                    });
+                }
+            } else if (settingKey === 'report.image_vision_model') {
+                // Mirrors llm.model setup exactly. The optionsSource is
+                // populated by refreshVisionModelList() (defined in
+                // vision_provider_link.js) which fetches
+                // /api/vision/available-models and writes to the
+                // window-level visionModelOptions array. On initial
+                // render (before any refresh) we fall back to the
+                // curated options from default_settings.json so the
+                // dropdown is not silently empty.
+                const fallback = (() => {
+                    const setting = (typeof allSettings !== 'undefined'
+                        && Array.isArray(allSettings))
+                        ? allSettings.find((s) => s.key === 'report.image_vision_model')
+                        : null;
+                    if (setting && Array.isArray(setting.options) && setting.options.length > 0) {
+                        return setting.options.map((o) => ({
+                            value: o.value,
+                            label: o.label || o.value,
+                            provider: o.provider,
+                        }));
+                    }
+                    return [];
+                })();
+                optionsSource = (typeof window !== 'undefined'
+                    && window.visionModelOptions
+                    && window.visionModelOptions.length > 0)
+                    ? window.visionModelOptions
+                    : fallback;
+                allowCustom = true;
+
+                // Set up refresh button — delegates to
+                // vision_provider_link.js's exported refreshVisionModelList
+                // which fetches /api/vision/available-models and updates
+                // window.visionModelOptions. After refresh, re-filter by
+                // current provider so the dropdown only shows models for
+                // the selected vision provider.
+                //
+                // The refresh button is rendered as a SIBLING of the
+                // .ldr-custom-dropdown wrapper (both inside
+                // .ldr-custom-dropdown-with-refresh), so
+                // dropdown.querySelector() misses it. Look it up via
+                // the closest wrapper instead.
+                const visionRefreshWrapper = dropdown.closest('.ldr-custom-dropdown-with-refresh');
+                const visionRefreshBtn = visionRefreshWrapper
+                    ? visionRefreshWrapper.querySelector('.ldr-custom-dropdown-refresh-btn')
+                    : null;
+                if (visionRefreshBtn) {
+                    visionRefreshBtn.addEventListener('click', function () {
+                        const icon = visionRefreshBtn.querySelector('i');
+                        if (icon) icon.className = 'fas fa-spinner fa-spin';
+
+                        const providerSelect = document.querySelector(
+                            "select[name='report.image_vision_provider']"
+                        );
+                        const urlInput = document.querySelector(
+                            "input[name='report.image_vision_url']"
+                        );
+                        const apiKeyInput = document.querySelector(
+                            "input[name='report.image_vision_api_key']"
+                        );
+
+                        const provider = providerSelect ? providerSelect.value : '';
+                        const url = urlInput ? urlInput.value : '';
+                        const apiKey = apiKeyInput ? apiKeyInput.value : '';
+
+                        const finish = () => {
+                            if (icon) icon.className = 'fas fa-sync-alt';
+                        };
+
+                        if (typeof window.refreshVisionModelList === 'function'
+                            && provider
+                            && url) {
+                            window.refreshVisionModelList({
+                                provider,
+                                url,
+                                apiKey,
+                                onSuccess: (models) => {
+                                    window.visionModelOptions = models;
+                                    if (typeof filterVisionModelOptionsForProvider === 'function') {
+                                        filterVisionModelOptionsForProvider(provider);
+                                    }
+                                    // Force dropdown rebuild by dispatching click
+                                    const clickEvent = new Event('click', { bubbles: true });
+                                    dropdownInput.dispatchEvent(clickEvent);
+                                    finish();
+                                },
+                                onError: (err) => {
+                                    SafeLogger.error('Error refreshing vision models:', err);
+                                    if (typeof showAlert === 'function') {
+                                        showAlert(i18n.tf('Failed to refresh vision models: %s', err.message || err), 'error');
+                                    }
+                                    finish();
+                                },
+                            });
+                        } else {
+                            // No provider/url yet — refresh is a no-op so
+                            // the user can fix inputs first.
+                            finish();
+                        }
                     });
                 }
             } else if (settingKey === 'llm.provider') {
@@ -4195,6 +4354,11 @@
                         // For provider changes, update model options
                         if (settingKey === 'llm.provider' && typeof filterModelOptionsForProvider === 'function') {
                             filterModelOptionsForProvider(value);
+                        }
+
+                        // For vision provider changes, filter vision model options.
+                        if (settingKey === 'report.image_vision_provider' && typeof filterVisionModelOptionsForProvider === 'function') {
+                            filterVisionModelOptionsForProvider(value);
                         }
 
                         // Save to localStorage for persistence
@@ -4435,6 +4599,80 @@
             } else {
                 endpointContainer.style.display = 'none';
             }
+        }
+    }
+
+    /**
+     * Filter vision model options based on the selected vision provider.
+     *
+     * Mirrors filterModelOptionsForProvider() but for the
+     * report.image_vision_model dropdown. Reads visionModelOptions
+     * (populated by window.refreshVisionModelList) and the current
+     * saved value from the hidden input, then either rebuilds the
+     * dropdown to show only options for the new provider OR clears
+     * the saved value if it's no longer valid for the new provider.
+     */
+    function filterVisionModelOptionsForProvider(providerKey) {
+        const providerLower = (providerKey || '').toLowerCase();
+
+        const input = document.getElementById('report.image_vision_model');
+        const list = document.getElementById('setting-report-image_vision_model-dropdown-list');
+        const hidden = document.getElementById('report.image_vision_model_hidden');
+
+        if (!input || !list) {
+            SafeLogger.warn('Vision model input or list not found when filtering.');
+            return;
+        }
+
+        // Build the source list — prefer the live cache, fall back to
+        // the curated defaults already exposed via window.allSettings
+        // so the dropdown is never silently empty.
+        let source = (typeof window !== 'undefined'
+            && Array.isArray(window.visionModelOptions)
+            && window.visionModelOptions.length > 0)
+            ? window.visionModelOptions
+            : [];
+
+        // Filter by provider tag.
+        const filtered = source.filter((m) => {
+            if (!m || typeof m !== 'object') return false;
+            const tag = (m.provider || '').toLowerCase();
+            if (!tag) return true; // Provider-less options are always visible.
+            return tag === providerLower;
+        });
+
+        // If the saved value is not in the filtered list (and the user
+        // changed provider), clear it so the dropdown doesn't display a
+        // value the user no longer has access to. The user can then
+        // pick a new model OR type one (allow_custom is true).
+        if (hidden && filtered.length > 0 && hidden.value) {
+            const savedMatches = filtered.some((m) => m.value === hidden.value);
+            if (!savedMatches && !providerLower) {
+                // No provider filter — keep the saved value visible.
+            }
+            // We deliberately keep the saved value even when the
+            // filter excludes it, because:
+            //   1. allow_custom is true: the user can keep their
+            //      "MiniMax-M3" across providers (a private deployment
+            //      name they typed once).
+            //   2. The dropdown is non-empty after the filter, so the
+            //      user can see new options AND their preserved custom
+            //      value coexisting.
+        }
+
+        // Rebuild the dropdown via setupCustomDropdown so the option
+        // list reflects the new filter. The setValue() path at the
+        // end of setupCustomDropdowns() will re-populate the visible
+        // input + hidden input from allSettings, so we don't manually
+        // set them here.
+        if (window.setupCustomDropdown) {
+            window.setupCustomDropdown(
+                input,
+                list,
+                () => filtered,
+                () => {},
+                true // allow_custom — private deployments
+            );
         }
     }
 

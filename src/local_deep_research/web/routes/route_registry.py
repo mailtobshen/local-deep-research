@@ -245,6 +245,12 @@ ROUTE_REGISTRY: dict[str, Any] = {
                 "test_vision_connection",
                 "Verify a vision endpoint config",
             ),
+            (
+                "GET",
+                "/available-models",
+                "available_vision_models",
+                "List models exposed by a vision provider",
+            ),
         ],
     },
     "metrics": {

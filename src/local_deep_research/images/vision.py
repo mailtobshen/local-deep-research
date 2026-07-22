@@ -2,12 +2,11 @@
 from __future__ import annotations
 
 import base64
-import logging
 from typing import Optional
 
-from ..config.llm_config import _build_chat_model
+from loguru import logger
 
-logger = logging.getLogger(__name__)
+from ..config.llm_config import _build_chat_model
 
 
 class VisionDescriber:
@@ -41,8 +40,7 @@ class VisionDescriber:
                 )
             except Exception:
                 logger.exception(
-                    "Failed to init vision LLM %s; fallback disabled",
-                    self.model_name,
+                    f"Failed to init vision LLM {self.model_name}; fallback disabled"
                 )
                 self._llm = None
 
@@ -83,5 +81,5 @@ class VisionDescriber:
             text = str(getattr(resp, "content", "")).strip()
             return text[:60] or None
         except Exception:
-            logger.debug("Vision describe failed for %s", image_url, exc_info=True)
+            logger.debug(f"Vision describe failed for {image_url}")
             return None

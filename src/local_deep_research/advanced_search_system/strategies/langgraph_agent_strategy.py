@@ -110,6 +110,24 @@ class SearchResultsCollector:
                     return None
             return None
 
+    def attach_html_content(self, url: str, html_content: str) -> bool:
+        """Attach serialized image data (``html_content``) to the record(s)
+        already registered for *url*.
+
+        Returns ``True`` if a matching record was found and updated. Used by
+        the fetch tool when ``report.enable_images`` is on so the report-stage
+        image enhancer can read images from ``search_results[].html_content``
+        (same storage convention as ``full_search._get_full_content``).
+        """
+        with self._lock:
+            updated = False
+            for collection in (self._results, self._all_links):
+                for r in collection:
+                    if r.get("link", r.get("url", "")) == url:
+                        r["html_content"] = html_content
+                        updated = True
+            return updated
+
     def reset(self) -> None:
         """Clear per-call state.  ``_all_links`` is intentionally kept."""
         with self._lock:

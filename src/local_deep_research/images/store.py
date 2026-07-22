@@ -2,12 +2,11 @@
 from __future__ import annotations
 
 import hashlib
-import logging
 import re
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-logger = logging.getLogger(__name__)
+from loguru import logger
 
 _IMG_RE = re.compile(r"!\[([^\]]*)\]\((https?://[^)]+)\)")
 
@@ -61,7 +60,7 @@ class ImageStore:
                 self._record(url, str(local_path), route, digest)
                 url_to_route[url] = route
             except Exception:
-                logger.debug("Image persist failed for %s", url, exc_info=True)
+                logger.debug(f"Image persist failed for {url}")
         return url_to_route
 
     def _record(self, url, local_path, route, digest) -> None:
@@ -82,7 +81,7 @@ class ImageStore:
             )
             self.db_session.commit()
         except Exception:
-            logger.debug("Image DB record failed for %s", url, exc_info=True)
+            logger.debug(f"Image DB record failed for {url}")
             self.db_session.rollback()
 
     def rewrite_markdown(self, markdown: str, url_to_route: Dict[str, str]) -> str:

@@ -1,8 +1,9 @@
 """Top-level post-processing entry: build bank, enhance, mirror, rewrite."""
 from __future__ import annotations
 
-import logging
 from typing import Any, Dict, Optional
+
+from loguru import logger
 
 from .bank import ImageBank
 from .enhancer import ImageEnhancer
@@ -10,8 +11,6 @@ from .serialize import loads_images
 from .store import ImageStore, _IMG_RE
 from .vision import VisionDescriber
 from ..config.llm_config import get_llm
-
-logger = logging.getLogger(__name__)
 
 
 def enhance_report_with_images(
@@ -31,14 +30,31 @@ def enhance_report_with_images(
     """
     if not enable_images:
         return clean_markdown
+    logger.info(f"[IMG-TRACE] BEGIN research={research_id} images_enabled=true")
     try:
         bank = ImageBank()
+        serialized_before_dedup = 0
+        findings_with_images = 0
         for finding in results.get("findings", []):
             for sr in finding.get("search_results", []) or []:
                 raw = sr.get("html_content")
                 if raw:
-                    bank.add(loads_images(raw))
+                    imgs = loads_images(raw)
+                    serialized_before_dedup += len(imgs)
+                    if imgs:
+                        findings_with_images += 1
+                    bank.add(imgs)
+        total = len(bank.all_urls())
+        with_alt = len(bank.candidates_with_alt())
+        logger.info(
+            f"[IMG-TRACE] BANK research={research_id} total={total} "
+            f"with_alt={with_alt} without_alt={total - with_alt} "
+            f"serialized_before_dedup={serialized_before_dedup} "
+            f"sr_with_images={findings_with_images}"
+        )
         if not bank.all_urls():
+            logger.info(f"[IMG-TRACE] BANK_EMPTY research={research_id}")
+            logger.info(f"[IMG-TRACE] END research={research_id} status=empty")
             return clean_markdown
 
         llm = get_llm()
@@ -51,13 +67,26 @@ def enhance_report_with_images(
 
         # Persist the real URLs that survived into the enhanced markdown.
         chosen = [m.group(2) for m in _IMG_RE.finditer(enhanced)]
+        _shown = ",".join(chosen[:10]) + (
+            f" +{len(chosen) - 10}_more" if len(chosen) > 10 else ""
+        )
+        logger.info(
+            f"[IMG-TRACE] ENHANCE research={research_id} "
+            f"chosen={len(chosen)} urls={_shown}"
+        )
         store = ImageStore(research_id, db_session)
         url_to_route = store.persist(chosen)
+        logger.info(
+            f"[IMG-TRACE] PERSIST research={research_id} chosen={len(chosen)} "
+            f"persisted={len(url_to_route)} failed={len(chosen) - len(url_to_route)}"
+        )
         if url_to_route:
             enhanced = store.rewrite_markdown(enhanced, url_to_route)
+        logger.info(f"[IMG-TRACE] END research={research_id} status=ok")
         return enhanced
     except Exception:
         logger.exception(
             "Image post-processing failed; returning clean markdown"
         )
+        logger.info(f"[IMG-TRACE] END research={research_id} status=error")
         return clean_markdown

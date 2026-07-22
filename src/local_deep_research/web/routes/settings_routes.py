@@ -90,7 +90,12 @@ settings_bp = Blueprint("settings", __name__, url_prefix="/settings")
 # if the decorator is ever removed.
 
 # Settings with dynamically populated options (excluded from validation)
-DYNAMIC_SETTINGS = ["llm.provider", "llm.model", "search.tool"]
+DYNAMIC_SETTINGS = [
+    "llm.provider",
+    "llm.model",
+    "search.tool",
+    "report.image_vision_model",
+]
 
 # Namespace validation for new setting creation via the web API.
 # Keys starting with any ALLOWED prefix may be created; any prefix in

@@ -77,6 +77,55 @@ def _register_in_collector(
     return start + 1
 
 
+def _attach_images_if_enabled(
+    collector: Any,
+    url: str,
+    title: str,
+    settings_snapshot: dict | None,
+    enable_js_rendering: bool,
+) -> None:
+    """When ``report.enable_images`` is on, extract images for *url* and store
+    them on the collector record's ``html_content`` field.
+
+    No-op (and no extra network request / imports) when the setting is off, so
+    the default text-only fetch path is completely unchanged. Reuses the same
+    ``fetch_content_with_images`` + ``dumps_images`` path as
+    ``full_search._get_full_content`` so the report-stage image enhancer can
+    read images the same way. Failures are logged and never affect the text
+    fetch result the agent sees.
+    """
+    from local_deep_research.config.thread_settings import (
+        get_bool_setting_from_snapshot,
+    )
+
+    if not get_bool_setting_from_snapshot(
+        "report.enable_images",
+        default=False,
+        settings_snapshot=settings_snapshot,
+    ):
+        return
+
+    try:
+        from local_deep_research.images.serialize import dumps_images
+        from local_deep_research.research_library.downloaders.extraction.pipeline import (
+            fetch_content_with_images,
+        )
+
+        # language intentionally omitted — the LangGraph strategy has no
+        # language attribute; pipeline default ("English") only affects text
+        # extraction fallback, not <img> extraction.
+        data = fetch_content_with_images(
+            [url],
+            titles={url: title},
+            settings_snapshot=settings_snapshot,
+            enable_js_rendering=enable_js_rendering,
+        ).get(url)
+        images = data.get("images", []) if data else []
+        collector.attach_html_content(url, dumps_images(images))
+    except Exception:
+        logger.exception("fetch_content image enhancement failed")
+
+
 def _make_full_fetch_tool(
     collector: Any, settings_snapshot: dict | None = None
 ):
@@ -97,6 +146,13 @@ def _make_full_fetch_tool(
                     content = result.get("content", "")
                     cite_idx = _register_in_collector(
                         collector, url, title, content
+                    )
+                    _attach_images_if_enabled(
+                        collector,
+                        url,
+                        title,
+                        settings_snapshot,
+                        enable_js,
                     )
                     return (
                         f"[{cite_idx}] Title: {title}\nURL: {url}\n\n{content}"
@@ -188,6 +244,13 @@ def _make_summary_fetch_tool(
 
                 cite_idx = _register_in_collector(
                     collector, url, title, summary or content
+                )
+                _attach_images_if_enabled(
+                    collector,
+                    url,
+                    title,
+                    settings_snapshot,
+                    enable_js,
                 )
                 return f"[{cite_idx}] Title: {title}\nURL: {url}\n\n{summary}"
         except Exception as exc:
