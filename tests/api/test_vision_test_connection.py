@@ -77,7 +77,7 @@ def test_test_connection_network_error_returns_success_false():
     assert resp.status_code == 200
     data = resp.get_json()
     assert data["success"] is False
-    assert "Connection refused" in data["error"]
+    assert "连接被拒" in data["error"]
 
 
 def test_test_connection_missing_fields():
