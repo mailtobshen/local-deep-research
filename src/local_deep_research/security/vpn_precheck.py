@@ -35,7 +35,8 @@ def check_vpn_proxy(
 
     Both steps must succeed. timeout applies per step (total ≤ 6s).
 
-    NOTE: Step 2 is added in Task 3; this task adds step 1 only.
+    Uses stdlib urllib (NOT safe_get) because safe_get's SSRF validator
+    would block private-IP proxy hosts like 172.25.128.1.
     """
     host, port = _parse_proxy_url(proxy_url)
 
@@ -46,4 +47,25 @@ def check_vpn_proxy(
     except (socket.timeout, OSError) as e:
         raise VPNCheckError(
             f"VPN proxy port unreachable: {host}:{port} ({e})"
+        ) from e
+
+    # Step 2: proxy can reach external network
+    proxy_handler = urllib.request.ProxyHandler({
+        "http": proxy_url,
+        "https": proxy_url,
+    })
+    opener = urllib.request.build_opener(proxy_handler)
+    try:
+        req = urllib.request.Request(external_probe_url, method="HEAD")
+        resp = opener.open(req, timeout=timeout)
+        if resp.status not in (200, 204):
+            raise VPNCheckError(
+                f"VPN proxy returned HTTP {resp.status} from "
+                f"{external_probe_url}"
+            )
+    except VPNCheckError:
+        raise
+    except Exception as e:
+        raise VPNCheckError(
+            f"VPN proxy cannot reach external network: {e}"
         ) from e
