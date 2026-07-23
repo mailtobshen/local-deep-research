@@ -69,6 +69,9 @@ services:
       - LDR_APP_NETWORK_PROXY_ENABLED=${LDR_APP_NETWORK_PROXY_ENABLED:-true}
       - LDR_APP_NETWORK_PROXY_URL=${LDR_APP_NETWORK_PROXY_URL:-http://172.25.128.1:10888}
 
+      # --- IMG-TRACE 候选明细: 默认开启，可由宿主显式设为 0 关闭 ---
+      - LDR_IMG_TRACE_CANDIDATES=${LDR_IMG_TRACE_CANDIDATES:-1}
+
       # --- Runtime provenance 标识 (供启动日志与 /data/runtime/provenance.json 持久化) ---
       # 默认 unknown: 由部署方在调用 `docker compose` 时显式注入; 留 unknown 以避免误导。
       - LDR_BUILD_SHA=${LDR_BUILD_SHA:-unknown}
