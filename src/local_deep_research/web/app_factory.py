@@ -250,6 +250,15 @@ def create_app():
     from ..database.encrypted_db import db_manager
 
     data_dir = get_data_directory()
+
+    # Record runtime provenance at startup. Best-effort: a failure here
+    # must not abort app creation. Runs once per create_app() invocation
+    # (the helper itself is idempotent across re-invocation when the
+    # /data volume is writable, which is the normal case; tests guard
+    # the failure paths).
+    from ..diagnostics.startup_provenance import emit_startup_provenance
+
+    emit_startup_provenance(data_dir=data_dir)
     logger.info("=" * 60)
     logger.info("DATA STORAGE INFORMATION")
     logger.info("=" * 60)
