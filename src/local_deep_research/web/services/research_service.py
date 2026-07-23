@@ -757,12 +757,29 @@ def run_research_process(research_id, query, mode, **kwargs):
                     },
                 )
         except Exception as preflight_err:  # noqa: BLE001
-            # A broken probe must never abort the research.
-            logger.debug(f"Pre-flight engine health check skipped: {preflight_err}")
+            # A broken probe must never abort the research. run_preflight_check
+            # itself never raises (each probe captures its own error), so this
+            # only fires on unexpected setup errors (e.g. import failure). Per
+            # requirement, still emit a FULL report — never a one-line skip.
+            logger.exception("Pre-flight engine health check errored")
+            error_report = (
+                "引擎健康预检 (探测框架异常, 无法执行逐项检测):\n"
+                f"  ✗ proxy      error  预检未执行: {preflight_err}\n"
+                f"  ✗ searxng    error  预检未执行: {preflight_err}\n"
+                f"  ✗ firecrawl  error  预检未执行: {preflight_err}\n"
+                "可用引擎/服务: 0/3"
+            )
             progress_callback(
-                f"预检跳过: {preflight_err}",
+                f"⚠ 预检异常: 探测框架未能运行, 请检查诊断模块\n{error_report}",
                 4,
-                {"phase": "preflight", "step": "skipped"},
+                {
+                    "phase": "preflight",
+                    "step": "done",
+                    "status": "warning",
+                    "ok": 0,
+                    "total": 3,
+                    "error": str(preflight_err),
+                },
             )
 
         # Set the progress callback in the system
@@ -1089,6 +1106,7 @@ def run_research_process(research_id, query, mode, **kwargs):
                         from ...images.postprocessing import (
                             enhance_report_with_images,
                         )
+                        from ...images.vision import VisionDescriber
                         from ...config.thread_settings import (
                             get_setting_from_snapshot,
                         )
@@ -1102,6 +1120,29 @@ def run_research_process(research_id, query, mode, **kwargs):
                             "report.image_vision_model",
                             "",
                             settings_snapshot=settings_snapshot,
+                        )
+                        vision_url = get_setting_from_snapshot(
+                            "report.image_vision_url",
+                            "",
+                            settings_snapshot=settings_snapshot,
+                        )
+                        vision_key = get_setting_from_snapshot(
+                            "report.image_vision_api_key",
+                            "",
+                            settings_snapshot=settings_snapshot,
+                        )
+                        # Backward compat: if URL empty but model set,
+                        # fall back to the main Ollama endpoint.
+                        if vision_model and not vision_url:
+                            vision_url = get_setting_from_snapshot(
+                                "llm.ollama.url",
+                                "http://localhost:11434",
+                                settings_snapshot=settings_snapshot,
+                            )
+                        vision = VisionDescriber(
+                            model_name=vision_model,
+                            base_url=vision_url or None,
+                            api_key=vision_key or None,
                         )
                         if enable_images:
                             progress_callback(
@@ -1117,6 +1158,8 @@ def run_research_process(research_id, query, mode, **kwargs):
                                     db_session=img_db_session,
                                     enable_images=True,
                                     vision_model=vision_model,
+                                    vision_url=vision_url or None,
+                                    vision_api_key=vision_key or None,
                                 )
                     except Exception:
                         logger.exception(

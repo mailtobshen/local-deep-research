@@ -487,16 +487,23 @@ function showAlert(message, type = 'info', skipIfToastShown = true) {
         return;
     }
 
-    // Find the alert container - look for different possible alert containers
-    let alertContainer = document.getElementById('filtered-settings-alert');
-
-    // If not found, try other common alert containers
-    if (!alertContainer) {
-        alertContainer = document.getElementById('settings-alert');
-    }
+    // Find the alert container - prefer the ones that always render
+    // inside the visible viewport. `#filtered-settings-alert` is
+    // prepended to the (potentially tens-of-thousands-of-pixels-tall)
+    // settings form (settings.js:2867), so toasts injected there land
+    // far below the fold and disappear before the user notices them.
+    // `#settings-alert` and `#research-alert` always sit near the top
+    // of their respective pages.
+    let alertContainer = document.getElementById('settings-alert');
 
     if (!alertContainer) {
         alertContainer = document.getElementById('research-alert');
+    }
+
+    // Last-resort fallback only — known to render off-screen on the
+    // settings page because the settings form can be 50k+ px tall.
+    if (!alertContainer) {
+        alertContainer = document.getElementById('filtered-settings-alert');
     }
 
     if (!alertContainer) return;

@@ -2,12 +2,11 @@
 from __future__ import annotations
 
 import hashlib
-import logging
 import re
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-logger = logging.getLogger(__name__)
+from loguru import logger
 
 _IMG_RE = re.compile(r"!\[([^\]]*)\]\((https?://[^)]+)\)")
 
@@ -43,8 +42,15 @@ class ImageStore:
         }
         return mapping.get(content_type, ".bin")
 
-    def persist(self, urls: List[str]) -> Dict[str, str]:
+    def persist(
+        self,
+        urls: List[str],
+        url_to_alt: Optional[Dict[str, str]] = None,
+        url_to_source: Optional[Dict[str, tuple]] = None,
+    ) -> Dict[str, str]:
         url_to_route: Dict[str, str] = {}
+        url_to_alt = url_to_alt or {}
+        url_to_source = url_to_source or {}
         for url in urls:
             try:
                 result = self._download(url)
@@ -58,13 +64,25 @@ class ImageStore:
                 local_path.parent.mkdir(parents=True, exist_ok=True)
                 local_path.write_bytes(data)
                 route = f"/images/{rel}"
-                self._record(url, str(local_path), route, digest)
+                src = url_to_source.get(url)
+                self._record(
+                    url,
+                    str(local_path),
+                    route,
+                    digest,
+                    alt=url_to_alt.get(url),
+                    source_url=(src or (None, None))[0],
+                    source_title=(src or (None, None))[1],
+                )
                 url_to_route[url] = route
             except Exception:
-                logger.debug("Image persist failed for %s", url, exc_info=True)
+                logger.debug(f"Image persist failed for {url}")
         return url_to_route
 
-    def _record(self, url, local_path, route, digest) -> None:
+    def _record(
+        self, url, local_path, route, digest,
+        alt=None, source_url=None, source_title=None
+    ) -> None:
         try:
             from ..database.models import Image
 
@@ -74,15 +92,15 @@ class ImageStore:
                     original_url=url,
                     local_path=local_path,
                     local_route=route,
-                    alt=None,
-                    source_url=None,
-                    source_title=None,
+                    alt=alt,
+                    source_url=source_url,
+                    source_title=source_title,
                     content_hash=digest,
                 )
             )
             self.db_session.commit()
         except Exception:
-            logger.debug("Image DB record failed for %s", url, exc_info=True)
+            logger.debug(f"Image DB record failed for {url}")
             self.db_session.rollback()
 
     def rewrite_markdown(self, markdown: str, url_to_route: Dict[str, str]) -> str:

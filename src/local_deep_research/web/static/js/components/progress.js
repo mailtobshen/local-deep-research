@@ -298,7 +298,8 @@
         if (data.phase && (data.phase === 'thought' || data.phase === 'tool_call' ||
             data.phase === 'observation' || data.phase === 'error' || data.phase === 'react' ||
             data.phase === 'synthesis' || data.phase === 'sub_research' ||
-            data.phase === 'init' || data.phase === 'complete')) {
+            data.phase === 'init' || data.phase === 'complete' ||
+            data.phase === 'preflight')) {
             updateAgentThinking(data);
         }
 

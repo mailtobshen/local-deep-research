@@ -619,6 +619,9 @@ def register_blueprints(app):
     logger.info("Importing settings routes...")
     from .routes.settings_routes import settings_bp
 
+    logger.info("Importing vision routes...")
+    from .routes.vision_routes import vision_bp
+
     logger.info("All core blueprints imported successfully")
 
     # Add root route
@@ -701,6 +704,7 @@ def register_blueprints(app):
     app.register_blueprint(
         context_overflow_bp, url_prefix="/metrics"
     )  # Register context overflow API
+    app.register_blueprint(vision_bp, url_prefix="/api/vision")
 
     # Register news API routes
     from .routes import news_routes

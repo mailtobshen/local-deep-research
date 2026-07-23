@@ -1,4 +1,5 @@
 from functools import cache
+from typing import Optional
 
 from langchain_anthropic import ChatAnthropic
 from langchain_core.language_models import BaseChatModel
@@ -233,6 +234,81 @@ def _get_context_window_for_provider(provider_type, settings_snapshot=None):
         settings_snapshot=settings_snapshot,
     )
     return int(window_size) if window_size is not None else 128000
+
+
+def _build_chat_model(
+    provider: str,
+    model_name: str,
+    base_url: Optional[str] = None,
+    api_key: Optional[str] = None,
+    settings_snapshot: Optional[dict] = None,
+) -> BaseChatModel:
+    """Construct a LangChain chat model for a given provider.
+
+    Vision and other callers use this helper to get a chat model with a
+    specific base_url + api_key, without going through the full get_llm()
+    path (which would also resolve temperature, token tracking, etc.).
+
+    For openai_endpoint (which covers Ollama-via-OpenAI-compat, OpenRouter,
+    LM Studio, vLLM, etc.), base_url is required to be non-empty.
+    """
+    provider = normalize_provider(provider or "")
+    if provider in ("openai", "openai_endpoint"):
+        # Detect local self-hosted endpoints that don't require an API
+        # key (Ollama-via-OpenAI-compat, LM Studio, llama.cpp, vLLM).
+        # The LangChain ChatOpenAI / openai SDK throws
+        # "Missing credentials" when api_key is None, even for local
+        # servers that don't validate it. Use a placeholder so the
+        # call goes through; the local server ignores the value.
+        #
+        # Match the common non-routable / private address ranges that
+        # self-hosted LLM servers bind to: localhost, loopback, any
+        # RFC1918 private (10/8, 172.16/12, 192.168/16), link-local
+        # (169.254/16), and the Docker bridge gateway (172.17.0.1).
+        import re
+
+        url_str = (base_url or "").lower()
+        is_local = bool(
+            re.search(
+                r"://("
+                r"localhost|127\.0\.0\.1|0\.0\.0\.0|"
+                r"10\.\d{1,3}\.\d{1,3}\.\d{1,3}|"
+                r"172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|"
+                r"192\.168\.\d{1,3}\.\d{1,3}|"
+                r"169\.254\.\d{1,3}\.\d{1,3}|"
+                r"[^/]*\.local"
+                r")(:\d+)?",
+                url_str,
+            )
+        )
+        effective_key = api_key
+        if not effective_key and is_local:
+            effective_key = "ollama"
+        return ChatOpenAI(
+            model_name=model_name,
+            base_url=base_url or None,
+            api_key=effective_key or None,
+        )
+    if provider == "anthropic":
+        return ChatAnthropic(model=model_name, api_key=api_key or None)
+    if provider == "ollama":
+        # Ollama supports an OpenAI-compat endpoint at /v1.
+        # Prefer explicit base_url; else fall back to llm.ollama.url.
+        url = base_url
+        if not url:
+            from .thread_settings import get_setting_from_snapshot
+            url = get_setting_from_snapshot(
+                "llm.ollama.url",
+                "http://localhost:11434",
+                settings_snapshot=settings_snapshot,
+            )
+        # Use OpenAI-compat path so chat + vision both work.
+        return ChatOpenAI(
+            model_name=model_name,
+            base_url=url.rstrip("/") + "/v1",
+            api_key=api_key or "ollama",
+        )
+    raise ValueError(f"Unsupported provider for chat model: {provider!r}")
 
 
 def get_llm(

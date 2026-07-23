@@ -2,12 +2,11 @@
 from __future__ import annotations
 
 import json
-import logging
 from typing import List, Optional
 
-from .extractor import ExtractedImage
+from loguru import logger
 
-logger = logging.getLogger(__name__)
+from .extractor import ExtractedImage
 
 _FIELDS = ("url", "alt", "source_url", "source_title", "width", "height")
 
@@ -28,7 +27,7 @@ def dumps_images(images: List[ExtractedImage]) -> str:
             ]
         )
     except Exception:
-        logger.debug("dumps_images failed", exc_info=True)
+        logger.debug("dumps_images failed")
         return "[]"
 
 

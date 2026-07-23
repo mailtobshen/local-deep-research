@@ -2,27 +2,45 @@
 from __future__ import annotations
 
 import base64
-import logging
 from typing import Optional
 
-logger = logging.getLogger(__name__)
+from loguru import logger
+
+from ..config.llm_config import _build_chat_model
 
 
 class VisionDescriber:
     """Describes images via a vision-capable LLM. Disabled when no model configured."""
 
-    def __init__(self, model_name: Optional[str]) -> None:
+    def __init__(
+        self,
+        model_name: Optional[str] = None,
+        base_url: Optional[str] = None,
+        api_key: Optional[str] = None,
+    ) -> None:
         self.model_name = (model_name or "").strip()
+        self._base_url = (base_url or "").strip() or None
+        self._api_key = api_key or None
         self._llm = None
         if self.model_name:
             try:
-                from ..config.llm_config import get_llm
-
-                self._llm = get_llm(model_name=self.model_name)
+                # Decide provider from base_url heuristic:
+                #   localhost / 127.0.0.1 / no base_url → openai_endpoint
+                #     (covers Ollama-via-OpenAI-compat, LM Studio, vLLM).
+                # For simplicity and to keep the public surface small,
+                # always use openai_endpoint — ChatOpenAI works against
+                # Ollama-via-/v1, OpenAI, OpenRouter, LM Studio, vLLM,
+                # llama.cpp, etc.
+                self._llm = _build_chat_model(
+                    provider="openai_endpoint",
+                    model_name=self.model_name,
+                    base_url=self._base_url,
+                    api_key=self._api_key,
+                    settings_snapshot=None,
+                )
             except Exception:
                 logger.exception(
-                    "Failed to init vision LLM %s; fallback disabled",
-                    self.model_name,
+                    f"Failed to init vision LLM {self.model_name}; fallback disabled"
                 )
                 self._llm = None
 
@@ -63,5 +81,5 @@ class VisionDescriber:
             text = str(getattr(resp, "content", "")).strip()
             return text[:60] or None
         except Exception:
-            logger.debug("Vision describe failed for %s", image_url, exc_info=True)
+            logger.debug(f"Vision describe failed for {image_url}")
             return None

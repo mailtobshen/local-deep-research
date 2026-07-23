@@ -186,6 +186,32 @@ def settings_page():
     return render_template_with_defaults("settings_dashboard.html")
 
 
+def _apply_report_language_override(research_settings: dict, report_language: str) -> None:
+    """Override the report.language setting in the per-research settings_snapshot.
+
+    The Advanced Options dropdown sends a per-research choice; without this
+    override the snapshot would carry the global default (zh-CN). Injecting
+    into the snapshot here keeps the language-injection sites (citation
+    handler prefix, IntegratedReportGenerator prompts) reading from a single
+    source of truth.
+    """
+    if not report_language or report_language == "zh-CN":
+        # Default already in defaults/default_settings.json — no override needed.
+        return
+    snapshot = research_settings.get("settings_snapshot")
+    if not isinstance(snapshot, dict):
+        return
+    existing = snapshot.get("report.language")
+    if isinstance(existing, dict):
+        existing["value"] = report_language
+    elif existing is None:
+        snapshot["report.language"] = {
+            "value": report_language,
+            "ui_element": "select",
+            "name": "报告语言 / Report Language",
+        }
+
+
 def _extract_research_params(data, settings_manager):
     """Extract and resolve research parameters from request data and settings.
 
@@ -252,6 +278,10 @@ def _extract_research_params(data, settings_manager):
             "search.search_strategy", "source-based"
         )
 
+    report_language = data.get("report_language")
+    if not report_language:
+        report_language = settings_manager.get_setting("report.language", "zh-CN")
+
     return {
         "model_provider": model_provider,
         "model": model,
@@ -263,6 +293,7 @@ def _extract_research_params(data, settings_manager):
         "iterations": iterations,
         "questions_per_iteration": questions_per_iteration,
         "strategy": strategy,
+        "report_language": report_language,
     }
 
 
@@ -398,6 +429,7 @@ def start_research():
         iterations = params["iterations"]
         questions_per_iteration = params["questions_per_iteration"]
         strategy = params["strategy"]
+        report_language = params["report_language"]
 
     # Debug logging for model parameter specifically
     logger.debug(
@@ -548,6 +580,7 @@ def start_research():
             "iterations": iterations,
             "questions_per_iteration": questions_per_iteration,
             "strategy": strategy,
+            "report_language": report_language,
         },
         # System information
         "system": {
@@ -584,6 +617,10 @@ def start_research():
 
             # Add settings snapshot to metadata
             research_settings["settings_snapshot"] = all_settings
+            # Per-research override: this submission's report_language
+            # beats the global default so the language injection sees
+            # the user's choice from the Advanced Options dropdown.
+            _apply_report_language_override(research_settings, report_language)
             logger.info(
                 f"Captured {len(all_settings)} settings for research {research_id}"
             )
@@ -607,6 +644,12 @@ def start_research():
                         bypass_cache=True
                     )
                     research_settings["settings_snapshot"] = all_settings
+                    # Per-research override: this submission's report_language
+                    # beats the global default so the language injection sees
+                    # the user's choice from the Advanced Options dropdown.
+                    _apply_report_language_override(
+                        research_settings, report_language
+                    )
                     logger.info(
                         f"Captured {len(all_settings)} settings using temporary session for research {research_id}"
                     )

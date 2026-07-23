@@ -12,6 +12,12 @@ from loguru import logger
 class BaseCitationHandler(ABC):
     """Abstract base class for citation handlers."""
 
+    # Maps report.language setting values to an LLM-facing language name.
+    _LANG_LABEL = {
+        "zh-CN": "Simplified Chinese (简体中文)",
+        "en": "English",
+    }
+
     def __init__(self, llm, settings_snapshot=None):
         self.llm = llm
         self.settings_snapshot = settings_snapshot or {}
@@ -42,6 +48,22 @@ class BaseCitationHandler(ABC):
             self._fact_checking_logged = True
         return bool(enabled)
 
+    def _get_language_directive(self) -> str:
+        """Return an LLM instruction forcing the report output language.
+
+        Reads the ``report.language`` setting (default zh-CN). Returns an
+        empty string for unknown values so custom/unsupported codes don't
+        inject a broken directive.
+        """
+        lang = self.get_setting("report.language", "zh-CN")
+        label = self._LANG_LABEL.get(lang)
+        if not label:
+            return ""
+        return (
+            f"IMPORTANT: Write the entire response/report in {label}, "
+            f"regardless of the language of the sources. "
+        )
+
     def _get_output_instruction_prefix(self) -> str:
         """
         Get formatted output instructions from settings if present.
@@ -59,13 +81,18 @@ class BaseCitationHandler(ABC):
             - "Use simple language suitable for beginners"
             - "Be concise with bullet points"
         """
+        language_directive = self._get_language_directive()
+
         output_instructions = self.get_setting(
             "general.output_instructions", ""
         ).strip()
 
+        prefix = language_directive
         if output_instructions:
-            return f"User-Specified Output Style: {output_instructions}\n\n"
-        return ""
+            prefix += f"User-Specified Output Style: {output_instructions}\n\n"
+        elif language_directive:
+            prefix += "\n\n"
+        return prefix
 
     def _create_documents(
         self, search_results: Union[str, List[Dict]], nr_of_links: int = 0

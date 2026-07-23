@@ -235,6 +235,24 @@ ROUTE_REGISTRY: dict[str, Any] = {
             ),
         ],
     },
+    "vision": {
+        "blueprint": "vision_bp",
+        "url_prefix": "/api/vision",
+        "routes": [
+            (
+                "POST",
+                "/test_connection",
+                "test_vision_connection",
+                "Verify a vision endpoint config",
+            ),
+            (
+                "GET",
+                "/available-models",
+                "available_vision_models",
+                "List models exposed by a vision provider",
+            ),
+        ],
+    },
     "metrics": {
         "blueprint": "metrics_bp",
         "url_prefix": "/metrics",

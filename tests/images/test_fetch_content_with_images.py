@@ -92,3 +92,28 @@ def test_full_search_gate_off_uses_plain_fetch_content():
     fcwi.assert_not_called()
     assert out[0]["full_content"] == "body"
     assert "html_content" not in out[0]  # type: ignore[index]  # noqa: E501
+
+
+def test_wrapper_delegates_to_dispatcher_with_enable_images_true():
+    from local_deep_research.research_library.downloaders.extraction import pipeline
+
+    expected = {
+        "https://src/p": {"text": "body", "images": ["img1"]},
+    }
+    with patch.object(
+        pipeline, "_fetch_content_dispatcher", return_value=expected
+    ) as mock_d:
+        out = pipeline.fetch_content_with_images(
+            ["https://src/p"],
+            titles={"https://src/p": "Page"},
+            settings_snapshot={"k": "v"},
+        )
+    mock_d.assert_called_once_with(
+        ["https://src/p"],
+        titles={"https://src/p": "Page"},
+        settings_snapshot={"k": "v"},
+        language="English",
+        enable_js_rendering=False,
+        enable_images=True,
+    )
+    assert out is expected

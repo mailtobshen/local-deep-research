@@ -511,51 +511,23 @@ def fetch_content(
     language: str = "English",
     enable_js_rendering: bool = False,
 ) -> Dict[str, Optional[str]]:
-    """Fetch + extract content for urls, preferring Firecrawl when enabled.
+    """Fetch + extract text for urls.
 
-    When the Firecrawl content-fetch switch is off (or the service fails),
-    this is a transparent passthrough to batch_fetch_and_extract.
+    Thin wrapper over `_fetch_content_dispatcher` with image extraction
+    disabled; returns only the `text` field per url. Behavior is the same
+    as `batch_fetch_and_extract` for default config, and uses Playwright
+    first / Firecrawl fallback when `firecrawl.use_for_content_fetch` is
+    on (per `_firecrawl_enabled`).
     """
-    if not urls:
-        return {}
-
-    if not _firecrawl_enabled(settings_snapshot):
-        return batch_fetch_and_extract(
-            urls, language=language, enable_js_rendering=enable_js_rendering
-        )
-
-    try:
-        client = _new_firecrawl_client_from_snapshot(settings_snapshot)
-        fc_results = client.batch_scrape(urls)
-    except RateLimitError:
-        # 429s must propagate so callers can back off — don't swallow into
-        # the silent legacy fallback below.
-        raise
-    except Exception:
-        logger.debug("Firecrawl dispatch failed; full fallback", exc_info=True)
-        fc_results = dict.fromkeys(urls)
-
-    final: Dict[str, Optional[str]] = {}
-    fallback_urls: List[str] = []
-    for u in urls:
-        if fc_results.get(u):
-            final[u] = fc_results[u]
-        else:
-            fallback_urls.append(u)
-
-    if fallback_urls:
-        legacy = batch_fetch_and_extract(
-            fallback_urls,
-            language=language,
-            enable_js_rendering=enable_js_rendering,
-        )
-        for u in fallback_urls:
-            final[u] = legacy.get(u)
-    else:
-        for u in urls:
-            final.setdefault(u, None)
-
-    return final
+    data = _fetch_content_dispatcher(
+        urls,
+        titles=None,
+        settings_snapshot=settings_snapshot,
+        language=language,
+        enable_js_rendering=enable_js_rendering,
+        enable_images=False,
+    )
+    return {url: (entry.get("text") if entry else None) for url, entry in data.items()}
 
 
 def fetch_content_with_images(
@@ -567,21 +539,44 @@ def fetch_content_with_images(
 ) -> Dict[str, Dict[str, Any]]:
     """Fetch + extract text AND images from the same download.
 
-    Returns {url: {"text": Optional[str], "images": List[ExtractedImage]}}.
-    Image extraction never affects text extraction (isolated try/except).
-    No extra network request: images come from the already-fetched HTML.
+    Thin wrapper over `_fetch_content_dispatcher` with `enable_images=True`;
+    Playwright-first, Firecrawl-fallback per URL, image extraction from the
+    same html used for text (no extra network request).
+    """
+    return _fetch_content_dispatcher(
+        urls,
+        titles=titles,
+        settings_snapshot=settings_snapshot,
+        language=language,
+        enable_js_rendering=enable_js_rendering,
+        enable_images=True,
+    )
+
+
+def _fetch_content_dispatcher(
+    urls: List[str],
+    titles: Optional[Dict[str, str]] = None,
+    settings_snapshot: Optional[dict] = None,
+    language: str = "English",
+    enable_js_rendering: bool = False,
+    enable_images: bool = False,
+) -> Dict[str, Dict[str, Any]]:
+    """Single fetcher+image-extraction dispatcher.
+
+    For each url:
+      1. Playwright download (text + raw_html) via download_with_html()
+      2. If Playwright yields text → extract images if enable_images
+      3. Else if _firecrawl_enabled(snapshot) →
+         single scrape(link, include_html=enable_images); text=markdown, images from html
+      4. Else → {text: None, images: []}
     """
     result: Dict[str, Dict[str, Any]] = {}
     if not urls:
         return result
 
     titles = titles or {}
-    # Lazy-resolve AutoHTMLDownloader: a top-level import would create a
-    # circular import (pipeline -> playwright_html -> html -> pipeline).
-    # If a previous attempt's deferred module-level binding left the
-    # placeholder as None, fall through to a real import so production
-    # calls still work. ImportError is intentionally NOT caught here — a
-    # real cycle means a real bug, suppression would hide it.
+    # Lazy-resolve AutoHTMLDownloader: see fetch_content_with_images for the
+    # circular-import rationale (pipeline -> playwright_html -> html -> pipeline).
     dl_cls = AutoHTMLDownloader
     if dl_cls is None:
         from ..playwright_html import AutoHTMLDownloader as _dl_cls
@@ -592,34 +587,115 @@ def fetch_content_with_images(
         language=language,
         enable_js_rendering=enable_js_rendering,
     )
+    # Pre-compute once before the loop (snapshot doesn't change per URL).
+    firecrawl_enabled = _firecrawl_enabled(settings_snapshot)
+    firecrawl_client = None
+    if firecrawl_enabled:
+        try:
+            firecrawl_client = _new_firecrawl_client_from_snapshot(
+                settings_snapshot
+            )
+        except Exception:
+            logger.exception("Failed to build Firecrawl client in dispatcher")
+            firecrawl_client = None
+            firecrawl_enabled = False
+
+    # [IMG-TRACE] Firecrawl fallback availability for this batch.
+    if firecrawl_enabled and firecrawl_client is not None:
+        logger.info("[IMG-TRACE] firecrawl_config=READY")
+    elif firecrawl_enabled and firecrawl_client is None:
+        logger.info("[IMG-TRACE] firecrawl_config=BROKEN(client build failed)")
+    else:
+        logger.info("[IMG-TRACE] firecrawl_config=DISABLED")
+
     try:
         for url in urls:
             text: Optional[str] = None
-            images = []
+            images: List = []
+            pw_failed = False
+            via = "none"
+            text_status = "empty"
+            image_status = "empty"
+            fc_triggered = False
             try:
                 text_bytes, raw_html = downloader.download_with_html(url)
                 if text_bytes:
                     text = text_bytes.decode("utf-8", errors="replace")
-                if raw_html:
+                    via = "playwright"
+                    text_status = "ok"
+                else:
+                    pw_failed = True
+                    text_status = "FAIL(pw_no_text)"
+                if enable_images and raw_html:
                     try:
                         images = extract_images(
                             raw_html, url, titles.get(url, "")
                         )
+                        image_status = "ok" if images else "empty"
                     except Exception:
-                        logger.debug(
-                            "extract_images failed for %s", url, exc_info=True
+                        logger.exception(
+                            f"extract_images failed for {url}"
                         )
                         images = []
+                        image_status = "EXTRACT_FAIL"
             except Exception:
-                logger.debug(
-                    "fetch_content_with_images failed for %s", url, exc_info=True
+                logger.exception(
+                    f"_fetch_content_dispatcher Playwright path failed for {url}"
                 )
+                pw_failed = True
+                text_status = "FAIL(pw_exception)"
+
+            if pw_failed and firecrawl_enabled and firecrawl_client is not None:
+                fc_triggered = True
+                try:
+                    response = firecrawl_client.scrape(
+                        url, include_html=enable_images
+                    )
+                except Exception:
+                    logger.exception(f"Firecrawl fallback failed for {url}")
+                    response = None
+                    text_status = "FAIL(fc_exception)"
+                if isinstance(response, dict):
+                    md = response.get("markdown")
+                    if isinstance(md, str) and md.strip():
+                        text = md
+                        via = "firecrawl"
+                        text_status = "ok"
+                    else:
+                        text_status = "FAIL(fc_no_markdown)"
+                    html_from_fc = response.get("html")
+                    if (
+                        enable_images
+                        and isinstance(html_from_fc, str)
+                        and html_from_fc
+                    ):
+                        try:
+                            images = extract_images(
+                                html_from_fc, url, titles.get(url, "")
+                            )
+                            image_status = "ok" if images else "empty"
+                        except Exception:
+                            logger.exception(
+                                f"extract_images failed on Firecrawl html for {url}"
+                            )
+                            images = []
+                            image_status = "EXTRACT_FAIL"
+                elif text_status != "FAIL(fc_exception)":
+                    text_status = "FAIL(fc_no_response)"
+
+            # [IMG-TRACE] Per-URL fetch outcome: which fetcher won, text
+            # status, image count, and image-extraction status.
+            logger.info(
+                f"[IMG-TRACE] url={url} via={via} "
+                f"text={text_status} images={len(images)} "
+                f"image_status={image_status} fc_triggered={fc_triggered}"
+            )
             result[url] = {"text": text, "images": images}
     finally:
         try:
             downloader.close()
         except Exception:
-            logger.debug("Failed to close downloader in fetch_content_with_images")
+            logger.debug("Failed to close downloader in dispatcher")
 
     return result
 

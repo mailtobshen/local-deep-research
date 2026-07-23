@@ -230,3 +230,93 @@ def test_summary_mode_forwards_js_setting():
         lambda: tool.invoke({"url": "http://example.com/", "focus": "x"})
     )
     assert kwargs.get("enable_js_rendering") is False
+
+
+# ---- report.enable_images: fetch tool image extraction ----
+
+_IMAGES_ON_SNAPSHOT = {
+    "report.enable_images": {"value": True, "ui_element": "checkbox"}
+}
+
+
+def _fake_image(url="http://example.com/pic.jpg"):
+    from local_deep_research.images.extractor import ExtractedImage
+
+    return ExtractedImage(
+        url=url,
+        alt="pic",
+        source_url="http://example.com/",
+        source_title="T",
+        width=800,
+        height=600,
+    )
+
+
+def test_enable_images_off_does_not_call_image_pipeline():
+    """Default (enable_images off): the image pipeline is never invoked and
+    no html_content is attached — text-only path is unchanged."""
+    collector = SearchResultsCollector([])
+    tool = build_fetch_tool("full", collector)  # no snapshot → images off
+    cm = _fetcher_cm(title="T", content="body")
+    with patch(
+        "local_deep_research.content_fetcher.ContentFetcher", return_value=cm
+    ), patch(
+        "local_deep_research.research_library.downloaders.extraction."
+        "pipeline.fetch_content_with_images"
+    ) as fcwi:
+        out = tool.invoke({"url": "http://example.com/"})
+
+    fcwi.assert_not_called()
+    assert "html_content" not in collector.results[0]
+    assert out.startswith("[1] ")
+
+
+def test_enable_images_on_attaches_html_content():
+    """enable_images on: images are extracted and stored on the collector
+    record as serialized html_content; the tool return text is unchanged."""
+    collector = SearchResultsCollector([])
+    tool = build_fetch_tool(
+        "full", collector, settings_snapshot=_IMAGES_ON_SNAPSHOT
+    )
+    cm = _fetcher_cm(title="T", content="body")
+    with patch(
+        "local_deep_research.content_fetcher.ContentFetcher", return_value=cm
+    ), patch(
+        "local_deep_research.research_library.downloaders.extraction."
+        "pipeline.fetch_content_with_images",
+        return_value={
+            "http://example.com/": {"text": "body", "images": [_fake_image()]}
+        },
+    ) as fcwi:
+        out = tool.invoke({"url": "http://example.com/"})
+
+    fcwi.assert_called_once()
+    html = collector.results[0].get("html_content")
+    assert html is not None and "http://example.com/pic.jpg" in html
+    # image JSON must NOT leak into the agent-facing tool output
+    assert "html_content" not in out
+    assert "pic.jpg" not in out
+    assert out.startswith("[1] ")
+
+
+def test_enable_images_pipeline_error_keeps_text_result():
+    """If image extraction raises, the text fetch result is unaffected and no
+    traceback is surfaced to the agent."""
+    collector = SearchResultsCollector([])
+    tool = build_fetch_tool(
+        "full", collector, settings_snapshot=_IMAGES_ON_SNAPSHOT
+    )
+    cm = _fetcher_cm(title="T", content="body text")
+    with patch(
+        "local_deep_research.content_fetcher.ContentFetcher", return_value=cm
+    ), patch(
+        "local_deep_research.research_library.downloaders.extraction."
+        "pipeline.fetch_content_with_images",
+        side_effect=RuntimeError("boom"),
+    ):
+        out = tool.invoke({"url": "http://example.com/"})
+
+    assert out.startswith("[1] ")
+    assert "body text" in out
+    assert "boom" not in out
+    assert "html_content" not in collector.results[0]

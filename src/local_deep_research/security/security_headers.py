@@ -112,6 +112,10 @@ class SecurityHeaders:
               in the future, 'unsafe-inline' should be tightened immediately.
             - 'unsafe-eval' removed for better XSS protection (not needed for Socket.IO)
             - connect-src defaults to 'self' (same-origin HTTP + WebSocket)
+            - img-src allows https: so externally-hosted images referenced in
+              research reports (e.g. Wikimedia, search-result images) render in
+              the WebUI. DOMPurify sanitization in the frontend strips
+              onerror/onclick handlers, keeping the XSS surface bounded.
         """
         connect_src = self.app.config.get("SECURITY_CSP_CONNECT_SRC", "'self'")
         return (
@@ -120,7 +124,7 @@ class SecurityHeaders:
             "script-src 'self' 'unsafe-inline'; "
             "style-src 'self' 'unsafe-inline'; "
             "font-src 'self' data:; "
-            "img-src 'self' data:; "
+            "img-src 'self' data: https:; "
             "media-src 'self'; "
             "worker-src blob:; "
             "child-src 'self' blob:; "

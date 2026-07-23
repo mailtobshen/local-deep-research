@@ -17,10 +17,12 @@ Design:
 """
 from __future__ import annotations
 
+import socket
 import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 from dataclasses import dataclass
 from typing import Optional
+from urllib.parse import urlparse
 
 import requests
 from loguru import logger
@@ -43,8 +45,9 @@ _FALLBACK_ENGINES = [
     "duckduckgo",
     "wikipedia",
     "brave",
-    "startpage",
     "wikidata",
+    "mwmbl",
+    "yahoo",
 ]
 DEFAULT_SEARXNG_URL = "http://localhost:8080"
 DEFAULT_FIRECRAWL_URL = "http://localhost:3002"
@@ -317,6 +320,110 @@ def probe_firecrawl(
     )
 
 
+def probe_proxy(
+    settings_snapshot: Optional[dict], timeout: int = _PROBE_TIMEOUT
+) -> EngineStatus:
+    """Probe the outbound proxy if it's enabled; else skip.
+
+    ``app.network.proxy_url`` is the single source of truth for the proxy
+    (SearXNG outgoing proxy + all LDR downloaders read it). A dead proxy is
+    the single most common cause of an all-engines-down pre-flight, so this
+    probe is run every time.
+
+    Two-stage check (per operator request):
+      1. TCP connect to the proxy host:port — distinguishes "proxy process
+         down / wrong port" (connection refused) from a working listener.
+      2. A real HTTPS request THROUGH the proxy to a stable external URL —
+         a port can be open (e.g. a SOCKS-only or unrelated listener) yet
+         fail to proxy HTTP(S), so the TCP check alone is not sufficient.
+    """
+    enabled = get_bool_setting_from_snapshot(
+        "app.network.proxy_enabled",
+        default=False,
+        settings_snapshot=settings_snapshot,
+    )
+    if not enabled:
+        return EngineStatus("proxy", "skipped", "未启用", 0, kind="proxy")
+
+    proxy_url = get_setting_from_snapshot(
+        "app.network.proxy_url",
+        default="",
+        settings_snapshot=settings_snapshot,
+    )
+    proxy_url = proxy_url.strip() if isinstance(proxy_url, str) else ""
+    if not proxy_url:
+        return EngineStatus(
+            "proxy", "error", "已启用但未配置 proxy_url", 0, kind="proxy"
+        )
+
+    parsed = urlparse(proxy_url)
+    host = parsed.hostname
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    if not host:
+        return EngineStatus(
+            "proxy", "error", f"proxy_url 无法解析主机: {proxy_url}", 0, kind="proxy"
+        )
+
+    # Stage 1: TCP connectivity to the proxy listener.
+    start = time.monotonic()
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            pass
+    except OSError as e:
+        latency = int((time.monotonic() - start) * 1000)
+        return EngineStatus(
+            "proxy",
+            "error",
+            f"TCP 连接失败 {host}:{port} — 代理未启动/端口错误 ({e.__class__.__name__})",
+            latency,
+            kind="proxy",
+        )
+
+    # Stage 2: real HTTPS request THROUGH the proxy.
+    try:
+        resp = requests.get(
+            "https://www.google.com/generate_204",
+            proxies={"http": proxy_url, "https": proxy_url},
+            timeout=timeout,
+            headers=_BROWSER_HEADERS,
+        )
+    except requests.Timeout:
+        latency = int((time.monotonic() - start) * 1000)
+        return EngineStatus(
+            "proxy",
+            "error",
+            f"TCP 通但代理请求超时 ({proxy_url})",
+            latency,
+            kind="proxy",
+        )
+    except Exception as e:  # noqa: BLE001
+        latency = int((time.monotonic() - start) * 1000)
+        return EngineStatus(
+            "proxy",
+            "error",
+            f"TCP 通但无法经代理出站: {str(e)[:60]}",
+            latency,
+            kind="proxy",
+        )
+
+    latency = int((time.monotonic() - start) * 1000)
+    if resp.status_code in (200, 204):
+        return EngineStatus(
+            "proxy",
+            "ok",
+            f"代理出站正常 ({proxy_url})",
+            latency,
+            kind="proxy",
+        )
+    return EngineStatus(
+        "proxy",
+        "error",
+        f"代理返回 HTTP {resp.status_code} ({proxy_url})",
+        latency,
+        kind="proxy",
+    )
+
+
 def run_preflight_check(
     settings_snapshot: Optional[dict] = None,
 ) -> list[EngineStatus]:
@@ -334,6 +441,9 @@ def run_preflight_check(
         return probe_searxng_engine(instance_url, name)
 
     with ThreadPoolExecutor(max_workers=_MAX_WORKERS) as pool:
+        # Proxy first — a dead proxy is the usual root cause of an
+        # all-engines-down pre-flight, so surface it at the top.
+        proxy_future = pool.submit(probe_proxy, settings_snapshot)
         # SearXNG backends
         engine_futures = {pool.submit(_probe_engine, name): name for name in engines}
         # Firecrawl (in same pool)
@@ -363,6 +473,19 @@ def run_preflight_check(
             statuses.append(
                 EngineStatus("firecrawl", "error", str(e)[:80], kind="firecrawl")
             )
+
+        # Proxy status leads the report (prepended, not appended).
+        try:
+            proxy_status = proxy_future.result(timeout=_PROBE_TIMEOUT + 2)
+        except FutureTimeout:
+            proxy_status = EngineStatus(
+                "proxy", "timeout", "探测超时", kind="proxy"
+            )
+        except Exception as e:  # noqa: BLE001
+            proxy_status = EngineStatus(
+                "proxy", "error", str(e)[:80], kind="proxy"
+            )
+        statuses.insert(0, proxy_status)
 
     return statuses
 

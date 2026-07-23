@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from typing import Dict, List
 
+from loguru import logger
+
 from .extractor import ExtractedImage
 
 
@@ -17,9 +19,18 @@ class ImageBank:
         self._by_url: Dict[str, ExtractedImage] = {}
 
     def add(self, images: List[ExtractedImage]) -> None:
+        added = 0
+        skipped = 0
         for img in images:
             if img.url not in self._by_url:
                 self._by_url[img.url] = img
+                added += 1
+            else:
+                skipped += 1
+        if images:
+            logger.debug(
+                f"[IMG-TRACE] bank.add +{added} dedup_skipped={skipped}"
+            )
 
     def candidates_with_alt(self) -> List[ExtractedImage]:
         return [i for i in self._by_url.values() if i.alt]
