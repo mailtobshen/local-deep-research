@@ -1,5 +1,6 @@
 import hashlib
 import json
+import os
 import threading
 import time
 from datetime import datetime, UTC
@@ -18,6 +19,52 @@ from ...constants import ResearchStatus
 from ...database.models import ResearchHistory, ResearchStrategy
 from ...database.session_context import get_user_db_session
 from ...database.thread_local_session import thread_cleanup
+
+
+# Setting keys whose container-injected LDR_* env values should be folded
+# into the in-research settings snapshot. Mirrors ``_ENV_FOR`` in
+# ``scripts/check_engines.py`` — the CLI that this in-research pre-flight
+# duplicates for live runs. Keys whose DB value is set take precedence.
+_ENV_SNAPSHOT_KEYS = {
+    "search.engine.web.searxng.default_params.instance_url": (
+        "LDR_SEARCH_ENGINE_WEB_SEARXNG_DEFAULT_PARAMS_INSTANCE_URL",
+    ),
+    "search.engine.web.firecrawl.enable": (
+        "LDR_SEARCH_ENGINE_WEB_FIRECRAWL_ENABLE",
+    ),
+    "search.engine.web.firecrawl.api_url": (
+        "LDR_SEARCH_ENGINE_WEB_FIRECRAWL_API_URL",
+    ),
+    "search.engine.web.firecrawl.api_key": (
+        "LDR_SEARCH_ENGINE_WEB_FIRECRAWL_API_KEY",
+    ),
+}
+
+
+def _merge_env_into_snapshot(snapshot: dict) -> dict:
+    """Return a shallow copy of ``snapshot`` with empty values filled from
+    ``LDR_*`` env vars for keys that ``scripts/check_engines.py`` also
+    honours. Existing (non-empty) DB values are never overwritten.
+    """
+    merged = dict(snapshot)
+    for key, env_vars in _ENV_SNAPSHOT_KEYS.items():
+        existing = merged.get(key)
+        # Snapshot values can be raw or wrapped as {"value": ...}.
+        if isinstance(existing, dict) and "value" in existing:
+            existing = existing["value"]
+        if existing not in (None, "", {}):
+            continue
+        for env_var in env_vars:
+            env_val = os.getenv(env_var)
+            if env_val in (None, ""):
+                continue
+            merged[key] = (
+                str(env_val).lower() in ("1", "true", "yes", "on")
+                if key.endswith(".enable")
+                else env_val
+            )
+            break
+    return merged
 from ..translations import _
 from ...error_handling.openai_compat_errors import (
     friendly_openai_compatible_error,
@@ -372,6 +419,14 @@ def run_research_process(research_id, query, mode, **kwargs):
         settings_snapshot = kwargs.get(
             "settings_snapshot", {}
         )  # Complete settings snapshot
+
+        # The per-user settings DB does not always carry the values that
+        # the container's compose file injects as ``LDR_*`` env vars (e.g.
+        # the SearXNG instance URL). The standalone diagnostic CLI
+        # (``scripts/check_engines.py``) already bridges this by reading
+        # env vars into a snapshot; mirror that here so the in-research
+        # pre-flight has the same view of the world as the CLI.
+        settings_snapshot = _merge_env_into_snapshot(settings_snapshot)
 
         # Log settings snapshot to debug
         from ...settings.logger import log_settings
