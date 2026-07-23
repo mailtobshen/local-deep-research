@@ -413,6 +413,36 @@ def start_research():
 
     # Get parameters from request or use database settings
     from ...settings.manager import SettingsManager
+    from ...security.vpn_precheck import check_vpn_proxy, VPNCheckError
+    from ...security.proxy_config import get_proxy_settings
+
+    # VPN proxy reachability precheck (only when explicitly enabled).
+    # get_proxy_settings() is the single source of truth for app.network.*
+    # settings and returns None when the proxy is disabled or the URL is blank.
+    proxy_settings = get_proxy_settings()
+    if proxy_settings:
+        proxy_url = proxy_settings.get("https") or proxy_settings.get("http")
+        if proxy_url:
+            try:
+                check_vpn_proxy(proxy_url)
+                logger.info(
+                    f"VPN precheck passed: user={session['username']} "
+                    f"url={proxy_url}"
+                )
+            except VPNCheckError as e:
+                logger.warning(
+                    f"VPN precheck failed: user={session['username']} "
+                    f"url={proxy_url} reason={e}"
+                )
+                return (
+                    jsonify({
+                        "status": "error",
+                        "error": "vpn_proxy_unavailable",
+                        "message": str(e),
+                        "hint": "Please enable your VPN proxy and try again.",
+                    }),
+                    422,
+                )
 
     username = session["username"]
 
