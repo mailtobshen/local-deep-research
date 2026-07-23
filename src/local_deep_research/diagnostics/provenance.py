@@ -23,6 +23,7 @@ import importlib.util
 import json
 import os
 import platform
+from datetime import datetime, UTC
 import subprocess  # noqa: S404 - bounded allowlisted args, no shell interpolation
 import tempfile
 from pathlib import Path
@@ -146,6 +147,67 @@ def _git_identity(source_root: str) -> tuple[str, str]:
     return sha, "true" if status_output else "false"
 
 
+def _git_identity_from_dir(git_dir: Path) -> tuple[str, str]:
+    """Read ``source_sha`` directly from ``git_dir`` without invoking ``git``.
+
+    Used when the running container has no ``git`` binary but has a bind-mounted
+    ``.git`` directory (e.g. compose hot-mount of host source). We read
+    ``HEAD`` (which may be a symbolic ref or a raw SHA) and resolve it against
+    ``packed-refs`` when needed. ``working_tree_dirty`` is reported as
+    :data:`UNKNOWN` because we have no working tree to inspect from inside
+    the container.
+    """
+    head_path = git_dir / "HEAD"
+    if not head_path.is_file():
+        return UNKNOWN, UNKNOWN
+    try:
+        head_value = head_path.read_text(encoding="utf-8").strip()
+    except (OSError, UnicodeDecodeError):
+        return UNKNOWN, UNKNOWN
+
+    sha = UNKNOWN
+    if head_value.startswith("ref:"):
+        ref_path = head_value.split(":", 1)[1].strip()
+        ref_file = git_dir / ref_path
+        if ref_file.is_file():
+            try:
+                sha = ref_file.read_text(encoding="utf-8").strip() or UNKNOWN
+            except (OSError, UnicodeDecodeError):
+                sha = UNKNOWN
+        else:
+            packed_refs = git_dir / "packed-refs"
+            if packed_refs.is_file():
+                try:
+                    text = packed_refs.read_text(encoding="utf-8")
+                except (OSError, UnicodeDecodeError):
+                    return sha or UNKNOWN, UNKNOWN
+                prefix = ref_path + " "
+                for line in text.splitlines():
+                    if line.startswith("#") or not line.strip():
+                        continue
+                    if line.startswith(prefix):
+                        sha = line[len(prefix):].strip()
+                        break
+    elif head_value:
+        sha = head_value
+
+    if sha and not all(c in "0123456789abcdef" for c in sha.lower()):
+        sha = UNKNOWN
+
+    return sha or UNKNOWN, UNKNOWN
+
+
+def _git_identity_from_environ(environ: Mapping[str, str]) -> tuple[str, str] | None:
+    """If ``LDR_GIT_DIR`` points at a directory, return its identity, else None."""
+    raw = environ.get("LDR_GIT_DIR")
+    if not raw:
+        return None
+    path = Path(str(raw).strip())
+    if not path.is_dir():
+        return None
+    return _git_identity_from_dir(path)
+
+
 def _safe_env_value(environ: Mapping[str, str], key: str) -> str:
     """Return the environment value when present and non-blank, else UNKNOWN."""
     value = environ.get(key)
@@ -203,14 +265,22 @@ def collect_provenance(
     env = environ if environ is not None else os.environ
     module_file = _resolve_module_file(package_name, package_file)
     source_root = _derive_source_root(module_file)
-    source_sha, working_tree_dirty = _git_identity(source_root)
+
+    # Prefer an explicit ``LDR_GIT_DIR`` override so containers without a
+    # ``git`` binary can still report their source identity from a
+    # bind-mounted ``.git`` directory.
+    git_from_environ = _git_identity_from_environ(env)
+    if git_from_environ is not None:
+        source_sha, working_tree_dirty = git_from_environ
+    else:
+        source_sha, working_tree_dirty = _git_identity(source_root)
 
     module_file_str = str(module_file) if module_file is not None else UNKNOWN
     data_dir_str = str(data_dir) if data_dir is not None else UNKNOWN
 
     return {
         "event": _EVENT,
-        "captured_at": captured_at or UNKNOWN,
+        "captured_at": captured_at or datetime.now(UTC).isoformat(),
         "package_version": _package_version(package_name),
         "python_version": platform.python_version(),
         "module_file": module_file_str,

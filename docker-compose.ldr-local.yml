@@ -18,13 +18,27 @@
 #   - SearXNG 容器: 同一 URL 注入其 settings.yml 的 outgoing.proxies (httpx 不读 env)
 #   - 该值须与 WebUI「设置-配置-网络代理 PROXY URL」一致, 实现单源归口管理
 #
-# 启动: LDR_APP_NETWORK_PROXY_URL=http://172.25.128.1:10888 docker compose -f docker-compose.ldr-local.yml up -d
-# 停止: docker compose -f docker-compose.ldr-local.yml down
+# 启动 (默认 profile 包含 local-deep-research; SearXNG/Tor 在 aux profile):
+#   LDR_BUILD_SHA=$(git rev-parse HEAD) \
+#     LDR_APP_NETWORK_PROXY_URL=http://172.25.128.1:10888 \
+#     docker compose -f docker-compose.ldr-local.yml --profile ldr-local up -d
+#   # 顺带拉起 SearXNG/Tor:
+#   docker compose -f docker-compose.ldr-local.yml --profile ldr-local --profile aux up -d
+# 仅重建 ldr-local (避免触动 SearXNG):
+#   docker compose -f docker-compose.ldr-local.yml --profile ldr-local up -d --force-recreate local-deep-research
+# 停止:
+#   docker compose -f docker-compose.ldr-local.yml --profile ldr-local down
+#   docker compose -f docker-compose.ldr-local.yml --profile ldr-local --profile aux down
 # 日志: docker compose -f docker-compose.ldr-local.yml logs -f ldr-local
+#
+# 注意: ldr-local 默认仅挂载自身 service, 避免无意中把已手工运行的
+# searxng-ldr:wikidata-fixed 替换为默认 latest 镜像。需要 SearXNG 协同
+# 时显式带 `--profile aux`。
 # =============================================================================
 
 services:
   local-deep-research:
+    profiles: [ldr-local]
     image: ldr-local:i18n
     container_name: ldr-local
     networks:
@@ -55,17 +69,36 @@ services:
       - LDR_APP_NETWORK_PROXY_ENABLED=${LDR_APP_NETWORK_PROXY_ENABLED:-true}
       - LDR_APP_NETWORK_PROXY_URL=${LDR_APP_NETWORK_PROXY_URL:-http://172.25.128.1:10888}
 
+      # --- Runtime provenance 标识 (供启动日志与 /data/runtime/provenance.json 持久化) ---
+      # 默认 unknown: 由部署方在调用 `docker compose` 时显式注入; 留 unknown 以避免误导。
+      - LDR_BUILD_SHA=${LDR_BUILD_SHA:-unknown}
+      - LDR_IMAGE_REF=${LDR_IMAGE_REF:-ldr-local:i18n}
+      - LDR_RUNTIME_MODE=${LDR_RUNTIME_MODE:-hot_mount}
+      # --- Git 元数据注入: 让 collector 不依赖容器内 git 二进制, 直接解析 .git/HEAD ---
+      # 指向容器内 bind-mount 的 .git (Compose 已挂载宿主仓库 .git 到 /.git);
+      # collector 会从 .git/HEAD + refs/heads/<branch> 读 commit SHA,
+      # 并把 working_tree_dirty 标 unknown (容器没有 working tree)。
+      - LDR_GIT_DIR=${LDR_GIT_DIR:-/.git}
+
     volumes:
       - ldr_local_data:/data
       # --- 源码热挂载 (免重建镜像即可生效) ---
       # 把宿主仓库源码整树挂入容器, 覆盖 site-packages 里的包目录。
       # 改动任意 .py / .js / .json / .html 后:
       #   - 静态资源 (JS/JSON/CSS/模板): 浏览器刷新即生效 (Flask must-revalidate)
-      #   - Python 后端: `docker compose -f docker-compose.ldr-local.yml restart local-deep-research`
+      #   - Python 后端: `docker compose -f docker-compose.ldr-local.yml up -d ldr-local`
       # 路径里的 python3.14 必须与镜像 venv 版本一致 (升级 Python 时需同步修改)。
       # dist/ (vite 构建产物) 已与镜像同步, 挂载不会丢失; 若改动涉及构建,
       # 在宿主跑 `npm run build` 重新生成 dist 即可。
       - ./src/local_deep_research:/install/.venv/lib/python3.14/site-packages/local_deep_research:ro
+      # --- Git 元数据只读挂载, 让 provenance.collect_provenance 解析 source_sha / working_tree_dirty ---
+      # 把宿主仓库的 .git 目录以只读方式挂在容器内, 同时用 /src 作为容器
+      # 视角下的伪工作树, 让 `git -C /src` 能读取 .git 下的 refs。
+      # collector 当前通过目录内 ".git" 识别, 因此直接挂入同一目录的 .git
+      # 即可。如果升级 collector 改为通过显式参数接受 git_dir, 这里可以
+      # 简化为只挂 .git 目录。
+      - ./:/src:ro
+      - ./.git:/.git:ro
 
     # SQLCipher mlock 免告警
     ulimits:
@@ -85,10 +118,6 @@ services:
       - SETUID
       - SETGID
 
-    depends_on:
-      searxng-ldr:
-        condition: service_healthy
-
     restart: unless-stopped
 
   # -----------------------------------------------------------------------
@@ -98,7 +127,8 @@ services:
   # 无法生成)。改用 named volume 存放生成的 settings.yml, 容器内 searxng 用户可写。
   # 通过 entrypoint 注入 JSON format 配置 (LDR 需要)。
   searxng-ldr:
-    image: searxng/searxng:latest
+    profiles: [aux]
+    image: searxng-ldr:wikidata-fixed
     container_name: searxng-ldr
     networks:
       - ldr-network
@@ -166,6 +196,7 @@ services:
   # bootstrap 约 3 分钟, 期间 .onion 搜索会优雅超时, 不影响 general 搜索
   # -----------------------------------------------------------------------
   tor:
+    profiles: [aux]
     image: alpine:latest
     container_name: ldr-tor
     networks:
