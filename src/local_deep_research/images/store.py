@@ -3,10 +3,20 @@ from __future__ import annotations
 
 import hashlib
 import re
+import time
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from loguru import logger
+
+# Network errors worth retrying (transient: DNS / TCP / TLS / proxy hiccups).
+# Permanent errors (403/404/ENOSPC/...) are NOT retried — they'd waste the
+# same failures 3x and risk CDN rate-limit escalation.
+_RETRIABLE: Tuple[type, ...] = (ConnectionError, TimeoutError)
+
+# Hardcoded retry policy. 3 attempts, exponential backoff: 1.5s, 2.25s.
+_MAX_ATTEMPTS = 3
+_BACKOFF_BASE_S = 1.5
 
 _IMG_RE = re.compile(r"!\[([^\]]*)\]\((https?://[^)]+)\)")
 
@@ -53,8 +63,27 @@ class ImageStore:
         url_to_source = url_to_source or {}
         for url in urls:
             try:
-                result = self._download(url)
+                result = None
+                last_exc: Optional[BaseException] = None
+                for attempt in range(1, _MAX_ATTEMPTS + 1):
+                    try:
+                        result = self._download(url)
+                        break
+                    except _RETRIABLE as e:
+                        last_exc = e
+                        if attempt == _MAX_ATTEMPTS:
+                            raise
+                        sleep_s = _BACKOFF_BASE_S * (2 ** (attempt - 1))
+                        logger.info(
+                            f"[IMG-TRACE] PERSIST_RETRY url={url} "
+                            f"attempt={attempt}/{_MAX_ATTEMPTS} "
+                            f"reason={type(e).__name__}: {e} "
+                            f"sleep={sleep_s:.1f}s"
+                        )
+                        time.sleep(sleep_s)
                 if result is None:
+                    if last_exc is not None:
+                        raise last_exc
                     continue
                 data, ctype = result
                 digest = hashlib.sha1(data).hexdigest()
@@ -75,8 +104,11 @@ class ImageStore:
                     source_title=(src or (None, None))[1],
                 )
                 url_to_route[url] = route
-            except Exception:
-                logger.debug(f"Image persist failed for {url}")
+            except Exception as e:
+                logger.warning(
+                    f"[IMG-TRACE] PERSIST_FAIL url={url} "
+                    f"reason={type(e).__name__}: {e}"
+                )
         return url_to_route
 
     def _record(
