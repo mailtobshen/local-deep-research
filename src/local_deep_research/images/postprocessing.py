@@ -1,6 +1,8 @@
 """Top-level post-processing entry: build bank, enhance, mirror, rewrite."""
 from __future__ import annotations
 
+import json
+import os
 from typing import Any, Dict, Optional
 
 from loguru import logger
@@ -52,6 +54,22 @@ def enhance_report_with_images(
             f"serialized_before_dedup={serialized_before_dedup} "
             f"sr_with_images={findings_with_images}"
         )
+        if os.getenv("LDR_IMG_TRACE_CANDIDATES") == "1":
+            for candidate in bank.candidates_with_alt():
+                logger.info(
+                    "[IMG-TRACE] CANDIDATE_JSON {}",
+                    json.dumps(
+                        {
+                            "research_id": research_id,
+                            "url": candidate.url,
+                            "alt": (candidate.alt or "")[:200],
+                            "source_url": (candidate.source_url or "")[:500],
+                            "source_title": (candidate.source_title or "")[:200],
+                        },
+                        ensure_ascii=False,
+                        separators=(",", ":"),
+                    ),
+                )
         if not bank.all_urls():
             logger.info(f"[IMG-TRACE] BANK_EMPTY research={research_id}")
             logger.info(f"[IMG-TRACE] END research={research_id} status=empty")
