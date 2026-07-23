@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import importlib.metadata
 import json
 from pathlib import Path
 
+import pytest
+
+from local_deep_research.diagnostics import provenance as provenance_module
 from local_deep_research.diagnostics.provenance import (
     UNKNOWN,
     collect_provenance,
@@ -69,3 +73,81 @@ def test_persist_provenance_writes_runtime_json_atomically(
     assert path == tmp_path / "runtime" / "provenance.json"
     assert json.loads(path.read_text(encoding="utf-8")) == payload
     assert not list(path.parent.glob("*.tmp"))
+
+
+def test_package_version_falls_back_to_module_attribute(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When ``importlib.metadata.version()`` cannot find the package, the
+    collector should still surface the version string from
+    ``local_deep_research.__version__`` rather than reporting ``unknown``.
+
+    Regression: the previous fallback used ``getattr(__version__, "__version__",
+    UNKNOWN)`` against the already-resolved module attribute (which is itself
+    the version string), so dev / editable installs always reported ``unknown``.
+    """
+
+    def _raise_package_not_found(_name: str) -> str:
+        raise importlib.metadata.PackageNotFoundError("local_deep_research")
+
+    monkeypatch.setattr(
+        importlib.metadata,
+        "version",
+        _raise_package_not_found,
+    )
+
+    result = provenance_module._package_version("local_deep_research")
+
+    assert result == "1.6.12"
+    assert result != provenance_module.UNKNOWN
+
+
+def test_derive_source_root_walks_up_to_dot_git(tmp_path: Path) -> None:
+    """When ``.git`` lives above the package directory (typical checkout
+    layout), ``source_root`` should climb up to the directory that
+    contains it rather than reporting a path that lacks git identity.
+    """
+    git_root = tmp_path / "work"
+    package_dir = git_root / "src" / "local_deep_research"
+    package_file = package_dir / "__init__.py"
+    package_dir.mkdir(parents=True)
+    package_file.write_text("", encoding="utf-8")
+    (git_root / ".git").mkdir()
+
+    result = provenance_module._derive_source_root(package_file)
+
+    assert result == str(git_root)
+
+
+def test_derive_source_root_falls_back_without_dot_git(tmp_path: Path) -> None:
+    """When no ``.git`` ancestor is reachable (installed container
+    layout), ``source_root`` should still report the package's parent
+    so callers see a real path; git identity will report ``unknown``.
+    """
+    package_dir = tmp_path / "site-packages" / "local_deep_research"
+    package_file = package_dir / "__init__.py"
+    package_dir.mkdir(parents=True)
+    package_file.write_text("", encoding="utf-8")
+
+    result = provenance_module._derive_source_root(package_file)
+
+    assert result == str(package_dir.parent)
+
+
+def test_persist_provenance_is_idempotent_under_overwrite(
+    tmp_path: Path,
+) -> None:
+    """Re-writing the same payload should replace the prior file in
+    place (no ``.tmp`` leftover, no second generation ``.json.bak``)
+    and the latest payload wins.
+    """
+    first = {"event": "ldr_startup_provenance", "source_sha": "abc"}
+    second = {"event": "ldr_startup_provenance", "source_sha": "xyz"}
+
+    path = persist_provenance(first, data_dir=tmp_path)
+    assert json.loads(path.read_text(encoding="utf-8")) == first
+
+    persist_provenance(second, data_dir=tmp_path)
+    assert json.loads(path.read_text(encoding="utf-8")) == second
+    assert not list(path.parent.glob("*.tmp"))
+    assert path == tmp_path / "runtime" / "provenance.json"

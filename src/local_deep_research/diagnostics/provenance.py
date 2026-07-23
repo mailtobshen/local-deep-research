@@ -59,19 +59,37 @@ def _resolve_module_file(
     return Path(spec.origin).resolve()
 
 
+_SOURCE_ROOT_MAX_ASCENT = 6
+
+
 def _derive_source_root(module_file: Path | None) -> str:
     """Best-effort source root derived from the package ``__init__`` path.
 
     Returns the parent of the package directory (i.e. two parents up from
-    ``__init__.py``). Falls back to :data:`UNKNOWN` when the package path
-    cannot be resolved.
+    ``__init__.py``). When that directory does not contain ``.git`` —
+    e.g. inside an installed container image where ``.git`` is not
+    shipped — walks up a bounded number of parents to locate the
+    nearest enclosing ``.git``. Falls back to :data:`UNKNOWN` when the
+    package path cannot be resolved.
     """
     if module_file is None:
         return UNKNOWN
     try:
-        return str(module_file.resolve().parent.parent)
+        resolved = module_file.resolve()
     except OSError:
         return UNKNOWN
+    candidate = resolved.parent.parent
+    for _ in range(_SOURCE_ROOT_MAX_ASCENT + 1):
+        if (candidate / ".git").exists():
+            return str(candidate)
+        parent = candidate.parent
+        if parent == candidate:
+            break
+        candidate = parent
+    # No ``.git`` ancestor found within the bound; still surface the
+    # package's own parent so callers see a real path rather than
+    # ``UNKNOWN``. Git identity will report ``unknown`` separately.
+    return str(resolved.parent.parent)
 
 
 def _run_git(source_root: Path, args: list[str]) -> str:
@@ -137,16 +155,34 @@ def _safe_env_value(environ: Mapping[str, str], key: str) -> str:
 
 
 def _package_version(package_name: str) -> str:
-    """Resolve the installed package version, falling back to UNKNOWN."""
+    """Resolve the installed package version, falling back to UNKNOWN.
+
+    Prefers ``importlib.metadata.version()`` (works for installed wheels
+    and PEP 660 editable installs) and falls back to the version string
+    already exported by the ``local_deep_research`` package itself,
+    which is what editable / source-checkout runs see.
+    """
     try:
         return importlib.metadata.version(package_name)
     except importlib.metadata.PackageNotFoundError:
         pass
     try:
-        from local_deep_research import __version__
+        from local_deep_research import __version__ as module_version
     except Exception:
         return UNKNOWN
-    return getattr(__version__, "__version__", UNKNOWN)
+    # ``from local_deep_research import __version__`` binds either the
+    # submodule (``local_deep_research.__version__``) or — when the
+    # submodule is a plain string — the string itself. Both cases
+    # already carry the version we want; ``getattr(module, "__version__")``
+    # against the resolved string was the previous bug that masked the
+    # version in editable / source-checkout runs.
+    if isinstance(module_version, str) and module_version.strip():
+        return module_version.strip()
+    if hasattr(module_version, "__version__"):
+        candidate = getattr(module_version, "__version__", UNKNOWN)
+        if isinstance(candidate, str) and candidate.strip():
+            return candidate.strip()
+    return UNKNOWN
 
 
 def collect_provenance(
@@ -224,6 +260,18 @@ def persist_provenance(
             stray.unlink()
         except OSError:
             pass
+
+    # Durability: fsync the directory entry so the rename is guaranteed
+    # visible after a crash. Best-effort: some filesystems reject the
+    # call and it is not strictly required for correctness.
+    try:
+        dir_fd = os.open(str(runtime_dir), os.O_RDONLY)
+        try:
+            os.fsync(dir_fd)
+        finally:
+            os.close(dir_fd)
+    except OSError:
+        pass
 
     return final_path
 
