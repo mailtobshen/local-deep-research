@@ -918,7 +918,7 @@
             }
 
             // Set up click to dismiss
-            notificationEl.querySelector('.btn-close').addEventListener('click', () => {
+            notificationEl.querySelector('.ldr-toast-close').addEventListener('click', () => {
                 notificationEl.classList.remove('show');
                 setTimeout(() => {
                     if (notificationContainer.contains(notificationEl)) {

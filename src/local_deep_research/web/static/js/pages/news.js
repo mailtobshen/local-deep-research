@@ -548,7 +548,7 @@ async function performAdvancedNewsSearch(query, strategy = 'source-based', model
             });
         } else {
             SafeLogger.error('Unexpected response format:', data);
-            showAlert(i18n.t('Failed to start research - unexpected response'), 'error');
+            showAlert(window.i18n.renderApiErrorMessage(data) || i18n.t('Failed to start research - unexpected response'), 'error');
         }
     } catch (error) {
         SafeLogger.error('Error in advanced search:', error);

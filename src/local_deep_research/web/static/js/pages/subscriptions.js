@@ -45,25 +45,6 @@ function formatNextUpdate(dateString) {
     return date.toLocaleString();
 }
 
-/**
- * Translate an API error response body into a user-facing message.
- *
- * Server may return one of two shapes:
- *   - Legacy: { message: "<English text>" }         → fallback: translate literal string
- *   - i18n-friendly: { message_key, message_args, hint_key }  → use i18n.t with interpolation
- *   - Fallback (parse failed): { message_raw }     → use raw text
- */
-function _renderApiErrorMessage(errorData) {
-    if (!errorData) return i18n.t('Failed to start research');
-    if (errorData.message_key) {
-        const msg = i18n.tf(errorData.message_key, errorData.message_args || {});
-        const hint = errorData.hint_key ? i18n.t(errorData.hint_key) : '';
-        return hint ? `${msg} — ${hint}` : msg;
-    }
-    if (errorData.message_raw) return errorData.message_raw;
-    return errorData.message || i18n.t('Failed to start research');
-}
-
 // Initialize page
 document.addEventListener('DOMContentLoaded', function() {
     loadSubscriptions();
@@ -377,7 +358,7 @@ async function runSubscriptionNow(subscriptionId) {
             const errorData = await response.json().catch(() => ({}));
             SafeLogger.error('Error data:', errorData);
             // Safe: showAlert escapes internally
-            const i18nMsg = _renderApiErrorMessage(errorData);
+            const i18nMsg = window.i18n.renderApiErrorMessage(errorData);
             showAlert(i18nMsg, 'error');
         }
     } catch (error) {

@@ -2424,7 +2424,7 @@
                 window.location.href = URLBuilder.progressPage(data.research_id);
             } else {
                 // Show error message
-                showAlert(data.message || i18n.t('Failed to start research.'), 'error');
+                showAlert(window.i18n.renderApiErrorMessage(data) || i18n.t('Failed to start research.'), 'error');
 
                 // Re-enable the button
                 startBtn.disabled = false;
