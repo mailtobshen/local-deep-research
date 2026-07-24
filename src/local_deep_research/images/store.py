@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import html
 import re
 import time
 from pathlib import Path
@@ -382,11 +383,18 @@ class ImageStore:
                 under += 1
                 return f"![{alt}]({route})"
             resized += 1
-            # Cap the LONG side only (width for landscape, height for portrait)
-            # so the renderer keeps aspect ratio.
+            # Cap the LONG side (width for landscape, height for portrait)
+            # and emit an <img> with explicit width/height so the renderer
+            # keeps the aspect ratio. html.escape defends against XSS in alt.
             if w >= h:
-                return f"![{alt}]({route}){{width={_MAX_DISPLAY_PX}}}"
-            return f"![{alt}]({route}){{height={_MAX_DISPLAY_PX}}}"
+                width, height = _MAX_DISPLAY_PX, round(_MAX_DISPLAY_PX * h / w)
+            else:
+                width, height = round(_MAX_DISPLAY_PX * w / h), _MAX_DISPLAY_PX
+            safe_alt = html.escape(alt, quote=True)
+            return (
+                f'<img src="{route}" alt="{safe_alt}" width="{width}" '
+                f'height="{height}" loading="lazy" />'
+            )
 
         result = _IMG_RE.sub(repl, markdown)
         logger.info(
