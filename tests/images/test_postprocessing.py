@@ -162,6 +162,66 @@ def test_dedupe_images_collapses_runs_of_blank_lines():
     assert "\n\n\n\n" not in out
 
 
+def test_enhance_drops_candidates_from_off_topic_source(monkeypatch):
+    """Candidates from off-topic sources (no overlap with the report's
+    segment allow-list) are dropped by _filter_bank_by_segments so
+    cross-source contamination can't leak into the enhanced report."""
+    from local_deep_research.images.bank import ImageBank
+    from local_deep_research.images.extractor import ExtractedImage
+
+    bank = ImageBank()
+    bank.add(
+        [
+            ExtractedImage(
+                "https://gz/x.jpg",
+                "越秀公园",
+                "https://gz",
+                "广州",
+                100,
+                80,
+            )
+        ]
+    )
+    bank.add(
+        [
+            ExtractedImage(
+                "https://xm/y.jpg",
+                "鼓浪屿",
+                "https://xm",
+                "厦门",
+                100,
+                80,
+            )
+        ]
+    )
+    monkeypatch.setattr(
+        "local_deep_research.images.postprocessing.loads_images",
+        lambda html: [],
+    )
+    results = {
+        "findings": [
+            {
+                "search_results": [
+                    {
+                        "link": "https://gz",
+                        "title": "广州景点",
+                        "content": "越秀公园 广州",
+                        "snippet": "",
+                    },
+                ]
+            }
+        ]
+    }
+    md = "## 越秀公园\n\n介绍越秀公园\n"
+    from local_deep_research.images.postprocessing import (
+        _filter_bank_by_segments,
+    )
+
+    kept = _filter_bank_by_segments(bank.all_urls(), bank, md, results)
+    assert "https://gz/x.jpg" in kept
+    assert "https://xm/y.jpg" not in kept
+
+
 def test_enhance_report_runs_dedupe_when_llm_repeats_url(loguru_caplog):
     """End-to-end: if the LLM returns the same URL twice, the
     [IMG-TRACE] DEDUPE line must fire and 'chosen' must contain the

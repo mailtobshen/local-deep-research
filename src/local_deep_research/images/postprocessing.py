@@ -135,6 +135,44 @@ def extract_segment_sources(
     return out
 
 
+def _filter_bank_by_segments(
+    all_urls: list[str],
+    bank: "ImageBank",
+    markdown: str,
+    results,
+) -> list[str]:
+    """Drop candidates whose ``source_url`` falls outside the segment
+    allow-list derived from ``markdown`` + ``results``.
+
+    When a research report covers multiple regions / topics, each
+    ``##`` section maps to a small set of authoritative source URLs
+    (via :func:`extract_segment_sources`). Candidates whose
+    ``source_url`` does not match any segment's allow-list belong to an
+    off-topic topic and would dilute the report if allowed through. This
+    helper returns only the in-segment URLs so callers can swap them
+    into the LLM enhancer (and, in Task 4, the ``fill_section_images``
+    fallback). When ``results`` carries no ``search_results`` (no segment
+    sources can be derived), the helper returns ``all_urls`` unchanged
+    so callers preserve their previous global behavior. Order is
+    preserved (subsequence of ``all_urls``).
+    """
+    segment_sources = extract_segment_sources(markdown, results)
+    allowed: set[str] = set()
+    for _heading, _body, urls in segment_sources:
+        allowed.update(urls)
+    if not allowed:
+        return list(all_urls)
+
+    def _allowed(url: str) -> bool:
+        return any(
+            url.startswith(prefix) or prefix in url for prefix in allowed
+        )
+
+    return [
+        u for u in all_urls if _allowed(bank._by_url[u].source_url or "")
+    ]
+
+
 def _safe_alt(alt: str, max_len: int = 120) -> str:
     """Sanitize an alt string for safe markdown rendering.
 
@@ -326,7 +364,32 @@ def enhance_report_with_images(
             ),
             cap=vision_cap if vision_cap is not None else DEFAULT_VISION_CAP,
         )
-        enhanced = enhancer.enhance(clean_markdown, bank)
+        # Cross-source filtering: drop candidates whose source_url is
+        # outside the segment allow-list for clean_markdown. Done before
+        # the LLM call so off-topic candidates aren't sent to the LLM in
+        # the first place. ``fill_section_images`` keeps the unfiltered
+        # bank for now — Task 4 widens its signature to honor the same
+        # allow-list.
+        segment_sources = extract_segment_sources(clean_markdown, results)
+        allowed_urls: set[str] = set()
+        for _heading, _body, urls in segment_sources:
+            allowed_urls.update(urls)
+        if allowed_urls:
+            kept_urls = _filter_bank_by_segments(
+                bank.all_urls(), bank, clean_markdown, results
+            )
+            dropped = len(bank.all_urls()) - len(kept_urls)
+            logger.info(
+                f"[IMG-TRACE] THEME_DROP research={research_id} "
+                f"kept_in={len(allowed_urls)} segment_dropped={dropped}"
+            )
+            bank_for_enhancer = ImageBank()
+            for u in kept_urls:
+                bank_for_enhancer.add([bank._by_url[u]])
+        else:
+            logger.info(f"[IMG-TRACE] NO_SOURCE_META research={research_id}")
+            bank_for_enhancer = bank
+        enhanced = enhancer.enhance(clean_markdown, bank_for_enhancer)
 
         # Enforce "each URL at most once" deterministically. The LLM
         # prompt says it but doesn't guarantee it — generic alt text
