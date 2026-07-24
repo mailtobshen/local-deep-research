@@ -33,14 +33,17 @@ def test_extract_segment_sources_chinese_alignment():
 
 def test_extract_segment_sources_inherits_when_no_match():
     md = "## 鼓浪嶼\n\nA\n\n## Foo\n\nB\n"
+    # Section 0 actually matches a candidate so the inherited allow-list
+    # is non-empty; section 1 has no match and must inherit.
     results = {"findings": [
         {"search_results": [
-            {"link": "https://x", "title": "t", "content": "A", "snippet": ""}
+            {"link": "https://xiamen-travel.com", "title": "鼓浪嶼",
+             "content": "鼓浪屿介绍", "snippet": "鼓浪屿"},
         ]}
     ]}
     out = extract_segment_sources(md, results)
-    # Second segment inherits from first since no match.
-    assert out[1][2] == out[0][2]
+    assert out[0][2] == ["https://xiamen-travel.com"]
+    assert out[1][2] == ["https://xiamen-travel.com"]
 
 
 def test_extract_segment_sources_no_results_returns_empty():
