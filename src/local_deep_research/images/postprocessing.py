@@ -57,6 +57,84 @@ def _dedupe_images(markdown: str) -> tuple[str, int, int]:
     return out, original_count, len(seen)
 
 
+def _sectionize(markdown: str) -> list[tuple[str, str]]:
+    """Split markdown into (heading, body) pairs by `## `.
+
+    Used by both ``extract_segment_sources`` (to map each section to its
+    authoritative source URLs) and ``fill_section_images`` (to find
+    image-free sections in the same iteration).
+    """
+    parts = re.split(r"(?m)^(##\s+.*)$", markdown)
+    out: list[tuple[str, str]] = []
+    for i in range(1, len(parts), 2):
+        heading = parts[i]
+        body = parts[i + 1] if i + 1 < len(parts) else ""
+        out.append((heading, body))
+    if not out and markdown.strip():
+        out = [("", markdown)]
+    return out
+
+
+def extract_segment_sources(
+    markdown: str, results, top_n: int = 3
+) -> list[tuple[str, str, list[str]]]:
+    """Map each ``## `` section to the top-N search_result URLs whose
+    title/content/snippet overlap with the section heading + body.
+
+    Sections whose text matches no candidate inherit the previous
+    section's allow-list so an orphan section between two matched
+    ones still has authoritative URLs to cite. Returns ``[]`` when
+    ``results`` carries no ``search_results`` (the caller should fall
+    back to global matching).
+    """
+    if not isinstance(results, dict):
+        return []
+    candidates: list[dict] = []
+    for finding in results.get("findings", []) or []:
+        for sr in finding.get("search_results", []) or []:
+            if not isinstance(sr, dict):
+                continue
+            url = sr.get("link") or sr.get("url")
+            if not url:
+                continue
+            candidates.append(
+                {
+                    "url": url,
+                    "title": sr.get("title") or "",
+                    "content": sr.get("content") or sr.get("snippet") or "",
+                    "snippet": sr.get("snippet") or "",
+                }
+            )
+    if not candidates:
+        return []
+
+    sections = _sectionize(markdown)
+    out: list[tuple[str, str, list[str]]] = []
+    inherited: list[str] = []
+    for heading, body in sections:
+        section_text = re.sub(r"^##\s+", "", heading) + "\n" + body
+        section_terms = _match_terms(section_text)
+        if not section_terms:
+            out.append((heading, body, list(inherited)))
+            continue
+        scored: list[tuple[int, str]] = []
+        for c in candidates:
+            cand_terms = _match_terms(
+                " ".join([c["title"], c["content"], c["snippet"]])
+            )
+            scored.append((_score_match(section_terms, cand_terms), c["url"]))
+        scored.sort(key=lambda x: x[0], reverse=True)
+        # Keep URLs that score > 0; if none, inherit from the previous
+        # section so an orphan section between two matched ones still
+        # has authoritative URLs to cite.
+        allowed = [url for score, url in scored if score > 0][:top_n]
+        if not allowed:
+            allowed = list(inherited)
+        out.append((heading, body, allowed))
+        inherited = allowed
+    return out
+
+
 def _safe_alt(alt: str, max_len: int = 120) -> str:
     """Sanitize an alt string for safe markdown rendering.
 
