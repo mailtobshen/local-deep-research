@@ -55,6 +55,10 @@ services:
       - LDR_WEB_HOST=0.0.0.0
       - LDR_WEB_PORT=5000
       - LDR_DATA_DIR=/data
+      # --- 容器时区: 让 docker logs 时间戳和 Python datetime.now() 显示本地时间。
+      # 默认 Asia/Shanghai (LDR 部署方在中国), 调用方可用 TZ= 覆盖;
+      # 应用内部 datetime.now(UTC) 仍写 UTC, DB 一致性不受影响。
+      - TZ=${TZ:-Asia/Shanghai}
 
       # --- 复用宿主已有 Ollama (复刻源码 .env) ---
       # 源码 .env: LDR_LLM_OLLAMA_URL=http://172.25.128.1:11434
