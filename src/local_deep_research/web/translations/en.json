@@ -2733,5 +2733,10 @@
   "Past 24 hours": "Past 24 hours",
   "Past week": "Past week",
   "Past month": "Past month",
-  "Past year": "Past year"
+  "Past year": "Past year",
+  "VPN proxy port unreachable: {host_port} ({reason})": "VPN proxy port unreachable: {host_port} ({reason})",
+  "VPN proxy cannot reach external network: {reason}": "VPN proxy cannot reach external network: {reason}",
+  "VPN proxy returned HTTP {status} from {url}": "VPN proxy returned HTTP {status} from {url}",
+  "Invalid proxy URL: {url}": "Invalid proxy URL: {url}",
+  "Please enable your VPN proxy and try again": "Please enable your VPN proxy and try again"
 }

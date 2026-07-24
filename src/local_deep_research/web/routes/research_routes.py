@@ -413,7 +413,7 @@ def start_research():
 
     # Get parameters from request or use database settings
     from ...settings.manager import SettingsManager
-    from ...security.vpn_precheck import check_vpn_proxy, VPNCheckError
+    from ...security.vpn_precheck import check_vpn_proxy, VPNCheckError, _vpn_error_to_info
     from ...security.proxy_config import get_proxy_settings
 
     # VPN proxy reachability precheck (only when explicitly enabled).
@@ -438,8 +438,8 @@ def start_research():
                     jsonify({
                         "status": "error",
                         "error": "vpn_proxy_unavailable",
-                        "message": str(e),
-                        "hint": "Please enable your VPN proxy and try again.",
+                        "hint_key": "vpn_check.hint_enable_proxy",
+                        **_vpn_error_to_info(e),
                     }),
                     422,
                 )

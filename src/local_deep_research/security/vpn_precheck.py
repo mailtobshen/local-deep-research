@@ -10,6 +10,57 @@ class VPNCheckError(Exception):
     """Raised when VPN proxy is unreachable or cannot reach external network."""
 
 
+def _vpn_error_to_info(error: Exception) -> dict:
+    """Convert a VPNCheckError into i18n-friendly {key, args}.
+
+    Returns a dict suitable for jsonify so the frontend can translate the
+    message in the user's active language. Falls back to message_raw for
+    unrecognized error formats.
+
+    Recognized message formats (must match the `raise` statements below):
+      - "VPN proxy port unreachable: HOST:PORT (REASON)"
+      - "VPN proxy cannot reach external network: REASON"
+      - "VPN proxy returned HTTP {status} from {url}"
+      - "Invalid proxy URL: 'URL'"
+    """
+    msg = str(error)
+    if msg.startswith("VPN proxy port unreachable:"):
+        try:
+            tail = msg.split(":", 1)[1].strip()
+            host_port, rest = tail.split(" ", 1)
+            reason = rest.strip().strip("()")
+            return {
+                "message_key": "vpn_check.port_unreachable",
+                "message_args": {"host_port": host_port, "reason": reason},
+            }
+        except (ValueError, IndexError):
+            pass
+    if msg.startswith("VPN proxy cannot reach external network:"):
+        reason = msg.split(":", 1)[1].strip()
+        return {
+            "message_key": "vpn_check.cannot_reach_external",
+            "message_args": {"reason": reason},
+        }
+    if msg.startswith("VPN proxy returned HTTP"):
+        # e.g. "VPN proxy returned HTTP 500 from https://www.google.com/generate_204"
+        try:
+            status = msg.split("HTTP ", 1)[1].split(" ", 1)[0]
+            url = msg.split(" from ", 1)[1]
+            return {
+                "message_key": "vpn_check.bad_status",
+                "message_args": {"status": status, "url": url},
+            }
+        except (ValueError, IndexError):
+            pass
+    if msg.startswith("Invalid proxy URL:"):
+        url = msg.split(":", 1)[1].strip().strip("'\"")
+        return {
+            "message_key": "vpn_check.invalid_proxy_url",
+            "message_args": {"url": url},
+        }
+    return {"message_key": None, "message_raw": msg}
+
+
 def _parse_proxy_url(proxy_url: str) -> tuple[str, int]:
     """Parse http://host:port or socks5h://host:port → (host, port).
 

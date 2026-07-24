@@ -872,9 +872,12 @@
 
             const closeBtn = document.createElement('button');
             closeBtn.type = 'button';
-            closeBtn.className = 'btn-close';
-            closeBtn.setAttribute('aria-label', 'Close');
-            closeBtn.setAttribute('data-bs-dismiss', 'alert');
+            closeBtn.className = 'ldr-toast-close';
+            closeBtn.setAttribute('aria-label', i18n.t('Close'));
+            const closeIcon = document.createElement('span');
+            closeIcon.setAttribute('aria-hidden', 'true');
+            closeIcon.textContent = '✕';
+            closeBtn.appendChild(closeIcon);
 
             const hr = document.createElement('hr');
 

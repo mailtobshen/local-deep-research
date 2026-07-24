@@ -61,6 +61,44 @@ body.ldr-change-password-page .alert {
     padding-right: 3rem;
 }
 
+/* System-UI-style close button for in-app toast notifications
+   (used by showNotification in progress.js). Replaces Bootstrap's
+   default `.btn-close` (the small × glyph with no hover state).
+   Positioned in the corner with a subtle circular hover background. */
+.ldr-toast-close {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 28px;
+    height: 28px;
+    border: none;
+    background: transparent;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    font-size: 14px;
+    line-height: 1;
+    color: var(--text-muted, #6c757d);
+    opacity: 0.7;
+    transition: background 150ms ease, opacity 150ms ease;
+}
+.ldr-toast-close:hover {
+    background: rgba(0, 0, 0, 0.08);
+    opacity: 1;
+}
+.ldr-toast-close:focus-visible {
+    outline: 2px solid var(--accent-primary, #0d6efd);
+    outline-offset: 2px;
+    opacity: 1;
+}
+.ldr-toast-close span {
+    font-weight: 300;
+    pointer-events: none;
+}
+
 :is(body.ldr-login-page, body.ldr-register-page, body.ldr-change-password-page) .btn-close {
     position: absolute;
     top: 1rem;
