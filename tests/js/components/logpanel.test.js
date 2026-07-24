@@ -662,6 +662,101 @@ describe('filter buttons', () => {
         expect(infoEntry.style.display).toBe('none');
         expect(errorEntry.style.display).toBe('');
     });
+
+    it('scrolls the panel to the bottom when switching to a non-All filter', () => {
+        // Reproduces the user-reported UX: switching to Milestones /
+        // Info / Warning / Errors should jump the viewport to the newest
+        // visible entry of that category, just like the All view does on
+        // a new live log.
+        setupPanelDom({ page: 'progress' });
+        const container = document.getElementById('console-log-container');
+        Object.defineProperty(container, 'scrollHeight', {
+            configurable: true,
+            get: () => 1200,
+        });
+        Object.defineProperty(container, 'clientHeight', {
+            configurable: true,
+            get: () => 200,
+        });
+        let scrollTop = 0;
+        Object.defineProperty(container, 'scrollTop', {
+            configurable: true,
+            get: () => scrollTop,
+            set: (v) => { scrollTop = v; },
+        });
+
+        // Seed entries spanning several log types so the filter actually
+        // changes the visible slice.
+        window._logPanelState.expanded = true;
+        logPanel.addLog('first info', 'info');
+        logPanel.addLog('first milestone', 'milestone');
+        logPanel.addLog('second info', 'info');
+        logPanel.addLog('first error', 'error');
+
+        // Reset scrollTop to a non-bottom value to detect the jump.
+        scrollTop = 50;
+
+        const errorsBtn = Array.from(
+            document.querySelectorAll(
+                '.ldr-log-filter .ldr-filter-buttons button'
+            )
+        ).find((b) => b.textContent.toLowerCase() === 'errors');
+        expect(errorsBtn).toBeDefined();
+        errorsBtn.click();
+
+        // Switching to a non-All filter jumps to the bottom of the
+        // container (where the newest matching entry sits) when autoscroll
+        // is enabled.
+        expect(container.scrollTop).toBe(1200);
+    });
+
+    it('appends a new live log to the visual bottom regardless of filter', () => {
+        // After switching to a non-All filter, a freshly-added log of the
+        // matching type must still land at the DOM tail (which the
+        // flex-direction: column layout renders at the visual bottom)
+        // and the autoscroll should snap the viewport to the new bottom.
+        setupPanelDom({ page: 'progress' });
+        vi.useFakeTimers();
+        const container = document.getElementById('console-log-container');
+        Object.defineProperty(container, 'scrollHeight', {
+            configurable: true,
+            get: () => 1000,
+        });
+        Object.defineProperty(container, 'clientHeight', {
+            configurable: true,
+            get: () => 200,
+        });
+        let scrollTop = 0;
+        Object.defineProperty(container, 'scrollTop', {
+            configurable: true,
+            get: () => scrollTop,
+            set: (v) => { scrollTop = v; },
+        });
+
+        window._logPanelState.expanded = true;
+        logPanel.addLog('seeded info', 'info');
+
+        const errorsBtn = Array.from(
+            document.querySelectorAll(
+                '.ldr-log-filter .ldr-filter-buttons button'
+            )
+        ).find((b) => b.textContent.toLowerCase() === 'errors');
+        expect(errorsBtn).toBeDefined();
+        errorsBtn.click();
+
+        scrollTop = 0;
+        logPanel.addLog('another error', 'error');
+        vi.runAllTimers();
+
+        const ids = Array.from(
+            container.querySelectorAll('.ldr-console-log-entry')
+        ).map((n) => n.dataset.logId);
+        // New error appended at the DOM tail (which is the visual
+        // bottom under the column layout).
+        expect(ids[ids.length - 1]).toBeDefined();
+        expect(container.scrollTop).toBe(1000);
+        vi.useRealTimers();
+    });
 });
 
 describe('queued logs', () => {

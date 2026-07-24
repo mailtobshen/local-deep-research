@@ -372,6 +372,26 @@
     }
 
     /**
+     * @brief Scrolls the log container to the visual bottom (newest entry).
+     *
+     * The container uses a normal flex-direction: column layout, so the
+     * DOM tail — not the head — is rendered at the visual bottom.
+     * Setting scrollTop to scrollHeight keeps the newest visible entry
+     * in view. No-op when autoscroll is disabled so the user's manual
+     * position is preserved.
+     */
+    function scrollLogContainerToLatest() {
+        if (!window._logPanelState.autoscroll) {
+            return;
+        }
+
+        const consoleLogContainer = document.getElementById('console-log-container');
+        if (consoleLogContainer) {
+            consoleLogContainer.scrollTop = consoleLogContainer.scrollHeight;
+        }
+    }
+
+    /**
      * @brief Toggles autoscroll on or off.
      */
     function toggleAutoscroll() {
@@ -911,18 +931,24 @@
         const element = createLogEntryElement(logEntry);
 
         if (element) {
-            // Keep DOM order oldest -> newest. The container uses a normal
-            // flex-direction: column layout, so the newest entry renders at
-            // the visual bottom. New live logs are the newest, so this
-            // appends at the DOM tail; late-arriving older history is placed
-            // before the first newer entry to preserve chronological order.
-            const newTime = Number(element.dataset.logTimeMs || Date.now());
-            const entries = consoleLogContainer.querySelectorAll('.ldr-console-log-entry');
-            const nextNewerEntry = Array.from(entries).find(entry => {
-                const entryTime = Number(entry.dataset.logTimeMs || 0);
-                return entryTime > newTime;
-            });
-            consoleLogContainer.insertBefore(element, nextNewerEntry || null);
+            // New live logs are always the newest, so simply append them at
+            // the DOM tail. The container's flex-direction: column layout
+            // then renders them at the visual bottom (where the new user-
+            // facing "scroll to newest" anchor lives). Late-arriving older
+            // history entries (incrementCounter=false, e.g. fetch
+            // completion) are still placed chronologically via insertBefore
+            // so merged-in data respects the existing ordering test.
+            if (incrementCounter) {
+                consoleLogContainer.appendChild(element);
+            } else {
+                const newTime = Number(element.dataset.logTimeMs || Date.now());
+                const entries = consoleLogContainer.querySelectorAll('.ldr-console-log-entry');
+                const nextNewerEntry = Array.from(entries).find(entry => {
+                    const entryTime = Number(entry.dataset.logTimeMs || 0);
+                    return entryTime > newTime;
+                });
+                consoleLogContainer.insertBefore(element, nextNewerEntry || null);
+            }
         }
 
         // Prune oldest entries if over limit to prevent unbounded DOM growth.
@@ -1022,6 +1048,14 @@
                 newEmptyMessage.textContent = i18n.t('No') + ' ' + filterType + ' ' + i18n.t('logs to display.');
                 consoleContainer.appendChild(newEmptyMessage);
             }
+        }
+
+        // Switching filters changes which subset of the panel is visible.
+        // When autoscroll is on, jump the viewport to the bottom of the
+        // newly-visible slice so the user lands on the most recent entry
+        // for that category — same UX as the All view.
+        if (window._logPanelState.autoscroll) {
+            scrollLogContainerToLatest();
         }
     }
 
