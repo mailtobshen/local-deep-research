@@ -372,26 +372,6 @@
     }
 
     /**
-     * @brief Scrolls the log container to the visual top (newest entry).
-     *
-     * The container uses flex-direction: column-reverse, so its DOM tail —
-     * not its DOM head — is rendered at the visual top. Setting scrollTop
-     * to 0 keeps the newest entry in view. No-op when autoscroll is
-     * disabled so the user's manual position is preserved.
-     */
-    function scrollLogContainerToLatest() {
-        if (!window._logPanelState.autoscroll) {
-            return;
-        }
-
-        const consoleLogContainer = document.getElementById('console-log-container');
-        if (consoleLogContainer) {
-            // column-reverse renders the newest DOM tail at visual top.
-            consoleLogContainer.scrollTop = 0;
-        }
-    }
-
-    /**
      * @brief Toggles autoscroll on or off.
      */
     function toggleAutoscroll() {
@@ -408,8 +388,8 @@
         // enabled to make that clear.
         if (window._logPanelState.autoscroll) {
             autoscrollButton.classList.add('ldr-selected');
-            // Immediately scroll to the top of the panel (newest logs are at top).
-            scrollLogContainerToLatest();
+            // Immediately scroll to the bottom of the panel (newest logs are at the bottom).
+            consoleLogContainer.scrollTop = consoleLogContainer.scrollHeight;
         } else {
             autoscrollButton.classList.remove('ldr-selected');
         }
@@ -642,7 +622,7 @@
 
                 // Batch DOM insert using DocumentFragment (O(1) reflow vs O(n))
                 // sortedLogs is newest-first, but DOM needs [oldest, ..., newest]
-                // for column-reverse CSS to show newest at visual top
+                // so the normal column layout shows newest at the visual bottom
                 const fragment = document.createDocumentFragment();
                 for (let i = sortedLogs.length - 1; i >= 0; i--) {
                     const element = createLogEntryElement(sortedLogs[i]);
@@ -656,11 +636,6 @@
                 while (logContent.children.length > MAX_LOG_ENTRIES) {
                     logContent.firstElementChild.remove();
                 }
-
-                // Keep the viewport at the visual top after a successful batch
-                // render. The helper is gated on autoscroll, so this preserves
-                // the user's position when autoscroll is disabled.
-                scrollLogContainerToLatest();
 
                 // Update log count indicator
                 const logIndicators = document.querySelectorAll('.ldr-log-indicator');
@@ -898,7 +873,7 @@
             const logType = (logEntry.type || 'info').toLowerCase();
 
             // Check 10 most recent entries. DOM order is oldest -> newest so
-            // column-reverse CSS can render the newest entry at the visual top.
+            // the normal column layout renders the newest entry at the visual bottom.
             const start = Math.max(0, existingEntries.length - 10);
             for (let i = existingEntries.length - 1; i >= start; i--) {
                 const entry = existingEntries[i];
@@ -936,9 +911,11 @@
         const element = createLogEntryElement(logEntry);
 
         if (element) {
-            // Keep DOM order oldest -> newest. The container uses
-            // flex-direction: column-reverse, so the newest entry renders at
-            // the visual top while keyboard/DOM traversal stays chronological.
+            // Keep DOM order oldest -> newest. The container uses a normal
+            // flex-direction: column layout, so the newest entry renders at
+            // the visual bottom. New live logs are the newest, so this
+            // appends at the DOM tail; late-arriving older history is placed
+            // before the first newer entry to preserve chronological order.
             const newTime = Number(element.dataset.logTimeMs || Date.now());
             const entries = consoleLogContainer.querySelectorAll('.ldr-console-log-entry');
             const nextNewerEntry = Array.from(entries).find(entry => {
@@ -967,11 +944,11 @@
 
         // No need to scroll when loading all logs
         // Scroll will be handled after all logs are loaded
-        if (incrementCounter && element) {
-            // Auto-scroll to newest log (at the top); the helper itself
-            // is gated on autoscroll so disabled-autoscroll preserves the
-            // user's current position.
-            setTimeout(scrollLogContainerToLatest, 0);
+        if (incrementCounter && element && window._logPanelState.autoscroll) {
+            // Auto-scroll to newest log (at the visual bottom)
+            setTimeout(() => {
+                consoleLogContainer.scrollTop = consoleLogContainer.scrollHeight;
+            }, 0);
         }
     }
 

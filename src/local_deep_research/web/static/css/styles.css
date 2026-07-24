@@ -2138,7 +2138,7 @@ textarea:focus, input[type="text"]:focus {
     overflow-y: auto;
     height: 100%;
     display: flex;
-    flex-direction: column-reverse;
+    flex-direction: column;
 }
 
 .ldr-console-log-entry {

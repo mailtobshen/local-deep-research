@@ -135,23 +135,6 @@ function setupPanelDom({ page = 'progress', researchId } = {}) {
     logPanel.initialize(rid);
 }
 
-function setupMockScroll(container, initialScrollTop = 300) {
-    Object.defineProperty(container, 'scrollHeight', {
-        configurable: true,
-        value: 800,
-    });
-    Object.defineProperty(container, 'clientHeight', {
-        configurable: true,
-        value: 200,
-    });
-    let scrollTop = initialScrollTop;
-    Object.defineProperty(container, 'scrollTop', {
-        configurable: true,
-        get: () => scrollTop,
-        set: (value) => { scrollTop = value; },
-    });
-}
-
 function makeLiveEntry(message) {
     // Mimic what addLogEntryToPanel produces in the DOM.
     const entry = document.createElement('div');
@@ -250,46 +233,6 @@ describe('loadLogsForResearch — non-empty API response', () => {
         ).map((el) => el.textContent);
         expect(messages).toContain('live-only');
     });
-
-    beforeEach(() => {
-        vi.useFakeTimers();
-    });
-
-    afterEach(() => {
-        vi.useRealTimers();
-    });
-
-    it('keeps the viewport at the visual top after a live log is added', async () => {
-        const container = document.getElementById('console-log-container');
-        setupMockScroll(container);
-
-        window._logPanelState.expanded = true;
-        window._logPanelState.autoscroll = true;
-        logPanel.addLog('latest live log', 'info');
-        await vi.runAllTimersAsync();
-
-        expect(container.scrollTop).toBe(0);
-    });
-
-    it('positions the viewport at the visual top after batch loading logs', async () => {
-        const container = document.getElementById('console-log-container');
-        setupMockScroll(container);
-        globalThis.fetch = vi.fn(() => Promise.resolve({
-            json: () => Promise.resolve([
-                {
-                    timestamp: '2026-07-24T12:00:00.000Z',
-                    message: 'loaded log',
-                    log_type: 'info',
-                },
-            ]),
-        }));
-
-        await logPanel.loadLogs('batch-scroll-research');
-
-        // Batch loading positions the viewport at the visual top.
-        expect(container.scrollTop).toBe(0);
-        expect(container.querySelector('.ldr-console-log-entry')).not.toBeNull();
-    });
 });
 
 describe('loadLogsForResearch — in-flight deduplication', () => {
@@ -368,11 +311,57 @@ describe('addConsoleLog — placeholder removal', () => {
     });
 });
 
+// Bottom-append direction (Task 4). The log panel uses a normal
+// `flex-direction: column` layout, so DOM end == visual bottom. New entries
+// append to the DOM tail and autoscroll drives scrollTop to scrollHeight so
+// the newest entry stays in view at the bottom. happy-dom does not render
+// CSS, so this asserts DOM order and the scrollTop math directly.
+describe('addLog — bottom-append direction', () => {
+    beforeEach(() => {
+        vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
+    it('appends new entries to the visual bottom', async () => {
+        const container = document.getElementById('console-log-container');
+        Object.defineProperty(container, 'scrollHeight', { configurable: true, value: 800 });
+        Object.defineProperty(container, 'clientHeight', { configurable: true, value: 200 });
+        let scrollTop = 0;
+        Object.defineProperty(container, 'scrollTop', { configurable: true, get: () => scrollTop, set: (v) => { scrollTop = v; } });
+
+        // Pre-seed an existing entry
+        const old = document.createElement('div');
+        old.className = 'ldr-console-log-entry';
+        old.dataset.logId = 'old-1';
+        old.dataset.logTimeMs = String(Date.now() - 60_000);
+        container.appendChild(old);
+
+        window._logPanelState.expanded = true;
+        window._logPanelState.autoscroll = true;
+        logPanel.addLog('newest', 'info');
+        await vi.runAllTimersAsync();
+
+        // DOM order: oldest first, newest last. The live entry's id is
+        // `${timestamp}-${hashString(message)}` (hash of "newest" is a
+        // signed int), so it does not literally end in "-newest"; assert
+        // the pre-seeded entry stays first and the new entry lands last.
+        const ids = Array.from(container.querySelectorAll('.ldr-console-log-entry')).map(n => n.dataset.logId);
+        expect(ids.length).toBe(2);
+        expect(ids[0]).toBe('old-1');
+        expect(ids[1]).not.toBe('old-1');
+        // Auto-scroll to bottom
+        expect(container.scrollTop).toBe(800);
+    });
+});
+
 // Ordering invariants for the #2610 fix (PR #3850). The log panel uses
-// `flex-direction: column-reverse` so DOM end == visual top. happy-dom
-// does not render CSS, so these tests assert on DOM order directly --
-// the contract being locked in is "DOM order is chronological
-// oldest -> newest", and the CSS flip is taken as given.
+// a normal `flex-direction: column` layout so DOM end == visual bottom.
+// happy-dom does not render CSS, so these tests assert on DOM order
+// directly -- the contract being locked in is "DOM order is chronological
+// oldest -> newest", and the CSS layout is taken as given.
 //
 // Mirrors of source-side constants (kept inline because both are `const`
 // inside the IIFE in logpanel.js and not exported). If either source

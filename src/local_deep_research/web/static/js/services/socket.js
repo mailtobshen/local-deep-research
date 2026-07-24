@@ -539,8 +539,8 @@ window.socket = (function() {
         entry.querySelector('.ldr-log-badge').textContent = logLevel.charAt(0).toUpperCase() + logLevel.slice(1);
         entry.querySelector('.ldr-log-message').textContent = logEntry.message;
 
-        // DOM order is oldest -> newest. The log container uses
-        // column-reverse so appending a live log renders it at the visual top.
+        // DOM order is oldest -> newest. The log container uses a normal
+        // column layout so appending a live log renders it at the visual bottom.
         consoleLogContainer.appendChild(entry);
 
         // Update log count
@@ -947,8 +947,8 @@ if (!window.addConsoleLog) {
             `;
         }
 
-        // DOM order is oldest -> newest. The log container uses
-        // column-reverse so appending a live log renders it at the visual top.
+        // DOM order is oldest -> newest. The log container uses a normal
+        // column layout so appending a live log renders it at the visual bottom.
         consoleLogContainer.appendChild(entry);
 
         // Update log count
