@@ -20,9 +20,10 @@ beforeAll(async () => {
     // logpanel.js destructures window.LdrLogHelpers at IIFE-time.
     await import('@js/utils/log-helpers.js');
 
-    // Stubs the IIFE expects to find on window.
+    // Stubs the IIFE expects to find on window. window.i18n is provided
+    // globally by tests/js/setup.js; per-component stubs here should be
+    // limited to things that vary per test file.
     window.escapeHtml = (s) => String(s ?? '').replace(/[&<>"']/g, '');
-    window.i18n = { t: (key) => key };
     window.URLBuilder = {
         researchLogs: (id) => `/api/research/${id}/logs`,
         historyLogCount: (id) => `/api/research/${id}/log_count`,

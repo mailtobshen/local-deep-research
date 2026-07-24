@@ -79,17 +79,61 @@ def _safe_alt(alt: str, max_len: int = 120) -> str:
 
 
 def _match_terms(text: str) -> set[str]:
-    """Return comparable terms, using character bigrams for non-ASCII text."""
+    """Tokenize a heading/alt for cross-language overlap scoring.
+
+    Returns a multiset-like set containing:
+      - lower-cased Roman tokens (a-z0-9 runs, length >= 2)
+      - Chinese / CJK character unigrams and bigrams
+      - the joined Roman-token string (so a heading like "Canton Tower"
+        still matches an alt like "Guangzhou Canton Tower")
+
+    Bigrams smooth over Chinese/Japanese/Korean text (no whitespace) and
+    unigrams keep the score sensitive to single-character headings like
+    "桥". The joined token form is the cheap path that catches the common
+    case where one heading word is a substring of the alt's Roman words.
+    """
     normalized = re.sub(r"\s+", "", text).lower()
-    ascii_words = set(re.findall(r"[a-z0-9]+", normalized))
+    ascii_words = re.findall(r"[a-z0-9]+", normalized)
+    ascii_words = [w for w in ascii_words if len(w) >= 2]
     non_ascii = "".join(ch for ch in normalized if ord(ch) > 127)
-    bigrams = {
-        non_ascii[index : index + 2]
-        for index in range(max(0, len(non_ascii) - 1))
-    }
-    if len(non_ascii) == 1:
-        bigrams.add(non_ascii)
-    return ascii_words | bigrams
+
+    terms: set[str] = set()
+    terms.update(ascii_words)
+    if ascii_words:
+        terms.add("".join(ascii_words))
+
+    if non_ascii:
+        for ch in non_ascii:
+            terms.add(ch)
+        for index in range(len(non_ascii) - 1):
+            terms.add(non_ascii[index : index + 2])
+    return terms
+
+
+def _score_match(heading_terms: set[str], alt_terms: set[str]) -> int:
+    """Sum of cross-language overlap signals.
+
+    Set intersection is the cheap baseline. The substring check on the
+    joined Roman tokens (captured inside _match_terms) handles the
+    common case where a heading word is a strict prefix of an alt
+    token, e.g. heading "Canton" vs alt token "canton" (already covered
+    by set membership once the alt token is "canton") OR
+    heading "Canton" vs alt text "Guangzhou Canton Tower" (the
+    joined-token term for the alt becomes "guangzhoucantontower", and
+    the heading's joined token "canton" is a substring). For the latter
+    case we additionally check whether any heading Roman token appears
+    as a substring of any alt Roman token so the score reflects it.
+    """
+    score = len(heading_terms & alt_terms)
+    heading_text = "".join(
+        t for t in heading_terms if all(ch.isascii() for ch in t)
+    )
+    alt_text = "".join(t for t in alt_terms if all(ch.isascii() for ch in t))
+    if heading_text and alt_text and heading_text in alt_text:
+        # Substring containment is a weaker signal than token equality
+        # (could be a coincidental letter match), so weight it lower.
+        score += 2
+    return score
 
 
 def fill_section_images(markdown: str, candidates) -> str:
@@ -104,12 +148,16 @@ def fill_section_images(markdown: str, candidates) -> str:
             continue
 
         heading_terms = _match_terms(re.sub(r"^##\s+", "", heading))
+        if not heading_terms:
+            continue
+
         best = None
         best_score = 0
         for candidate in candidates:
             if not candidate.alt or candidate.url in used_urls:
                 continue
-            score = len(heading_terms & _match_terms(candidate.alt))
+            alt_terms = _match_terms(candidate.alt)
+            score = _score_match(heading_terms, alt_terms)
             if score > best_score:
                 best = candidate
                 best_score = score

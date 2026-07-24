@@ -13,3 +13,12 @@ globalThis.SafeLogger = {
   info: () => {},
   debug: () => {},
 };
+
+// Minimal i18n stub — tests can spy on these via vi.spyOn().
+// Production code reads i18n.t(...) / i18n.tf(...) when rendering translated
+// strings; without this stub, suites that import the components before the
+// per-test beforeAll runs crash with "i18n is not defined".
+globalThis.i18n = {
+  t: (key) => key,
+  tf: (key) => key,
+};
