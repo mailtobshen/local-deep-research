@@ -1,0 +1,46 @@
+/* System-UI-style close button for in-app notifications.
+   Used by both:
+     - .ldr-toast-close (showNotification toast in progress.js)
+     - .ldr-alert-close  (showAlert in-app alert in ui.js)
+   Replaces Bootstrap's default `.btn-close` (the small × glyph with no
+   hover state). Positioned in the corner with a subtle circular hover.
+
+   This file is loaded globally via base.html, unlike auth.css which is
+   only loaded on auth pages.
+*/
+.ldr-toast-close,
+.ldr-alert-close {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 28px;
+    height: 28px;
+    border: none;
+    background: transparent;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    font-size: 16px;
+    line-height: 1;
+    color: var(--text-muted, #6c757d);
+    opacity: 0.7;
+    transition: background 150ms ease, opacity 150ms ease;
+}
+.ldr-toast-close:hover,
+.ldr-alert-close:hover {
+    background: rgba(0, 0, 0, 0.08);
+    opacity: 1;
+}
+.ldr-toast-close:focus-visible,
+.ldr-alert-close:focus-visible {
+    outline: 2px solid var(--accent-primary, #0d6efd);
+    outline-offset: 2px;
+    opacity: 1;
+}
+.ldr-toast-close span {
+    font-weight: 300;
+    pointer-events: none;
+}
