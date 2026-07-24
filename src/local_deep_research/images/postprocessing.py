@@ -78,6 +78,49 @@ def _safe_alt(alt: str, max_len: int = 120) -> str:
     return out
 
 
+def _match_terms(text: str) -> set[str]:
+    """Return comparable terms, using character bigrams for non-ASCII text."""
+    normalized = re.sub(r"\s+", "", text).lower()
+    ascii_words = set(re.findall(r"[a-z0-9]+", normalized))
+    non_ascii = "".join(ch for ch in normalized if ord(ch) > 127)
+    bigrams = {
+        non_ascii[index : index + 2]
+        for index in range(max(0, len(non_ascii) - 1))
+    }
+    if len(non_ascii) == 1:
+        bigrams.add(non_ascii)
+    return ascii_words | bigrams
+
+
+def fill_section_images(markdown: str, candidates) -> str:
+    """Add the best unused candidate image to each image-free ``##`` section."""
+    parts = re.split(r"(?m)^(##\s+.*)$", markdown)
+    used_urls = {match.group(2) for match in _IMG_RE.finditer(markdown)}
+
+    for index in range(1, len(parts), 2):
+        heading = parts[index]
+        body = parts[index + 1] if index + 1 < len(parts) else ""
+        if _IMG_RE.search(body):
+            continue
+
+        heading_terms = _match_terms(re.sub(r"^##\s+", "", heading))
+        best = None
+        best_score = 0
+        for candidate in candidates:
+            if not candidate.alt or candidate.url in used_urls:
+                continue
+            score = len(heading_terms & _match_terms(candidate.alt))
+            if score > best_score:
+                best = candidate
+                best_score = score
+
+        if best is not None:
+            parts[index] = f"{heading}\n![{best.alt}]({best.url})"
+            used_urls.add(best.url)
+
+    return "".join(parts)
+
+
 def enhance_report_with_images(
     *,
     research_id: str,
@@ -170,8 +213,17 @@ def enhance_report_with_images(
                 f"removed={_orig_count - _unique_count} unique={_unique_count}"
             )
 
-        # Persist the real URLs that survived into the enhanced markdown.
+        candidates = bank.candidates_with_alt()
+        before_fallback = len([m.group(2) for m in _IMG_RE.finditer(enhanced)])
+        enhanced = fill_section_images(enhanced, candidates)
+
+        # Persist the real URLs that survived into the enhanced markdown,
+        # including section fallback placements.
         chosen = [m.group(2) for m in _IMG_RE.finditer(enhanced)]
+        logger.info(
+            f"[IMG-TRACE] section_fallback research={research_id} "
+            f"placed={len(chosen) - before_fallback} considered={len(candidates)}"
+        )
         _shown = ",".join(chosen[:10]) + (
             f" +{len(chosen) - 10}_more" if len(chosen) > 10 else ""
         )
@@ -191,9 +243,7 @@ def enhance_report_with_images(
             for url in chosen
             if url in bank._by_url
         }
-        url_to_alt = {
-            u: _safe_alt(m.alt) for u, m in url_to_meta.items() if m.alt
-        }
+        url_to_alt = {u: m.alt for u, m in url_to_meta.items() if m.alt}
         url_to_source = {
             u: (m.source_url, m.source_title)
             for u, m in url_to_meta.items()
