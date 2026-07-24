@@ -286,8 +286,8 @@ describe('loadLogsForResearch — non-empty API response', () => {
 
         await logPanel.loadLogs('batch-scroll-research');
 
-        // Batch insertion deliberately omits the per-entry autoscroll timer;
-        // assert the resulting DOM state rather than an unrelated scroll side effect.
+        // Batch loading positions the viewport at the visual top.
+        expect(container.scrollTop).toBe(0);
         expect(container.querySelector('.ldr-console-log-entry')).not.toBeNull();
     });
 });
