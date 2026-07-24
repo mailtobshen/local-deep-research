@@ -243,7 +243,9 @@ def enhance_report_with_images(
             for url in chosen
             if url in bank._by_url
         }
-        url_to_alt = {u: m.alt for u, m in url_to_meta.items() if m.alt}
+        url_to_alt = {
+            u: _safe_alt(m.alt) for u, m in url_to_meta.items() if m.alt
+        }
         url_to_source = {
             u: (m.source_url, m.source_title)
             for u, m in url_to_meta.items()
