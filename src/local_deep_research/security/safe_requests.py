@@ -164,6 +164,7 @@ def safe_get(
     timeout: int = DEFAULT_TIMEOUT,
     allow_localhost: bool = False,
     allow_private_ips: bool = False,
+    trusted_host_suffixes: Optional[tuple] = None,
     **kwargs,
 ) -> requests.Response:
     """
@@ -184,6 +185,11 @@ def safe_get(
             Note: cloud metadata endpoints (AWS / Azure / OCI / DigitalOcean /
             AlibabaCloud / Tencent / ECS) are ALWAYS blocked — see
             ``ssrf_validator.ALWAYS_BLOCKED_METADATA_IPS``.
+        trusted_host_suffixes: Optional tuple of hostname suffixes (e.g.
+            ``("cdninstagram.com", "fbcdn.net")``) to bypass the private-IP
+            block check for image-persistence CDNs. The DNS resolved-IP check
+            still runs, so this never overrides protection against
+            loopback/RFC1918/CGNAT resolution. Default ``None`` (off).
         **kwargs: Additional arguments to pass to requests.get()
 
     Returns:
@@ -198,6 +204,7 @@ def safe_get(
         url,
         allow_localhost=allow_localhost,
         allow_private_ips=allow_private_ips,
+        trusted_host_suffixes=trusted_host_suffixes,
     ):
         raise ValueError(
             f"URL failed security validation (possible SSRF): {url}"
@@ -254,6 +261,7 @@ def safe_get(
                     redirect_url,
                     allow_localhost=allow_localhost,
                     allow_private_ips=allow_private_ips,
+                    trusted_host_suffixes=trusted_host_suffixes,
                 ):
                     logger.warning(
                         f"Redirect to {redirect_url} blocked by SSRF validation "
@@ -307,6 +315,7 @@ def safe_post(
     timeout: int = DEFAULT_TIMEOUT,
     allow_localhost: bool = False,
     allow_private_ips: bool = False,
+    trusted_host_suffixes: Optional[tuple] = None,
     **kwargs,
 ) -> requests.Response:
     """
@@ -328,6 +337,11 @@ def safe_post(
             Note: cloud metadata endpoints (AWS / Azure / OCI / DigitalOcean /
             AlibabaCloud / Tencent / ECS) are ALWAYS blocked — see
             ``ssrf_validator.ALWAYS_BLOCKED_METADATA_IPS``.
+        trusted_host_suffixes: Optional tuple of hostname suffixes (e.g.
+            ``("cdninstagram.com", "fbcdn.net")``) to bypass the private-IP
+            block check for image-persistence CDNs. The DNS resolved-IP check
+            still runs, so this never overrides protection against
+            loopback/RFC1918/CGNAT resolution. Default ``None`` (off).
         **kwargs: Additional arguments to pass to requests.post()
 
     Returns:
@@ -342,6 +356,7 @@ def safe_post(
         url,
         allow_localhost=allow_localhost,
         allow_private_ips=allow_private_ips,
+        trusted_host_suffixes=trusted_host_suffixes,
     ):
         raise ValueError(
             f"URL failed security validation (possible SSRF): {url}"
@@ -397,6 +412,7 @@ def safe_post(
                     redirect_url,
                     allow_localhost=allow_localhost,
                     allow_private_ips=allow_private_ips,
+                    trusted_host_suffixes=trusted_host_suffixes,
                 ):
                     logger.warning(
                         f"Redirect to {redirect_url} blocked by SSRF validation "

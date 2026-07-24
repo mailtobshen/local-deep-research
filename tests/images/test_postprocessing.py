@@ -37,7 +37,7 @@ def test_enabled_builds_bank_from_image_list_json():
         inst.enhance.return_value = "# R\n\n![tower](https://real/a.jpg)\n"
         store_inst = IStore.return_value
         store_inst.persist.return_value = {"https://real/a.jpg": "/images/rid/a.png"}
-        store_inst.rewrite_markdown.side_effect = lambda md, m: md.replace("https://real/a.jpg", "/images/rid/a.png")
+        store_inst.rewrite_markdown.side_effect = lambda md, m, **kwargs: md.replace("https://real/a.jpg", "/images/rid/a.png")
         out = enhance_report_with_images(
             research_id="rid", clean_markdown="# R", results={"findings": findings},
             db_session=MagicMock(), enable_images=True, vision_model="",
@@ -109,3 +109,99 @@ def test_postprocessing_defaults_url_key_to_none():
     assert captured["model_name"] == "llava"
     assert captured["base_url"] is None
     assert captured["api_key"] is None
+
+
+# --- _dedupe_images tests ---------------------------------------------------
+
+
+def test_dedupe_images_collapses_duplicates():
+    from local_deep_research.images.postprocessing import _dedupe_images
+
+    md = (
+        "# Section A\n\n"
+        "![tower](https://x/a.jpg)\n\n"
+        "# Section B\n\n"
+        "![tower again](https://x/a.jpg)\n\n"
+        "# Section C\n\n"
+        "![leaf](https://x/b.jpg)\n"
+    )
+    out, orig, unique = _dedupe_images(md)
+    assert orig == 3
+    assert unique == 2
+    # First occurrence of url1 kept, second deleted
+    assert out.count("https://x/a.jpg") == 1
+    assert out.count("https://x/b.jpg") == 1
+    # Section ordering preserved
+    assert out.find("Section A") < out.find("Section B") < out.find("Section C")
+
+
+def test_dedupe_images_keeps_first_occurrence_with_first_alt():
+    from local_deep_research.images.postprocessing import _dedupe_images
+
+    md = "![first alt](https://x/a.jpg) ... ![second alt](https://x/a.jpg)"
+    out, _, _ = _dedupe_images(md)
+    assert "first alt" in out
+    assert "second alt" not in out
+
+
+def test_dedupe_images_no_op_when_all_unique():
+    from local_deep_research.images.postprocessing import _dedupe_images
+
+    md = "![a](https://x/1.jpg) and ![b](https://x/2.jpg)"
+    out, orig, unique = _dedupe_images(md)
+    assert orig == unique == 2
+    assert out == md
+
+
+def test_dedupe_images_collapses_runs_of_blank_lines():
+    from local_deep_research.images.postprocessing import _dedupe_images
+
+    md = "![a](https://x/a.jpg)\n\n\n\n![a dup](https://x/a.jpg)\n"
+    out, _, _ = _dedupe_images(md)
+    # Three or more consecutive newlines squeezed to two.
+    assert "\n\n\n\n" not in out
+
+
+def test_enhance_report_runs_dedupe_when_llm_repeats_url(loguru_caplog):
+    """End-to-end: if the LLM returns the same URL twice, the
+    [IMG-TRACE] DEDUPE line must fire and 'chosen' must contain the
+    URL only once before persist() is called."""
+    import json
+    import logging
+
+    findings = [{
+        "search_results": [{
+            "url": "https://src/page", "title": "Page",
+            "html_content": json.dumps([{
+                "url": "https://real/a.jpg", "alt": "tower",
+                "source_url": "https://src/page", "source_title": "Page",
+                "width": 800, "height": 600,
+            }]),
+        }],
+    }]
+    dup_md = (
+        "# A\n\n![tower](https://real/a.jpg)\n\n"
+        "# B\n\n![tower](https://real/a.jpg)\n"
+    )
+    with patch("local_deep_research.images.postprocessing.get_llm") as gl, \
+         patch("local_deep_research.images.postprocessing.ImageEnhancer") as IEnh, \
+         patch("local_deep_research.images.postprocessing.ImageStore") as IStore:
+        gl.return_value = MagicMock()
+        IEnh.return_value.enhance.return_value = dup_md
+        store_inst = IStore.return_value
+        store_inst.persist.return_value = {
+            "https://real/a.jpg": "/images/rid/a.png"
+        }
+        store_inst.rewrite_markdown.side_effect = lambda md, m, **kw: md
+        with loguru_caplog.at_level(logging.INFO):
+            enhance_report_with_images(
+                research_id="rid", clean_markdown="# R",
+                results={"findings": findings}, db_session=MagicMock(),
+                enable_images=True, vision_model="",
+            )
+    # Persist should be called with only ONE entry (dedup'd).
+    persist_args = store_inst.persist.call_args
+    chosen_urls = persist_args.args[0]
+    assert chosen_urls == ["https://real/a.jpg"]
+    # IMG-TRACE DEDUPE line emitted.
+    assert "[IMG-TRACE] DEDUPE" in loguru_caplog.text

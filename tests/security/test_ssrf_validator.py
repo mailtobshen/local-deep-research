@@ -24,7 +24,7 @@ or on a different machine on the local network.
 import socket
 
 import pytest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from tests.test_utils import add_src_to_path
 
@@ -2087,3 +2087,128 @@ class TestIpv6ZoneIdBlocked:
         )
 
         assert validate_url(url) is False
+
+
+class TestTrustedHostSuffixes:
+    """Image-specific CDN hostname allowlist (see ImageStore._IMAGE_URL_TRUSTED_HOST_SUFFIXES).
+
+    The allowlist is suffix-based: a URL whose hostname is exactly the
+    suffix OR endswith(".suffix") short-circuits the literal-IP block check.
+    The DNS resolved-IP check still runs — only the suffix bypass applies.
+    """
+
+    def test_trusted_suffix_subdomain_passes_when_dns_resolves_public(
+        self,
+    ):
+        from src.local_deep_research.security.ssrf_validator import (
+            validate_url,
+        )
+
+        with patch(
+            "src.local_deep_research.security.ssrf_validator.socket.getaddrinfo",
+            return_value=[(2, 1, 6, "", ("157.240.1.1", 0))],
+        ):
+            ok = validate_url(
+                "https://scontent-hkg1-2.cdninstagram.com/x.jpg",
+                trusted_host_suffixes=("cdninstagram.com",),
+            )
+        assert ok is True
+
+    def test_trusted_suffix_exact_match_also_passes(self):
+        from src.local_deep_research.security.ssrf_validator import (
+            validate_url,
+        )
+
+        with patch(
+            "src.local_deep_research.security.ssrf_validator.socket.getaddrinfo",
+            return_value=[(2, 1, 6, "", ("157.240.1.1", 0))],
+        ):
+            ok = validate_url(
+                "https://cdninstagram.com/x.jpg",
+                trusted_host_suffixes=("cdninstagram.com",),
+            )
+        assert ok is True
+
+    def test_non_matching_suffix_still_blocks_blocked_ip(self):
+        """Suffix bypass must not override the resolved-IP check."""
+        from src.local_deep_research.security.ssrf_validator import (
+            validate_url,
+        )
+
+        with patch(
+            "src.local_deep_research.security.ssrf_validator.socket.getaddrinfo",
+            return_value=[(2, 1, 6, "", ("169.254.169.254", 0))],
+        ):
+            ok = validate_url(
+                "https://scontent.cdninstagram.com/x.jpg",
+                trusted_host_suffixes=("cdninstagram.com",),
+            )
+        assert ok is False  # metadata IP always blocked
+
+    def test_trusted_suffix_literal_ip_still_blocked(self):
+        """A trusted-suffix URL whose hostname IS a literal blocked IP
+        must still be rejected — suffix bypass never wins over IP block."""
+        from src.local_deep_research.security.ssrf_validator import (
+            validate_url,
+        )
+
+        ok = validate_url(
+            "https://127.0.0.1/x.jpg",
+            trusted_host_suffixes=("127.0.0.1",),
+        )
+        assert ok is False
+
+    def test_empty_trusted_suffix_tuple_behaves_as_none(self):
+        """Backward compat: trusted_host_suffixes=() == trusted_host_suffixes=None."""
+        from src.local_deep_research.security.ssrf_validator import (
+            validate_url,
+        )
+
+        with patch(
+            "src.local_deep_research.security.ssrf_validator.socket.getaddrinfo",
+            return_value=[(2, 1, 6, "", ("169.254.169.254", 0))],
+        ):
+            ok = validate_url(
+                "https://scontent.cdninstagram.com/x.jpg",
+                trusted_host_suffixes=(),
+            )
+        assert ok is False  # no bypass, metadata IP still wins
+
+    def test_trusted_suffix_with_leading_dot_normalized(self):
+        """Suffix entries with a leading dot should be normalized."""
+        from src.local_deep_research.security.ssrf_validator import (
+            validate_url,
+        )
+
+        with patch(
+            "src.local_deep_research.security.ssrf_validator.socket.getaddrinfo",
+            return_value=[(2, 1, 6, "", ("157.240.1.1", 0))],
+        ):
+            ok = validate_url(
+                "https://scontent.cdninstagram.com/x.jpg",
+                trusted_host_suffixes=(".cdninstagram.com",),
+            )
+        assert ok is True
+
+    def test_safe_get_passes_trusted_host_suffixes_to_validate(self):
+        """Plumbing check: safe_get forwards the kwarg to validate_url."""
+        from src.local_deep_research.security.safe_requests import safe_get
+
+        captured = {}
+
+        def fake_validate(url, **kwargs):
+            captured.update(kwargs)
+            return True
+
+        with patch(
+            "src.local_deep_research.security.safe_requests.ssrf_validator.validate_url",
+            side_effect=fake_validate,
+        ), patch(
+            "src.local_deep_research.security.safe_requests.requests"
+        ) as req:
+            req.get.return_value = MagicMock(status_code=200)
+            safe_get(
+                "https://x.cdninstagram.com/y.jpg",
+                trusted_host_suffixes=("cdninstagram.com",),
+            )
+        assert captured.get("trusted_host_suffixes") == ("cdninstagram.com",)

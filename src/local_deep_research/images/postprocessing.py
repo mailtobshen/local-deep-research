@@ -3,16 +3,58 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from typing import Any, Dict, Optional
 
 from loguru import logger
 
 from .bank import ImageBank
-from .enhancer import ImageEnhancer
+from .enhancer import DEFAULT_VISION_CAP, DEFAULT_VISION_MIN_ALT_TRIGGER, ImageEnhancer
 from .serialize import loads_images
 from .store import ImageStore, _IMG_RE
 from .vision import VisionDescriber
 from ..config.llm_config import get_llm
+
+
+def _dedupe_images(markdown: str) -> tuple[str, int, int]:
+    """Collapse duplicate ``![alt](url)`` occurrences to first-only.
+
+    The LLM prompt instructs "Each image URL may appear at most ONCE"
+    (see ``enhancer._PROMPT``), but that's a prompt, not a guarantee —
+    when alt text is generic (``"Image"``, ``"Photo by ..."``) the LLM
+    occasionally places the same URL in 2-3 sections. This pass enforces
+    uniqueness so the final markdown has each persisted image exactly
+    once. We keep the FIRST occurrence (deterministic, matches LLM's
+    earliest judgment) and remove later ones.
+
+    Returns:
+        (deduped_markdown, original_count, unique_count)
+    """
+    seen: set[str] = set()
+    parts: list[str] = []
+    last_end = 0
+    original_count = 0
+    for m in _IMG_RE.finditer(markdown):
+        original_count += 1
+        url = m.group(2)
+        # Always emit the prose between the previous match and this one,
+        # regardless of whether we keep or drop the current match.
+        parts.append(markdown[last_end:m.start()])
+        if url in seen:
+            # Drop the duplicate match. Surrounding prose stays intact.
+            # The trailing newlines may collapse and create runs of blank
+            # lines, which we squeeze below.
+            pass
+        else:
+            seen.add(url)
+            parts.append(m.group(0))
+        last_end = m.end()
+    parts.append(markdown[last_end:])
+    out = "".join(parts)
+    # Squeeze runs of 3+ blank lines that dedup may create when the
+    # duplicate was on its own line.
+    out = re.sub(r"\n{3,}", "\n\n", out)
+    return out, original_count, len(seen)
 
 
 def enhance_report_with_images(
@@ -25,6 +67,9 @@ def enhance_report_with_images(
     vision_model: str,
     vision_url: Optional[str] = None,
     vision_api_key: Optional[str] = None,
+    vision_min_alt_count: Optional[int] = None,
+    vision_cap: Optional[int] = None,
+    firecrawl_client=None,
 ) -> str:
     """Return markdown with real images inserted + mirrored locally.
 
@@ -81,7 +126,28 @@ def enhance_report_with_images(
             base_url=vision_url,
             api_key=vision_api_key,
         )
-        enhanced = ImageEnhancer(llm, vision).enhance(clean_markdown, bank)
+        enhancer = ImageEnhancer(
+            llm,
+            vision,
+            min_alt_count=(
+                vision_min_alt_count
+                if vision_min_alt_count is not None
+                else DEFAULT_VISION_MIN_ALT_TRIGGER
+            ),
+            cap=vision_cap if vision_cap is not None else DEFAULT_VISION_CAP,
+        )
+        enhanced = enhancer.enhance(clean_markdown, bank)
+
+        # Enforce "each URL at most once" deterministically. The LLM
+        # prompt says it but doesn't guarantee it — generic alt text
+        # ("Image", "Photo by ...") sometimes causes the same URL to
+        # appear in 2-3 sections. See _dedupe_images docstring.
+        enhanced, _orig_count, _unique_count = _dedupe_images(enhanced)
+        if _orig_count != _unique_count:
+            logger.info(
+                f"[IMG-TRACE] DEDUPE research={research_id} "
+                f"removed={_orig_count - _unique_count} unique={_unique_count}"
+            )
 
         # Persist the real URLs that survived into the enhanced markdown.
         chosen = [m.group(2) for m in _IMG_RE.finditer(enhanced)]
@@ -92,7 +158,9 @@ def enhance_report_with_images(
             f"[IMG-TRACE] ENHANCE research={research_id} "
             f"chosen={len(chosen)} urls={_shown}"
         )
-        store = ImageStore(research_id, db_session)
+        store = ImageStore(
+            research_id, db_session, firecrawl_client=firecrawl_client
+        )
         # Pull alt + source-page metadata from the bank for each chosen URL
         # so DB records (research_images.alt/source_url/source_title) are
         # populated for post-hoc analysis (e.g. re-fetching source HTML to

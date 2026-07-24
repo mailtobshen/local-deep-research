@@ -174,6 +174,7 @@ def validate_url(
     url: str,
     allow_localhost: bool = False,
     allow_private_ips: bool = False,
+    trusted_host_suffixes: Optional[tuple] = None,
 ) -> bool:
     """
     Validate URL to prevent SSRF attacks.
@@ -196,6 +197,12 @@ def validate_url(
             Note: cloud metadata endpoints in ``ALWAYS_BLOCKED_METADATA_IPS``
             (AWS / Azure / OCI / DigitalOcean / AlibabaCloud / Tencent / ECS)
             are ALWAYS blocked regardless of these flags.
+        trusted_host_suffixes: Optional tuple of hostname suffixes (e.g.
+            ``("cdninstagram.com", "fbcdn.net")``). When the URL's hostname
+            matches one of these suffixes (exact match or ``endswith(.suffix)``),
+            the IP-block checks still run — only the suffix bypass applies.
+            Reserved for image-persistence CDNs whose public IPs the standard
+            IP-block check would otherwise reject. Default ``None`` (off).
 
     Returns:
         True if URL is safe, False otherwise
@@ -254,6 +261,24 @@ def validate_url(
             )
             return False
 
+        # Trusted-host-suffix bypass for image persistence. The hostname
+        # below may be a literal IP, a CDN subdomain, or a CNAME — we only
+        # short-circuit when the *suffix* matches a caller-supplied entry
+        # (exact or ".suffix" sub-match). The resolved-IP check below still
+        # runs, so this never bypasses private-IP / loopback protection.
+        trusted_suffix_hit = False
+        if trusted_host_suffixes:
+            for suffix in trusted_host_suffixes:
+                if not suffix:
+                    continue
+                suf = suffix.lower().lstrip(".")
+                if not suf:
+                    continue
+                host_lc = hostname.lower()
+                if host_lc == suf or host_lc.endswith(f".{suf}"):
+                    trusted_suffix_hit = True
+                    break
+
         # Check if hostname is an IP address
         try:
             ip = ipaddress.ip_address(hostname)
@@ -262,6 +287,15 @@ def validate_url(
                 allow_localhost=allow_localhost,
                 allow_private_ips=allow_private_ips,
             ):
+                # A trusted-suffix hostname that happens to be a literal IP
+                # is still rejected — suffix bypass never overrides the IP
+                # block check. This protects against misconfiguration where
+                # someone sets trusted_host_suffixes=("127.0.0.1",).
+                if trusted_suffix_hit:
+                    logger.warning(
+                        f"Trusted-suffix URL is a literal IP — IP block "
+                        f"still wins: {hostname} - {redact_url_for_log(url)}"
+                    )
                 logger.warning(
                     f"Blocked URL with internal/private IP: {hostname} - {redact_url_for_log(url)}"
                 )
