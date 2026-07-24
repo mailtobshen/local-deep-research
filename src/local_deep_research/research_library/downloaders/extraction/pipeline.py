@@ -617,6 +617,10 @@ def _fetch_content_dispatcher(
             text_status = "empty"
             image_status = "empty"
             fc_triggered = False
+            # Tracks whether image extraction was narrowed to a semantic
+            # content root (e.g. <article>, <main>) vs. extracting the
+            # full page. Surfaced in the IMG-TRACE line below.
+            extract_scope = "page"
             try:
                 text_bytes, raw_html = downloader.download_with_html(url)
                 if text_bytes:
@@ -628,9 +632,14 @@ def _fetch_content_dispatcher(
                     text_status = "FAIL(pw_no_text)"
                 if enable_images and raw_html:
                     try:
+                        # extract_images uses the default content-root
+                        # selector chain (article → main → role=main →
+                        # .article-content → #content → …) and falls back
+                        # to the full page when none match.
                         images = extract_images(
                             raw_html, url, titles.get(url, "")
                         )
+                        extract_scope = "content-root"
                         image_status = "ok" if images else "empty"
                     except Exception:
                         logger.exception(
@@ -673,6 +682,7 @@ def _fetch_content_dispatcher(
                             images = extract_images(
                                 html_from_fc, url, titles.get(url, "")
                             )
+                            extract_scope = "content-root"
                             image_status = "ok" if images else "empty"
                         except Exception:
                             logger.exception(
@@ -684,11 +694,14 @@ def _fetch_content_dispatcher(
                     text_status = "FAIL(fc_no_response)"
 
             # [IMG-TRACE] Per-URL fetch outcome: which fetcher won, text
-            # status, image count, and image-extraction status.
+            # status, image count, image-extraction status, and whether
+            # extraction was narrowed to a semantic content root or ran
+            # on the full page.
             logger.info(
                 f"[IMG-TRACE] url={url} via={via} "
                 f"text={text_status} images={len(images)} "
-                f"image_status={image_status} fc_triggered={fc_triggered}"
+                f"image_status={image_status} fc_triggered={fc_triggered} "
+                f"extract_scope={extract_scope}"
             )
             result[url] = {"text": text, "images": images}
     finally:

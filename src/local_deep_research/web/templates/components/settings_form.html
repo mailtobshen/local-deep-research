@@ -3,9 +3,9 @@
 
     <div class="ldr-settings-item form-group" data-key="{{ setting.key }}">
         <div class="ldr-settings-item-header">
-            <label for="{{ setting_id }}">{{ setting.name }}</label>
+            <label for="{{ setting_id }}">{{ _(setting.name) }}</label>
             {% if setting.description %}
-                <span class="ldr-settings-tooltip" title="{{ setting.description }}">
+                <span class="ldr-settings-tooltip" title="{{ _(setting.description) }}">
                     <i aria-hidden="true" class="fas fa-info-circle"></i>
                 </span>
             {% endif %}
@@ -306,7 +306,7 @@
         {% endif %}
 
         {% if setting.description and setting.key != "llm.model" and setting.key != "search.tool" and setting.key != "llm.provider" %}
-            <div class="ldr-input-help">{{ setting.description }}</div>
+            <div class="ldr-input-help">{{ _(setting.description) }}</div>
         {% endif %}
 
         {% if setting.key == "notifications.service_url" %}

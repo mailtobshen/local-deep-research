@@ -2,10 +2,7 @@
 from unittest.mock import MagicMock
 from local_deep_research.images.extractor import ExtractedImage
 from local_deep_research.images.bank import ImageBank
-from local_deep_research.images.enhancer import (
-    ImageEnhancer,
-    _FILTER_THRESHOLD,
-)
+from local_deep_research.images.enhancer import ImageEnhancer
 
 
 def _img(url, alt):
@@ -49,109 +46,73 @@ def test_enhance_skips_when_bank_empty():
     llm.invoke.assert_not_called()
 
 
-def test_vision_fallback_called_for_altless_images():
+def test_vision_triggered_when_with_alt_below_threshold():
+    """≤ 3 alts + alt-less images present → vision fills up to cap=10."""
     bank = ImageBank()
-    bank.add([_img("https://real/b.jpg", "")])  # no alt
+    # 2 with-alt (under the default min_alt_count=3 threshold) + 5 without.
+    bank.add(
+        [_img(f"https://real/{i}.jpg", "alt") for i in range(2)]
+        + [_img(f"https://real/n{i}.jpg", "") for i in range(5)]
+    )
     llm = MagicMock()
-    llm.invoke.return_value = MagicMock(content="# R\n\n![tower](https://real/b.jpg)\n")
+    llm.invoke.return_value = MagicMock(content="# R\n")
     vision = MagicMock()
     vision.enabled = True
-    vision.describe.return_value = "a tower"
+    vision.describe.return_value = "described"
     ImageEnhancer(llm, vision).enhance("# R", bank)
-    vision.describe.assert_called_once_with("https://real/b.jpg")
+    assert vision.describe.call_count == 5
 
 
-def test_enhance_skips_filter_when_candidates_small():
-    """< _FILTER_THRESHOLD candidates → single LLM call, all candidates passed."""
+def test_vision_skipped_when_bank_already_rich():
+    """> min_alt_count alts → vision not invoked even if configured."""
     bank = ImageBank()
-    # 10 unique candidates (well below threshold)
-    bank.add([_img(f"https://x/{i}.jpg", f"alt {i}") for i in range(10)])
+    # 5 with-alt + 5 without — well above the 3-trigger, vision is overkill.
+    bank.add(
+        [_img(f"https://real/{i}.jpg", f"alt {i}") for i in range(5)]
+        + [_img(f"https://real/n{i}.jpg", "") for i in range(5)]
+    )
     llm = MagicMock()
     llm.invoke.return_value = MagicMock(
-        content="# Report\n\n![a](https://x/0.jpg)\n"
+        content="![a](https://real/0.jpg)"
     )
     vision = MagicMock()
-    vision.enabled = False
-    ImageEnhancer(llm, vision).enhance(
-        "# Report\n\nsome text body", bank
-    )
-    # Single LLM call (not per-section)
-    assert llm.invoke.call_count == 1
-    # The single call's prompt should contain all 10 candidates
-    prompt = llm.invoke.call_args[0][0]
-    for i in range(10):
-        assert f"https://x/{i}.jpg" in prompt
+    vision.enabled = True
+    vision.describe.return_value = "described"
+    ImageEnhancer(llm, vision).enhance("# R\n\nbody", bank)
+    vision.describe.assert_not_called()
 
 
-def test_enhance_filters_per_section_when_many_candidates():
-    """≥ threshold candidates + multi-section → one LLM call per section."""
+def test_vision_caps_at_limit():
+    """Even with many alt-less images, vision describes at most cap."""
+    cap = 3
+
     bank = ImageBank()
-    # Above threshold; build with topic-specific alts
-    alts = (
-        [f"Canton Tower {i}" for i in range(30)]
-        + [f"Chen Clan Ancestral Hall {i}" for i in range(30)]
-        + [f"Shamian Island {i}" for i in range(20)]
+    bank.add(
+        [_img(f"https://real/{i}.jpg", "alt") for i in range(2)]  # trigger
+        + [_img(f"https://real/n{i}.jpg", "") for i in range(cap + 5)]
     )
-    bank.add([_img(f"https://x/{i}.jpg", a) for i, a in enumerate(alts)])
     llm = MagicMock()
-    # Return valid sectioned markdown for any prompt
-    llm.invoke.return_value = MagicMock(
-        content="![a](https://x/0.jpg)"
-    )
+    llm.invoke.return_value = MagicMock(content="# R\n")
     vision = MagicMock()
-    vision.enabled = False
-    md = (
-        "# Canton Tower\n\n"
-        "About Canton Tower height and tickets.\n\n"
-        "## Chen Clan\n\n"
-        "About Chen Clan Ancestral Hall history.\n\n"
-        "## Shamian\n\n"
-        "About Shamian Island colonial architecture."
-    )
-    ImageEnhancer(llm, vision).enhance(md, bank)
-    # 3 sections → 3 LLM calls
-    assert llm.invoke.call_count == 3
-    # Each call's prompt should contain fewer URLs than the full bank
-    for call in llm.invoke.call_args_list:
-        prompt = call[0][0]
-        assert prompt.count("https://x/") < 80
+    vision.enabled = True
+    vision.describe.return_value = "described"
+    ImageEnhancer(llm, vision, cap=cap).enhance("# R", bank)
+    assert vision.describe.call_count == cap
 
 
-def test_enhance_section_with_no_match_passes_through():
-    """Section whose text shares no token with any alt → falls back to full list
-    and still produces enhanced markdown (LLM call still happens)."""
+def test_vision_thresholds_are_overridable_per_instance():
+    """Custom min_alt_count / cap override module defaults."""
     bank = ImageBank()
-    # Build a bank large enough to trigger per-section mode
-    alts = [f"Topic X variant {i}" for i in range(_FILTER_THRESHOLD + 5)]
-    bank.add([_img(f"https://x/{i}.jpg", a) for i, a in enumerate(alts)])
-    llm = MagicMock()
-    llm.invoke.return_value = MagicMock(content="unchanged")
-    vision = MagicMock()
-    vision.enabled = False
-    md = (
-        "# Section A\n\n"
-        "Body about completely unrelated zzzzz topic.\n\n"
-        "# Section B\n\n"
-        "Body also about completely unrelated zzzzz topic."
+    # 4 with-alt + 4 without. With min_alt_count=5 (high), vision runs;
+    # with cap=2, only 2 vision calls.
+    bank.add(
+        [_img(f"https://real/{i}.jpg", f"alt {i}") for i in range(4)]
+        + [_img(f"https://real/n{i}.jpg", "") for i in range(4)]
     )
-    out = ImageEnhancer(llm, vision).enhance(md, bank)
-    # No token overlap with any alt → fallback to full list per section,
-    # so each section gets its own LLM call
-    assert llm.invoke.call_count == 2
-    assert out  # something non-empty returned
-
-
-def test_enhance_handles_no_headings_gracefully():
-    """Markdown with no H1-H3 → falls back to single-shot path."""
-    bank = ImageBank()
-    bank.add([_img(f"https://x/{i}.jpg", f"alt {i}") for i in range(40)])
     llm = MagicMock()
-    llm.invoke.return_value = MagicMock(content="some markdown")
+    llm.invoke.return_value = MagicMock(content="# R\n")
     vision = MagicMock()
-    vision.enabled = False
-    out = ImageEnhancer(llm, vision).enhance(
-        "Just text without any headings at all", bank
-    )
-    # No headings → _split_sections returns [] → single-shot path
-    assert llm.invoke.call_count == 1
-    assert out == "some markdown"
+    vision.enabled = True
+    vision.describe.return_value = "described"
+    ImageEnhancer(llm, vision, min_alt_count=5, cap=2).enhance("# R", bank)
+    assert vision.describe.call_count == 2

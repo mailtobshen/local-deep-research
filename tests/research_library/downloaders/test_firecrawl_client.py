@@ -21,7 +21,24 @@ def test_scrape_success():
         return_value=_mock_response(200, body),
     ):
         result = client.scrape("https://example.com")
-    assert result == "# Title\n\nbody text"
+    assert result == {"markdown": "# Title\n\nbody text", "html": None}
+
+
+def test_scrape_with_html():
+    """include_html=True passes through the html field when present."""
+    client = FirecrawlClient(api_url="http://localhost:3002", api_key="fc-test")
+    body = {
+        "data": {
+            "markdown": "# Title",
+            "html": "<p>body</p>",
+        }
+    }
+    with patch(
+        "local_deep_research.research_library.downloaders.extraction.firecrawl_client.safe_post",
+        return_value=_mock_response(200, body),
+    ):
+        result = client.scrape("https://example.com", include_html=True)
+    assert result == {"markdown": "# Title", "html": "<p>body</p>"}
 
 
 def test_scrape_failure_returns_none():

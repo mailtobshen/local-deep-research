@@ -1186,6 +1186,16 @@ def run_research_process(research_id, query, mode, **kwargs):
                             "",
                             settings_snapshot=settings_snapshot,
                         )
+                        vision_min_alt_count = get_setting_from_snapshot(
+                            "report.image_vision_min_alt_count",
+                            3,
+                            settings_snapshot=settings_snapshot,
+                        )
+                        vision_cap = get_setting_from_snapshot(
+                            "report.image_vision_cap",
+                            10,
+                            settings_snapshot=settings_snapshot,
+                        )
                         # Backward compat: if URL empty but model set,
                         # fall back to the main Ollama endpoint.
                         if vision_model and not vision_url:
@@ -1205,6 +1215,28 @@ def run_research_process(research_id, query, mode, **kwargs):
                                 92,
                                 {"phase": "image_enhancement"},
                             )
+                            # Build a Firecrawl client for the image-persist
+                            # fallback so anti-hotlink 403s can be resolved
+                            # by re-fetching the source page through a real
+                            # browser. Failures here are non-fatal — when
+                            # the client can't be built, the fast path
+                            # (Referer + UA) is the only download strategy.
+                            firecrawl_client = None
+                            try:
+                                from ...research_library.downloaders.extraction import (
+                                    pipeline as extract_pipeline,
+                                )
+                                firecrawl_client = (
+                                    extract_pipeline._new_firecrawl_client_from_snapshot(
+                                        settings_snapshot
+                                    )
+                                )
+                            except Exception:
+                                logger.debug(
+                                    "Firecrawl client unavailable for image "
+                                    "persist fallback",
+                                    exc_info=True,
+                                )
                             with get_user_db_session(username) as img_db_session:
                                 clean_markdown = enhance_report_with_images(
                                     research_id=research_id,
@@ -1215,6 +1247,9 @@ def run_research_process(research_id, query, mode, **kwargs):
                                     vision_model=vision_model,
                                     vision_url=vision_url or None,
                                     vision_api_key=vision_key or None,
+                                    vision_min_alt_count=vision_min_alt_count,
+                                    vision_cap=vision_cap,
+                                    firecrawl_client=firecrawl_client,
                                 )
                     except Exception:
                         logger.exception(

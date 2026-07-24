@@ -925,6 +925,34 @@
         "value": "",
         "visible": true
     },
+    "report.image_vision_min_alt_count": {
+        "category": "report_parameters",
+        "description": "Vision alt-fill only runs when the image bank has at most this many alt-bearing candidates. Below this threshold the bank is too thin for a confident single-shot LLM prompt, so vision is invoked to fill the gap. Set to 0 to run whenever a vision model is configured; raise to skip vision on banks that already have substantial alt coverage.",
+        "editable": true,
+        "max_value": 100,
+        "min_value": 0,
+        "name": "Vision alt-fill trigger (alt-bearing images ≤ N)",
+        "options": null,
+        "step": 1,
+        "type": "REPORT",
+        "ui_element": "number",
+        "value": 3,
+        "visible": true
+    },
+    "report.image_vision_cap": {
+        "category": "report_parameters",
+        "description": "Hard cap on how many alt-less images the vision model will describe in a single research run. Caps vision cost per research.",
+        "editable": true,
+        "max_value": 100,
+        "min_value": 1,
+        "name": "Vision alt-fill cap (max images described)",
+        "options": null,
+        "step": 1,
+        "type": "REPORT",
+        "ui_element": "number",
+        "value": 10,
+        "visible": true
+    },
     "report.enable_file_backup": {
         "category": "report_parameters",
         "description": "Also save reports as files on disk for external access (reports are always stored in the database regardless). Enable this if you need to access reports from outside the web interface.",

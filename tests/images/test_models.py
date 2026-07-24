@@ -104,6 +104,8 @@ def test_vision_provider_setting_exists():
             "report.image_vision_model",
             "report.image_vision_url",
             "report.image_vision_api_key",
+            "report.image_vision_min_alt_count",
+            "report.image_vision_cap",
         }
     )
     assert vision_keys == expected, (

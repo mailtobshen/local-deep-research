@@ -39,20 +39,30 @@ from ..config.thread_settings import (
 # SearXNG's engine names (e.g. ``google`` ships as ``google cse`` when the CSE
 # variant is active).
 _FALLBACK_ENGINES = [
+    "bing",
     "google",
     "google cse",
-    "bing",
-    "duckduckgo",
-    "wikipedia",
-    "brave",
-    "wikidata",
+    "google news",
     "mwmbl",
+    "wikipedia",
+    "wikidata",
     "yahoo",
+    "yandex",
 ]
+# Per-engine category override. Most engines live in SearXNG's "general"
+# category, but some (e.g. "google news") are scoped to other categories.
+# Anything not listed here defaults to "general" in the probe.
+_ENGINE_CATEGORIES: dict[str, str] = {
+    "google news": "news",
+}
 DEFAULT_SEARXNG_URL = "http://localhost:8080"
 DEFAULT_FIRECRAWL_URL = "http://localhost:3002"
 _PROBE_QUERY = "test"
-_PROBE_TIMEOUT = 12  # seconds per probe (SearXNG backend queries via proxy take seconds)
+_PROBE_TIMEOUT = 30  # seconds per probe — SearXNG runs the named engine PLUS all
+# other enabled engines behind the scenes to populate `unresponsive_engines`,
+# so a probe of just one engine still waits for every backend's timeout.
+# 30s covers the worst-case aggregation when several slow backends run in
+# parallel through the proxy.
 _MAX_WORKERS = 8
 _BROWSER_HEADERS = {
     "User-Agent": (
@@ -152,7 +162,7 @@ def probe_searxng_engine(
         "q": _PROBE_QUERY,
         "engines": engine_name,
         "format": "json",
-        "categories": "general",
+        "categories": _ENGINE_CATEGORIES.get(engine_name, "general"),
         "pageno": 1,
     }
     try:
