@@ -15,18 +15,18 @@ STRICT RULES:
 - You may ONLY use image URLs from the "Available images" list below.
 - You MUST NOT invent, modify, or guess any image URL.
 - Do NOT change any factual text, numbers, or citations in the report.
-- PAIR BY ALT TEXT: place an image ONLY in a section whose subject matches
-  the image's alt text. The alt text is the canonical name of what is
-  pictured; the section heading + first sentence describes the same thing.
-- NEVER substitute a near-match image for a missing exact match. If no
-  available image has an alt that names the subject of a section, leave
-  that section image-free.
+- STRICT SAME-SOURCE RULE: For each image, both the image's alt text AND
+  its source URL must be topically related to the section you place it in.
+  "Same source" means the page the image was crawled from is about the
+  same subject as the section. If a section has no image whose source
+  page matches, LEAVE THAT SECTION IMAGE-FREE — do not borrow an
+  image from a different source.
 - Each image URL may appear at most ONCE in the output.
 - Insert images using markdown: ![alt](url), placed immediately after the
   section's heading line.
 - If no available image fits a section, insert nothing there — never force an image.
 
-Available images (url | alt | source title):
+Available images (url | alt | source_url):
 {image_list}
 
 Report to enhance:
@@ -45,7 +45,10 @@ DEFAULT_VISION_CAP = 10
 
 
 def _format_list(images: List[ExtractedImage]) -> str:
-    return "\n".join(f"- {i.url} | {i.alt} | {i.source_title}" for i in images)
+    return "\n".join(
+        f"- {i.url} | {i.alt} | {i.source_url or '(unknown)'}"
+        for i in images
+    )
 
 
 class ImageEnhancer:
