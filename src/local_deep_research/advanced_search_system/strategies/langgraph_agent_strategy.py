@@ -777,17 +777,15 @@ class LangGraphAgentStrategy(BaseSearchStrategy):
             logger.exception("Fallback synthesis failed")
             return f"Research collected {len(results)} sources but synthesis failed: {exc}"
 
-    def _ensure_images_for_results(
-        self, all_search_results: list, max_n: int = 10
-    ) -> None:
-        """Ensure top URLs have html_content for the report-stage image enhancer.
+    def _ensure_images_for_results(self, all_search_results: list) -> None:
+        """Ensure URLs have html_content for the report-stage image enhancer.
 
         The langgraph agent may decide not to invoke the ``fetch_content`` tool,
         leaving ``search_results[].html_content`` empty — which causes the
         report to be text-only even when ``report.enable_images`` is on. This
-        method proactively fetches images for the first ``max_n`` URLs that
-        don't yet have ``html_content``, so image extraction is independent
-        of the agent's tool-call decisions.
+        method proactively fetches images for every URL that doesn't yet have
+        ``html_content``, so image extraction is independent of the agent's
+        tool-call decisions.
         """
         if not get_bool_setting_from_snapshot(
             "report.enable_images",
@@ -811,11 +809,9 @@ class LangGraphAgentStrategy(BaseSearchStrategy):
                 continue
             if url not in urls_to_fetch:
                 urls_to_fetch.append(url)
-            if len(urls_to_fetch) >= max_n:
-                break
         if not urls_to_fetch:
             logger.info(
-                f"[IMG-TRACE] langgraph auto-image-fill: skipped (all {len(all_search_results)} results already have html_content or no URLs)"
+                "[IMG-TRACE] langgraph auto-image-fill: skipped (no source missing html_content)"
             )
             return
 
@@ -846,7 +842,7 @@ class LangGraphAgentStrategy(BaseSearchStrategy):
             if self.collector.attach_html_content(url, dumps_images(images)):
                 filled += 1
         logger.info(
-            f"[IMG-TRACE] langgraph auto-image-fill: done filled={filled}/{len(urls_to_fetch)}"
+            f"[IMG-TRACE] LANGGRAPH_FILL filled={filled}/{len(urls_to_fetch)}"
         )
 
     def _finalize(
