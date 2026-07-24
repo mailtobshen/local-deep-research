@@ -372,6 +372,26 @@
     }
 
     /**
+     * @brief Scrolls the log container to the visual top (newest entry).
+     *
+     * The container uses flex-direction: column-reverse, so its DOM tail —
+     * not its DOM head — is rendered at the visual top. Setting scrollTop
+     * to 0 keeps the newest entry in view. No-op when autoscroll is
+     * disabled so the user's manual position is preserved.
+     */
+    function scrollLogContainerToLatest() {
+        if (!window._logPanelState.autoscroll) {
+            return;
+        }
+
+        const consoleLogContainer = document.getElementById('console-log-container');
+        if (consoleLogContainer) {
+            // column-reverse renders the newest DOM tail at visual top.
+            consoleLogContainer.scrollTop = 0;
+        }
+    }
+
+    /**
      * @brief Toggles autoscroll on or off.
      */
     function toggleAutoscroll() {
@@ -389,7 +409,7 @@
         if (window._logPanelState.autoscroll) {
             autoscrollButton.classList.add('ldr-selected');
             // Immediately scroll to the top of the panel (newest logs are at top).
-            consoleLogContainer.scrollTop = 0;
+            scrollLogContainerToLatest();
         } else {
             autoscrollButton.classList.remove('ldr-selected');
         }
@@ -636,6 +656,11 @@
                 while (logContent.children.length > MAX_LOG_ENTRIES) {
                     logContent.firstElementChild.remove();
                 }
+
+                // Keep the viewport at the visual top after a successful batch
+                // render. The helper is gated on autoscroll, so this preserves
+                // the user's position when autoscroll is disabled.
+                scrollLogContainerToLatest();
 
                 // Update log count indicator
                 const logIndicators = document.querySelectorAll('.ldr-log-indicator');
@@ -942,11 +967,11 @@
 
         // No need to scroll when loading all logs
         // Scroll will be handled after all logs are loaded
-        if (incrementCounter && element && window._logPanelState.autoscroll) {
-            // Auto-scroll to newest log (at the top)
-            setTimeout(() => {
-                consoleLogContainer.scrollTop = 0;
-            }, 0);
+        if (incrementCounter && element) {
+            // Auto-scroll to newest log (at the top); the helper itself
+            // is gated on autoscroll so disabled-autoscroll preserves the
+            // user's current position.
+            setTimeout(scrollLogContainerToLatest, 0);
         }
     }
 
