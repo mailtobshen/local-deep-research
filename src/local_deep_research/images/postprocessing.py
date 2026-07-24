@@ -252,25 +252,44 @@ def _score_match(heading_terms: set[str], alt_terms: set[str]) -> int:
     return score
 
 
-def fill_section_images(markdown: str, candidates) -> str:
-    """Add the best unused candidate image to each image-free ``##`` section."""
+def fill_section_images(markdown: str, candidates, segment_allow=None) -> str:
+    """Add the best unused candidate image to each image-free ``##`` section.
+
+    When ``segment_allow`` is provided, a section's placement is restricted
+    to candidates whose ``source_url`` is in the section's allow-list (as
+    computed by :func:`extract_segment_sources`). Cross-source candidates
+    cannot leak into the section fallback path. ``segment_allow`` is a
+    list of ``(heading, body, allowed_urls)`` triples indexed by section
+    order. A non-empty allow-list that does not contain the candidate's
+    source_url causes the candidate to be skipped in that section.
+    """
     parts = re.split(r"(?m)^(##\s+.*)$", markdown)
     used_urls = {match.group(2) for match in _IMG_RE.finditer(markdown)}
 
+    section_index = 0
     for index in range(1, len(parts), 2):
         heading = parts[index]
         body = parts[index + 1] if index + 1 < len(parts) else ""
         if _IMG_RE.search(body):
+            section_index += 1
             continue
 
         heading_terms = _match_terms(re.sub(r"^##\s+", "", heading))
         if not heading_terms:
+            section_index += 1
             continue
+
+        if segment_allow is not None and section_index < len(segment_allow):
+            allow = set(segment_allow[section_index][2])
+        else:
+            allow = set()
 
         best = None
         best_score = 0
         for candidate in candidates:
             if not candidate.alt or candidate.url in used_urls:
+                continue
+            if allow and (candidate.source_url or "") not in allow:
                 continue
             alt_terms = _match_terms(candidate.alt)
             score = _score_match(heading_terms, alt_terms)
@@ -281,6 +300,7 @@ def fill_section_images(markdown: str, candidates) -> str:
         if best is not None:
             parts[index] = f"{heading}\n![{best.alt}]({best.url})"
             used_urls.add(best.url)
+        section_index += 1
 
     return "".join(parts)
 
