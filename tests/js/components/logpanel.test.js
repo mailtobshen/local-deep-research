@@ -22,6 +22,7 @@ beforeAll(async () => {
 
     // Stubs the IIFE expects to find on window.
     window.escapeHtml = (s) => String(s ?? '').replace(/[&<>"']/g, '');
+    window.i18n = { t: (key) => key };
     window.URLBuilder = {
         researchLogs: (id) => `/api/research/${id}/logs`,
         historyLogCount: (id) => `/api/research/${id}/log_count`,
@@ -211,26 +212,68 @@ describe('loadLogsForResearch — non-empty API response', () => {
         expect(panelContent.dataset.loaded).toBe('true');
     });
 
-    it('merges via addLogEntryToPanel when live entries already exist', async () => {
+    beforeEach(() => {
+        vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
+    it('keeps the viewport at the visual top after a live log is added', async () => {
         const container = document.getElementById('console-log-container');
-        container.appendChild(makeLiveEntry('live-only'));
+        Object.defineProperty(container, 'scrollHeight', {
+            configurable: true,
+            value: 800,
+        });
+        Object.defineProperty(container, 'clientHeight', {
+            configurable: true,
+            value: 200,
+        });
+        let scrollTop = 300;
+        Object.defineProperty(container, 'scrollTop', {
+            configurable: true,
+            get: () => scrollTop,
+            set: (value) => { scrollTop = value; },
+        });
 
-        globalThis.fetch = vi.fn(() =>
-            Promise.resolve({
-                json: () =>
-                    Promise.resolve([
-                        { timestamp: new Date().toISOString(), message: 'fetched', log_type: 'info' },
-                    ]),
-            })
-        );
+        window._logPanelState.expanded = true;
+        window._logPanelState.autoscroll = true;
+        logPanel.addLog('latest live log', 'info');
+        await vi.runAllTimersAsync();
 
-        await logPanel.loadLogs('test-research-5');
+        expect(container.scrollTop).toBe(0);
+    });
 
-        // The live entry must survive (not overwritten by innerHTML reset).
-        const messages = Array.from(
-            container.querySelectorAll('.ldr-log-message')
-        ).map((el) => el.textContent);
-        expect(messages).toContain('live-only');
+    it('positions the viewport at the visual top after batch loading logs', async () => {
+        const container = document.getElementById('console-log-container');
+        Object.defineProperty(container, 'scrollHeight', {
+            configurable: true,
+            value: 800,
+        });
+        Object.defineProperty(container, 'clientHeight', {
+            configurable: true,
+            value: 200,
+        });
+        let scrollTop = 300;
+        Object.defineProperty(container, 'scrollTop', {
+            configurable: true,
+            get: () => scrollTop,
+            set: (value) => { scrollTop = value; },
+        });
+        globalThis.fetch = vi.fn(() => Promise.resolve({
+            json: () => Promise.resolve([
+                {
+                    timestamp: '2026-07-24T12:00:00.000Z',
+                    message: 'loaded log',
+                    log_type: 'info',
+                },
+            ]),
+        }));
+
+        await logPanel.loadLogs('batch-scroll-research');
+
+        expect(container.scrollTop).toBe(0);
     });
 });
 
