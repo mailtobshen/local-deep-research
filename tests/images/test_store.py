@@ -147,51 +147,53 @@ def test_persist_stashes_url_to_size(tmp_path):
     assert sizes.get("https://x/big.jpg") == (1200, 800)
 
 
-def test_rewrite_markdown_injects_width_for_landscape_oversize(tmp_path):
-    """Image wider than _MAX_DISPLAY_PX gets width={cap}; height untouched."""
+def test_rewrite_markdown_emits_html_for_landscape_oversize(tmp_path):
+    """Oversized landscape image becomes an <img> with width=600, height=400."""
     store = ImageStore("rid", MagicMock(), base_dir=tmp_path)
     md = "![t](https://x/a.jpg)"
     sizes = {"https://x/a.jpg": (1200, 800)}
     out = store.rewrite_markdown(
         md, {"https://x/a.jpg": "/local.png"}, url_to_size=sizes
     )
-    assert f"{{width={_MAX_DISPLAY_PX}}}" in out
-    assert f"height=" not in out
+    assert out.startswith("<img")
+    assert 'src="/local.png"' in out
+    assert f'width="{_MAX_DISPLAY_PX}"' in out
+    assert 'height="400"' in out
+    assert "loading=\"lazy\"" in out
 
 
-def test_rewrite_markdown_injects_height_for_portrait_oversize(tmp_path):
-    """Image taller than wide (portrait) gets height={cap}; width untouched."""
+def test_rewrite_markdown_emits_html_for_portrait_oversize(tmp_path):
+    """Oversized portrait image becomes an <img> with height=600, width=300."""
     store = ImageStore("rid", MagicMock(), base_dir=tmp_path)
     md = "![t](https://x/a.jpg)"
     sizes = {"https://x/a.jpg": (800, 1200)}
     out = store.rewrite_markdown(
         md, {"https://x/a.jpg": "/local.png"}, url_to_size=sizes
     )
-    assert f"{{height={_MAX_DISPLAY_PX}}}" in out
-    assert f"width=" not in out
+    assert out.startswith("<img")
+    assert f'height="{_MAX_DISPLAY_PX}"' in out
+    assert 'width="400"' in out
 
 
-def test_rewrite_markdown_no_size_attribute_under_threshold(tmp_path):
-    """Image whose long side is <= threshold gets no size attribute."""
+def test_rewrite_markdown_keeps_markdown_for_small_images(tmp_path):
+    """Image whose long side is <= threshold stays as ![alt](route) markdown."""
     store = ImageStore("rid", MagicMock(), base_dir=tmp_path)
     md = "![t](https://x/a.jpg)"
     sizes = {"https://x/a.jpg": (400, 300)}
     out = store.rewrite_markdown(
         md, {"https://x/a.jpg": "/local.png"}, url_to_size=sizes
     )
-    assert "{width=" not in out
-    assert "{height=" not in out
+    assert out == "![t](/local.png)"
 
 
-def test_rewrite_markdown_unknown_size_no_attribute(tmp_path):
-    """Missing size entry → no size attribute (graceful fallback)."""
+def test_rewrite_markdown_unknown_size_keeps_markdown(tmp_path):
+    """Missing size entry → keep markdown form (graceful fallback)."""
     store = ImageStore("rid", MagicMock(), base_dir=tmp_path)
     md = "![t](https://x/a.jpg)"
     out = store.rewrite_markdown(
         md, {"https://x/a.jpg": "/local.png"}, url_to_size={}
     )
-    assert "{width=" not in out
-    assert "{height=" not in out
+    assert out == "![t](/local.png)"
 
 
 def test_rewrite_markdown_uses_stashed_size_from_persist(tmp_path):
@@ -202,7 +204,8 @@ def test_rewrite_markdown_uses_stashed_size_from_persist(tmp_path):
         store.persist(["https://x/big.jpg"])
     md = "![t](https://x/big.jpg)"
     out = store.rewrite_markdown(md, {"https://x/big.jpg": "/local.png"})
-    assert f"{{width={_MAX_DISPLAY_PX}}}" in out
+    assert out.startswith("<img")
+    assert f'width="{_MAX_DISPLAY_PX}"' in out
 
 
 def test_download_sets_referer_from_source_url_origin(tmp_path):

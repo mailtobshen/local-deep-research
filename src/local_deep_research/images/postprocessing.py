@@ -57,6 +57,27 @@ def _dedupe_images(markdown: str) -> tuple[str, int, int]:
     return out, original_count, len(seen)
 
 
+def _safe_alt(alt: str, max_len: int = 120) -> str:
+    """Sanitize an alt string for safe markdown rendering.
+
+    Steps (in order):
+      1. Strip the ``[`` and ``]`` bracket delimiters (LLM prompt
+         side-effects) while preserving their inner text content.
+      2. Collapse all whitespace (incl. newlines) into single spaces.
+      3. Truncate to ``max_len`` chars and append ``…`` when over the limit.
+    """
+
+    def _sanitize(s: str) -> str:
+        s = s.replace("[", "").replace("]", "")
+        s = re.sub(r"\s+", " ", s).strip()
+        return s
+
+    out = _sanitize(alt or "")
+    if len(out) > max_len:
+        out = out[:max_len] + "…"
+    return out
+
+
 def enhance_report_with_images(
     *,
     research_id: str,
@@ -170,7 +191,9 @@ def enhance_report_with_images(
             for url in chosen
             if url in bank._by_url
         }
-        url_to_alt = {u: m.alt for u, m in url_to_meta.items() if m.alt}
+        url_to_alt = {
+            u: _safe_alt(m.alt) for u, m in url_to_meta.items() if m.alt
+        }
         url_to_source = {
             u: (m.source_url, m.source_title)
             for u, m in url_to_meta.items()
