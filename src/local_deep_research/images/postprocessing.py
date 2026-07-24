@@ -116,7 +116,12 @@ def enhance_report_with_images(
             f"persisted={len(url_to_route)} failed={len(chosen) - len(url_to_route)}"
         )
         if url_to_route:
-            enhanced = store.rewrite_markdown(enhanced, url_to_route)
+            # Pass PIL-measured sizes from persist() so rewrite_markdown can
+            # inject width/height="600" into oversized <img> tags.
+            enhanced = store.rewrite_markdown(
+                enhanced, url_to_route,
+                url_to_size=getattr(store, "_last_url_to_size", None),
+            )
         logger.info(f"[IMG-TRACE] END research={research_id} status=ok")
         return enhanced
     except Exception:
