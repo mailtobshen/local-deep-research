@@ -156,13 +156,17 @@
 
     // Translate an API error response body into a user-facing message.
     // Server may return one of three shapes:
-    //   - { message_key, message_args, hint_key }  → i18n key + interpolation
-    //   - { message: "<English text>" }             → translate literal string
-    //   - { message_raw: "<text>" }                → use raw (parse-failed fallback)
+    //   - { message_key: "<English template with %s>", message_args: [a, b, ...] }
+    //       → i18n.tf with positional %s interpolation
+    //   - { message: "<English text>" }              → translate literal string
+    //   - { message_raw: "<text>" }                 → use raw (parse-failed fallback)
     function renderApiErrorMessage(errorData) {
         if (!errorData) return t('Failed to start research');
         if (errorData.message_key) {
-            const msg = tf(errorData.message_key, errorData.message_args || {});
+            const args = Array.isArray(errorData.message_args)
+                ? errorData.message_args
+                : [];
+            const msg = tf.apply(null, [errorData.message_key].concat(args));
             const hint = errorData.hint_key ? t(errorData.hint_key) : '';
             return hint ? `${msg} — ${hint}` : msg;
         }

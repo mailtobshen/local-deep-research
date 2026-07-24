@@ -2908,9 +2908,9 @@
   "Test Connection": "测试连接",
   "Vision connected (%sms)": "视觉模型连接成功（%s 毫秒）",
   "Vision connection failed: %s": "视觉模型连接失败：%s",
-  "VPN proxy port unreachable: {host_port} ({reason})": "VPN 代理端口不可达：{host_port}（{reason}）",
-  "VPN proxy cannot reach external network: {reason}": "VPN 代理无法连接外网：{reason}",
-  "VPN proxy returned HTTP {status} from {url}": "VPN 代理返回 HTTP {status}（来自 {url}）",
-  "Invalid proxy URL: {url}": "VPN 代理 URL 无效：{url}",
+  "VPN proxy port unreachable: %s (%s)": "VPN 代理端口不可达：%s（%s）",
+  "VPN proxy cannot reach external network: %s": "VPN 代理无法连接外网：%s",
+  "VPN proxy returned HTTP %s from %s": "VPN 代理返回 HTTP %s（来自 %s）",
+  "Invalid proxy URL: %s": "VPN 代理 URL 无效：%s",
   "Please enable your VPN proxy and try again": "请先开启 VPN 代理后再启动研究"
 }

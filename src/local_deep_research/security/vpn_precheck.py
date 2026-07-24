@@ -11,7 +11,12 @@ class VPNCheckError(Exception):
 
 
 def _vpn_error_to_info(error: Exception) -> dict:
-    """Convert a VPNCheckError into i18n-friendly {key, args}.
+    """Convert a VPNCheckError into i18n-friendly {message_key, message_args}.
+
+    The frontend's translation dict is keyed by the full English source
+    string (with %s placeholders for interpolation). So message_key here
+    is the full English template; message_args is a positional list
+    matching %s order.
 
     Returns a dict suitable for jsonify so the frontend can translate the
     message in the user's active language. Falls back to message_raw for
@@ -30,16 +35,16 @@ def _vpn_error_to_info(error: Exception) -> dict:
             host_port, rest = tail.split(" ", 1)
             reason = rest.strip().strip("()")
             return {
-                "message_key": "vpn_check.port_unreachable",
-                "message_args": {"host_port": host_port, "reason": reason},
+                "message_key": "VPN proxy port unreachable: %s (%s)",
+                "message_args": [host_port, reason],
             }
         except (ValueError, IndexError):
             pass
     if msg.startswith("VPN proxy cannot reach external network:"):
         reason = msg.split(":", 1)[1].strip()
         return {
-            "message_key": "vpn_check.cannot_reach_external",
-            "message_args": {"reason": reason},
+            "message_key": "VPN proxy cannot reach external network: %s",
+            "message_args": [reason],
         }
     if msg.startswith("VPN proxy returned HTTP"):
         # e.g. "VPN proxy returned HTTP 500 from https://www.google.com/generate_204"
@@ -47,16 +52,16 @@ def _vpn_error_to_info(error: Exception) -> dict:
             status = msg.split("HTTP ", 1)[1].split(" ", 1)[0]
             url = msg.split(" from ", 1)[1]
             return {
-                "message_key": "vpn_check.bad_status",
-                "message_args": {"status": status, "url": url},
+                "message_key": "VPN proxy returned HTTP %s from %s",
+                "message_args": [status, url],
             }
         except (ValueError, IndexError):
             pass
     if msg.startswith("Invalid proxy URL:"):
         url = msg.split(":", 1)[1].strip().strip("'\"")
         return {
-            "message_key": "vpn_check.invalid_proxy_url",
-            "message_args": {"url": url},
+            "message_key": "Invalid proxy URL: %s",
+            "message_args": [url],
         }
     return {"message_key": None, "message_raw": msg}
 
