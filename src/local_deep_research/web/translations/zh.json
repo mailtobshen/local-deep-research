@@ -2908,7 +2908,7 @@
   "Test Connection": "测试连接",
   "Vision connected (%sms)": "视觉模型连接成功（%s 毫秒）",
   "Vision connection failed: %s": "视觉模型连接失败：%s",
-  "VPN proxy port unreachable: %s (%s)": "VPN 代理端口不可达：%s（%s）",
+  "VPN proxy port unreachable: %s (%s)": "网络代理参数开启情况下，VPN 代理URL不可达：%s",
   "VPN proxy cannot reach external network: %s": "VPN 代理无法连接外网：%s",
   "VPN proxy returned HTTP %s from %s": "VPN 代理返回 HTTP %s（来自 %s）",
   "Invalid proxy URL: %s": "VPN 代理 URL 无效：%s",
