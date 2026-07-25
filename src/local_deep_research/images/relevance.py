@@ -628,7 +628,7 @@ def evaluate_candidate(
             if not span:
                 return False
             if re.search(r"[一-鿿]", span):
-                return len(span) >= 2
+                return len(span) >= 3
             return len(span) >= 5
 
         for ce in context.all_entities:
