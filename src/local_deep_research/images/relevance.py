@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from typing import Any, Dict, FrozenSet, Iterable, Literal, Tuple
+from urllib.parse import urlparse
 
 from .extractor import ExtractedImage
 
@@ -536,24 +537,32 @@ def build_report_entity_context(
 # Candidate evaluation
 # ---------------------------------------------------------------------------
 
-_WEAK_SOURCE_HOSTS = (
-    "instagram",
-    "tiktok",
-    "pinterest",
-    "twitter",
+_WEAK_SOURCE_HOSTS: tuple[str, ...] = (
+    "instagram.com",
+    "tiktok.com",
+    "pinterest.com",
+    "twitter.com",
     "x.com",
     "t.me",
-    "telegram",
-    "facebook",
+    "telegram.org",
+    "facebook.com",
 )
 
 
 def _source_signal(source_url: str) -> Literal["strong", "weak", "none"]:
     if not source_url:
         return "none"
-    low = source_url.lower()
-    if any(h in low for h in _WEAK_SOURCE_HOSTS):
+    try:
+        host = (urlparse(source_url).hostname or "").lower()
+    except Exception:
+        return "none"
+    if not host:
+        return "none"
+    if host in _WEAK_SOURCE_HOSTS:
         return "weak"
+    if any(host.endswith("." + h) for h in _WEAK_SOURCE_HOSTS):
+        return "weak"
+    return "strong"
     return "strong"
 
 

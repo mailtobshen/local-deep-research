@@ -460,7 +460,7 @@ def test_chongqing_instagram_source_filtered_by_gate():
     raw_bank = ImageBank()
     for url, alt, src in [
         ("https://img/cq.jpg", "重庆洪崖洞旅游攻略",
-         "https://instagram.example/popular/广州景点"),
+         "https://instagram.com/popular/广州景点"),
         ("https://img/gz.jpg", "广州塔夜景", "https://src/gz"),
         ("https://img/vague.jpg", "某地中山纪念堂", "https://src/misc"),
         ("https://img/empty.jpg", "", "https://src/empty"),

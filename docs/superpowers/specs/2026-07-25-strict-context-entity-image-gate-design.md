@@ -203,7 +203,7 @@ Decision matrix:
 | Unrelated | any | Drop |
 | Unresolved | any | Drop |
 
-Aggregation pages must not become strong evidence merely because their URL contains the report location. Examples include Instagram popular/search pages, TikTok search pages, Pinterest boards, and generic galleries.
+Aggregation pages must not become strong evidence merely because their URL contains the report location. Examples include Instagram popular/search pages, TikTok search pages, Pinterest boards, and generic galleries. Source-signal classification is performed on `urlparse(source_url).hostname` against an allow-listed set of known aggregation hosts (`instagram.com`, `tiktok.com`, `pinterest.com`, `twitter.com`, `x.com`, `t.me`, `telegram.org`, `facebook.com`) and their subdomains; subdomains like `www.instagram.com` are also classified as weak, while unrelated hosts (for example `anti-instagrambot.com`) are not. The list is a snapshot of today's aggregator landscape and must be updated when observed aggregation destinations change.
 
 ## 9. No visual path
 

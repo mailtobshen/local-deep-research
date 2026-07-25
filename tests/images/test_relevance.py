@@ -66,7 +66,7 @@ def test_foreign_entity_chongqing_is_rejected():
                 {
                     "search_results": [
                         {
-                            "url": "https://instagram.example/popular/广州景点",
+                            "url": "https://instagram.com/popular/广州景点",
                             "title": "广州景点",
                         }
                     ]
@@ -78,7 +78,7 @@ def test_foreign_entity_chongqing_is_rejected():
     decision = evaluate_candidate(
         candidate(
             "重庆洪崖洞旅游攻略",
-            "https://instagram.example/popular/广州景点",
+            "https://instagram.com/popular/广州景点",
         ),
         context,
     )
@@ -95,7 +95,7 @@ def test_foreign_entity_first_time_chongqing_is_rejected():
                 {
                     "search_results": [
                         {
-                            "url": "https://instagram.example/popular/广州景点",
+                            "url": "https://instagram.com/popular/广州景点",
                             "title": "广州景点",
                         }
                     ]
@@ -107,7 +107,7 @@ def test_foreign_entity_first_time_chongqing_is_rejected():
     decision = evaluate_candidate(
         candidate(
             "第一次来重庆，别只玩市区的景点",
-            "https://instagram.example/popular/广州景点",
+            "https://instagram.com/popular/广州景点",
         ),
         context,
     )
@@ -303,3 +303,30 @@ def test_context_build_raises_for_non_string_markdown():
     from local_deep_research.images.relevance import ContextBuildFailed
     with pytest.raises(ContextBuildFailed):
         build_report_entity_context(None, {"findings": []})
+
+
+
+def test_www_instagram_subdomain_is_weak():
+    context = build_report_entity_context(
+        "# 广州旅游\n## 广州\n广州。",
+        {"findings": []},
+        query="广州旅游",
+    )
+    decision = evaluate_candidate(
+        candidate("广州塔", "https://www.instagram.com/p/123"),
+        context,
+    )
+    assert decision.source_signal == "weak"
+
+
+def test_anti_instagram_cloned_host_is_strong():
+    context = build_report_entity_context(
+        "# 广州旅游\n## 广州\n广州。",
+        {"findings": []},
+        query="广州旅游",
+    )
+    decision = evaluate_candidate(
+        candidate("广州塔", "https://anti-instagrambot.com/page"),
+        context,
+    )
+    assert decision.source_signal == "strong"
