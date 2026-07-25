@@ -174,8 +174,11 @@ def enhance_report_with_images(
             decisions = [evaluate_candidate(c, context) for c in raw_candidates]
         reason_counts: Dict[str, int] = {k: 0 for k in ENTITY_REASON_KEYS}
         for d in decisions:
-            key = d.reason if d.reason in reason_counts else "drop_unrelated_named_entity"
-            reason_counts[key] += 1
+            if d.status == "keep":
+                bucket = "keep_context_match" if d.reason == "context_match" else "keep_context_rescue"
+            else:
+                bucket = d.reason if d.reason in reason_counts else "drop_unrelated_named_entity"
+            reason_counts[bucket] += 1
         kept_urls = [d.url for d in decisions if d.status == "keep"]
         ordered_reasons = ", ".join(
             f"{name}={reason_counts[name]}" for name in ENTITY_REASON_KEYS
