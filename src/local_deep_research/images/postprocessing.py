@@ -149,17 +149,13 @@ def enhance_report_with_images(
             f"[IMG-TRACE] ELIGIBLE_BANK research={research_id} "
             f"total={len(eligible_bank.all_urls())}"
         )
-        if not eligible_bank.all_urls():
-            logger.info(
-                f"[IMG-TRACE] SECTION_FALLBACK research={research_id} "
-                f"status=disabled"
-            )
-            logger.info(f"[IMG-TRACE] END research={research_id} status=empty")
-            return clean_markdown
         logger.info(
             f"[IMG-TRACE] SECTION_FALLBACK research={research_id} "
             f"status=disabled"
         )
+        if not eligible_bank.all_urls():
+            logger.info(f"[IMG-TRACE] END research={research_id} status=empty")
+            return clean_markdown
 
         llm = get_llm()
         vision = VisionDescriber(
