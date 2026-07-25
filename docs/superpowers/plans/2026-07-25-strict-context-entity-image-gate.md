@@ -12,6 +12,8 @@
 
 - The gate is fail-closed: missing alt, no named entity, extraction failure, unresolved entity relationship, entity conflict, or context-build failure rejects the candidate.
 - Only the original extracted alt can satisfy the first gate; do not generate alt text for this pipeline.
+- A substantial-anchor threshold applies: CJK entities need >= 3 characters, Latin entities >= 5 characters; shorter spans are rejected as `no_named_entity`.
+- A candidate's `source_url` must be cited in some section's `SECTION_SOURCES` pool; an uncited `source_url` is a hard drop (`source_url_not_cited`). There is no `context_entity_rescue` path.
 - Only current-run query, report, section, search-result, citation, and source-title context may establish entity relationships; no external knowledge-base lookup.
 - No visual or multimodal relevance verification; do not call `VisionDescriber.describe()` for admission.
 - No section fallback or post-LLM image backfill; image-free sections remain image-free.
@@ -25,7 +27,7 @@
 ## File Map
 
 - Create: `src/local_deep_research/images/relevance.py` — report-context model, named-entity extraction, source signal classification, fail-closed keep/drop decisions.
-- Create: `tests/images/test_relevance.py` — unit tests for entity extraction, context relations, conflict handling, source-mapping rescue, and fail-closed behavior.
+- Create: `tests/images/test_relevance.py` — unit tests for entity extraction, context relations, conflict handling, source-URL citation, and fail-closed behavior.
 - Modify: `src/local_deep_research/images/bank.py` — add public `subset(urls)` method.
 - Modify: `src/local_deep_research/images/postprocessing.py` — replace source-only gate with entity gate, build one Eligible Bank, remove fallback call, emit gate summaries.
 - Modify: `src/local_deep_research/images/enhancer.py` — ensure this report path never invokes `_vision_fill()`; retain textual LLM prompt constraints.
@@ -193,6 +195,10 @@ class ReportEntityContext:
     all_entities: frozenset[str]
     entity_relations: frozenset[tuple[str, str, str]]
     section_sources: tuple[tuple[str, str, tuple[str, ...]], ...]
+    all_cited_source_urls: frozenset[str]
+```
+
+`all_cited_source_urls` is the union of every section's `SECTION_SOURCES` URLs and is the set used by the hard Step 5 same-origin check.
 
 @dataclass(frozen=True)
 class ImageRelevanceDecision:
@@ -250,21 +256,26 @@ if extraction_failed:
     drop("entity_extraction_failed")
 if not entities:
     drop("no_named_entity")
+# Substantial-anchor thresholds: CJK >= 3 chars, Latin >= 5 chars.
+if any_entity_below_substantial_threshold(entities):
+    drop("no_named_entity")
 if explicit_foreign_or_entity_conflict(entities, context):
     drop("foreign_entity_conflict")
 matched_sections = sections_with_explicit_entity_evidence(entities, context)
 if not matched_sections and not explicit_report_relation(entities, context):
     drop("unresolved_entity_relation")
-keep_reason = "context_entity_rescue" if source_not_in_matched_section_sources else "context_match"
-return keep(...)
+# Hard Step 5: source_url must be cited in some section's SECTION_SOURCES pool.
+if candidate.source_url not in context.all_cited_source_urls:
+    drop("source_url_not_cited")
+return keep("context_match")
 ```
 
-Source signal must never override a conflict and must not reject an explicitly context-confirmed entity. Aggregation/feed URLs are weak evidence.
+Source signal must never override a conflict. Aggregation/feed URLs are weak evidence. The `context_entity_rescue` path is removed: an uncited `source_url` is a hard drop.
 
-- [ ] **Step 7: Add mapping-miss rescue and unresolved tests**
+- [ ] **Step 7: Add uncited-source-URL and unresolved tests**
 
 ```python
-def test_context_entity_rescues_source_mapping_miss():
+def test_uncited_source_url_drops_context_confirmed_entity():
     context = build_report_entity_context(
         "# 广州建筑\n## 广州塔\n广州塔位于广州。",
         {"findings": []},
@@ -273,8 +284,8 @@ def test_context_entity_rescues_source_mapping_miss():
     decision = evaluate_candidate(
         candidate("广州塔珠江夜景", "https://unmapped.example/photo"), context
     )
-    assert decision.status == "keep"
-    assert decision.reason == "context_entity_rescue"
+    assert decision.status == "drop"
+    assert decision.reason == "source_url_not_cited"
 
 
 def test_named_entity_without_current_context_is_rejected():
@@ -411,7 +422,31 @@ chosen = [match.group(2) for match in _IMG_RE.finditer(enhanced)]
 
 Preserve the existing persistence and rewrite logic after `chosen`; no fallback selection occurs.
 
-- [ ] **Step 4: Remove the production fallback call**
+- [ ] **Step 4: Enforce the hard source-URL same-origin check**
+
+After building `ReportEntityContext`, every kept candidate must additionally pass a hard `source_url` citation check. The candidate's `source_url` must be present in `context.all_cited_source_urls` (the union of all sections' `SECTION_SOURCES` URLs, derived from current-run `extract_segment_sources()` output).
+
+In `evaluate_candidate()` this is already enforced by Task 2 Step 6 (`drop("source_url_not_cited")`); this step verifies the integration point and the cited-source pool feeding it:
+
+1. Confirm `build_report_entity_context()` populates `all_cited_source_urls` from the section sources already logged as `[IMG-TRACE] SECTION_SOURCES` per section (the existing production log added for this purpose).
+2. Confirm there is no `context_entity_rescue` path anywhere in `relevance.py` or `postprocessing.py`; a grep must return zero matches:
+
+```bash
+grep -R "context_entity_rescue" -n src/local_deep_research/images
+```
+
+Expected: no matches. Any prior `rescue` branch is replaced by the hard `source_url_not_cited` drop.
+
+3. The conceptual check inside the gate is:
+
+```python
+if candidate.source_url not in context.all_cited_source_urls:
+    drop("source_url_not_cited")
+```
+
+This trades coverage for precision: a candidate whose alt matches context but whose `source_url` was not cited by any section is dropped. No external lookup is performed.
+
+- [ ] **Step 5: Remove the production fallback call**
 
 Delete the production block equivalent to:
 
@@ -431,7 +466,7 @@ logger.info(
 
 The standalone `fill_section_images()` function may remain unused in this change.
 
-- [ ] **Step 5: Disable Vision candidate admission in the report path**
+- [ ] **Step 6: Disable Vision candidate admission in the report path**
 
 Change the enhancer integration so report postprocessing constructs or uses an enhancer mode that never calls `_vision_fill()`. The minimal implementation is to add an explicit constructor parameter:
 
@@ -448,7 +483,7 @@ if self.allow_vision_fill and len(candidates) <= self.min_alt_count and self.vis
 
 Instantiate it from postprocessing with `allow_vision_fill=False`. Do not delete `VisionDescriber` or its unrelated public behavior.
 
-- [ ] **Step 6: Update postprocessing tests for named entities, no fallback, and no Vision**
+- [ ] **Step 7: Update postprocessing tests for named entities, no fallback, and no Vision**
 
 Change existing generic fixture alts such as `tower` to context-confirmed named alts such as `广州塔`. Replace the old tests that expect Vision to receive missing-alt configuration with tests asserting:
 
@@ -460,7 +495,7 @@ with patch.object(postprocessing, "VisionDescriber") as vision_cls:
 
 If `VisionDescriber` remains constructed for dependency compatibility, assert instead that `describe` is never called and that the enhancer was created with `allow_vision_fill=False`; prefer not constructing it when the report path no longer uses it.
 
-- [ ] **Step 7: Run image tests and fix only integration regressions**
+- [ ] **Step 8: Run image tests and fix only integration regressions**
 
 Run:
 
@@ -470,7 +505,7 @@ PYTHONPATH=src pytest tests/images/test_postprocessing.py tests/images/test_enha
 
 Expected: PASS. Any failure should be limited to fixtures whose alt lacks a named entity or whose report context does not mention the fixture entity; update those fixtures rather than weakening the gate.
 
-- [ ] **Step 8: Commit the pipeline integration**
+- [ ] **Step 9: Commit the pipeline integration**
 
 ```bash
 git add src/local_deep_research/images/postprocessing.py src/local_deep_research/images/enhancer.py tests/images/test_postprocessing.py tests/images/test_enhancer.py
@@ -528,12 +563,13 @@ drop_entity_extraction_failed
 drop_foreign_entity_conflict
 drop_unrelated_named_entity
 drop_unresolved_entity_relation
+drop_source_url_not_cited
 drop_context_build_failed
 ```
 
-Omit or emit zero consistently; prefer emitting all fields so run comparisons are stable.
+`keep_context_rescue` is emitted for log stability but is always zero in this revision (the rescue path was removed; see the hard Step 5 same-origin check). Omit or emit zero consistently; prefer emitting all fields so run comparisons are stable.
 
-- [ ] **Step 4: Add regression cases for aggregation-page pollution and source rescue**
+- [ ] **Step 4: Add regression cases for aggregation-page pollution and uncited source URLs**
 
 Add tests that assert:
 
@@ -544,11 +580,11 @@ assert evaluate_candidate(
     context,
 ).status == "drop"
 
-# Unmapped source, explicitly context-confirmed entity.
+# Uncited source URL, explicitly context-confirmed entity -> hard drop.
 assert evaluate_candidate(
     image(alt="中山纪念堂", source="https://generic-gallery.example/item"),
     context_with_explicit_sun_yat_sen_memorial_relation,
-).reason == "context_entity_rescue"
+).reason == "source_url_not_cited"
 ```
 
 - [ ] **Step 5: Run the complete image test suite**
@@ -622,7 +658,7 @@ Confirm manually:
 - no raw-bank fallback path remains;
 - no generic alt passes the first gate;
 - unresolved entity relations drop;
-- source mapping misses can be rescued by explicit current-run entity evidence;
+- an uncited `source_url` rejects a context-confirmed entity with `source_url_not_cited`;
 - persistence and URL rewriting are unchanged.
 
 - [ ] **Step 5: Run the broader relevant tests**
@@ -648,7 +684,7 @@ Do not include the existing unrelated untracked plan files in any feature commit
 
 ## Self-Review Checklist
 
-- [x] Spec coverage: hard alt gate, named entities, current-run context, source rescue, conflict rejection, fail-closed unresolved cases, no Vision, one Eligible Bank, fallback disabled, logs, tests, and acceptance criteria each have a task.
+- [x] Spec coverage: hard alt gate, named entities, current-run context, hard source-URL citation, conflict rejection, fail-closed unresolved cases, no Vision, one Eligible Bank, fallback disabled, logs, tests, and acceptance criteria each have a task.
 - [x] No external NER or knowledge-base dependency is introduced.
 - [x] Later tasks use the exact interfaces introduced earlier (`ImageBank.subset`, `ReportEntityContext`, `ImageRelevanceDecision`, `build_report_entity_context`, `evaluate_candidate`).
 - [x] No task asks the implementer to guess an error-handling policy; failure reasons and outcomes are specified.

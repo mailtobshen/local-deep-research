@@ -9,7 +9,7 @@
 The current image pipeline treats a candidate's source page as the primary relevance signal. That is insufficient in three cases:
 
 1. A source page and its image are both unrelated to the report and must be rejected.
-2. An image is relevant, but its source page was omitted by section-source mapping; the image should not be rejected solely because of that mapping miss.
+2. An image's alt entity is relevant, but its `source_url` is not in any section's cited source pool; the image must be rejected because its provenance is unverifiable.
 3. A source page is related, but an individual image on that page is unrelated. This occurs on feeds and aggregation pages where one page contains posts about multiple cities.
 
 The current production path also applies source filtering only to the LLM enhancer, then passes the unfiltered bank to `fill_section_images()`. Consequently, section fallback can reinsert candidates rejected by the earlier filter.
@@ -19,9 +19,9 @@ The revised strategy prioritizes precision over image coverage: insufficient evi
 ## 2. Goals
 
 - Reject candidates whose source and image entities are unrelated to the report.
-- Rescue candidates whose image entities are demonstrably relevant even when source mapping misses them.
+- Reject candidates whose alt entity is relevant but whose `source_url` is not in any section's cited source pool.
 - Reject candidates from related pages when the candidate's own alt entities are unrelated or conflicting.
-- Require a non-empty original alt containing at least one named entity.
+- Require a non-empty original alt containing at least one substantial named entity.
 - Derive relevance only from the current research context and textual entity relationships.
 - Ensure every downstream insertion path consumes one filtered eligible bank.
 - Preserve explainability through reason-coded IMG-TRACE events.
@@ -46,7 +46,7 @@ The gate is fail-closed:
 - Entity conflicts with the report: reject.
 - Too few eligible images: do not relax any rule.
 
-A source-page match is supporting evidence, not authority. It cannot rescue an entity-conflicting image. Conversely, a missing source match cannot reject an image whose named entity is explicitly confirmed by the current report context.
+A source-page match is supporting evidence, not authority. It cannot rescue an entity-conflicting image. Conversely, a missing source citation now *does* reject an image: under the hard Step 5 same-origin check, even an entity explicitly confirmed by current report context is dropped with `source_url_not_cited` when its `source_url` is absent from the cited pool.
 
 ## 5. Named-entity requirement
 
@@ -88,6 +88,26 @@ Examples:
 | `陈家祠古建筑` | Continue: named attraction |
 
 The gate uses the original extracted alt. It does not generate an alt for a candidate that lacks one.
+
+### 5.3 Substantial-anchor thresholds
+
+A candidate alt entity counts as substantial only when it meets a minimum character length, to reject short generic or fragmentary spans:
+
+- CJK spans: at least 3 CJK characters. A 2-character CJK span (for example `广州`, `北京`, `旅游`) is rejected as too short to be a reliable anchor, even if it appears in context.
+- Latin spans: at least 5 characters. A 4-character or shorter Latin span (for example `Asia`, `Photo`, `Tower`) is rejected.
+
+These thresholds are hard requirements applied before any context matching.
+
+### 5.4 Hard source-URL same-origin check (Step 5)
+
+After the named-entity and conflict checks pass, the candidate must additionally satisfy a hard source-URL same-origin check:
+
+- The candidate's `source_url` must appear in the section's cited source pool, i.e. the `SECTION_SOURCES` set emitted per section.
+- A candidate whose `source_url` is not cited by any section is dropped with reason `source_url_not_cited`, regardless of how well its alt entity matches the report context.
+
+This replaces the earlier `context_entity_rescue` escape hatch. There is no longer a "rescue" path that keeps a candidate whose source was not selected by section-source mapping; the source URL must be explicitly cited. This trades a small amount of coverage for higher precision, eliminating candidates whose alt happens to match context but whose provenance is unverifiable.
+
+The cited source pool is derived strictly from current-run section sources; no external lookup is performed.
 
 ## 6. Report entity context
 
@@ -160,8 +180,8 @@ Supported evidence:
 4. **Explicit entity relation**  
    Current evidence contains a relation such as `中山纪念堂位于广州`.
 
-5. **Context-entity rescue**  
-   The source URL was not selected by section-source mapping, but the candidate entity is explicitly confirmed in report context. This candidate is kept with reason `context_entity_rescue`.
+5. **Source URL cited** (hard Step 5 check)  
+   The candidate's `source_url` is present in the section's cited `SECTION_SOURCES` pool. A context-confirmed entity whose `source_url` is not cited is dropped with `source_url_not_cited`; there is no longer a `context_entity_rescue` path.
 
 ### 7.2 Drop decisions
 
@@ -173,6 +193,7 @@ Reason codes:
 - `foreign_entity_conflict`: alt contains a conflicting location/entity and no report-relevant entity.
 - `unrelated_named_entity`: alt has a valid named entity, but current context shows no report relationship.
 - `unresolved_entity_relation`: a relationship could neither be confirmed nor contradicted.
+- `source_url_not_cited`: entity is context-confirmed but the candidate's `source_url` is not in any section's cited `SECTION_SOURCES` pool.
 - `context_build_failed`: report context could not be built safely.
 
 An explicit image-entity conflict outranks source relevance. For example:
@@ -198,7 +219,7 @@ Decision matrix:
 |---|---|---|
 | Confirmed relevant | strong | Keep |
 | Confirmed relevant | weak | Keep |
-| Confirmed relevant | none | Keep as context-entity rescue |
+| Confirmed relevant | none | Drop `source_url_not_cited` |
 | Explicit conflict | any | Drop |
 | Unrelated | any | Drop |
 | Unresolved | any | Drop |
@@ -336,12 +357,13 @@ Summary event:
 [IMG-TRACE] ENTITY_GATE research=<id>
 total=475
 keep_context_match=29
-keep_context_rescue=5
+keep_context_rescue=0
 drop_missing_alt=83
 drop_no_named_entity=210
 drop_foreign_conflict=36
 drop_unrelated_entity=92
 drop_unresolved_relation=20
+drop_source_url_not_cited=15
 ```
 
 Eligible bank:
@@ -389,9 +411,9 @@ Do not emit Vision markers in this path because no visual work occurs.
 - Section heading `中山纪念堂`; alt `中山纪念堂` -> keep.
 - Search evidence states `中山纪念堂位于广州`; alt `中山纪念堂` -> keep.
 
-### 15.3 Source mapping miss rescue
+### 15.3 Source URL not cited
 
-- Relevant alt entity appears in report context, but source is absent from top-N -> keep with `context_entity_rescue`.
+- Relevant alt entity appears in report context, but the candidate's `source_url` is absent from every section's cited `SECTION_SOURCES` pool -> drop with `source_url_not_cited`.
 
 ### 15.4 Cross-region conflict
 
@@ -423,7 +445,7 @@ Do not emit Vision markers in this path because no visual work occurs.
 2. Every eligible candidate alt contains at least one accepted named entity.
 3. Every eligible entity has explicit relevance evidence in current-run context.
 4. Cross-region conflicts are rejected even when the source page appears relevant.
-5. Source mapping misses do not reject context-confirmed image entities.
+5. Source mapping misses (an uncited `source_url`) reject even context-confirmed image entities with `source_url_not_cited`.
 6. Unresolved entity relationships are rejected.
 7. No candidate is admitted through Vision or generated alt text.
 8. LLM enhancement and all later selection consume only the eligible Bank.
@@ -431,6 +453,7 @@ Do not emit Vision markers in this path because no visual work occurs.
 10. Image-free sections and reports remain image-free.
 11. The gate never relaxes because too few images remain.
 12. IMG-TRACE reports reason-coded gate totals and eligible count.
+13. CJK alt anchors shorter than 3 characters and Latin alt anchors shorter than 5 characters are rejected.
 
 ## 17. Minimal implementation scope
 
