@@ -563,7 +563,6 @@ def _source_signal(source_url: str) -> Literal["strong", "weak", "none"]:
     if any(host.endswith("." + h) for h in _WEAK_SOURCE_HOSTS):
         return "weak"
     return "strong"
-    return "strong"
 
 
 def evaluate_candidate(
