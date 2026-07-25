@@ -14,6 +14,7 @@ from .relevance import (
     ImageRelevanceDecision,
     build_report_entity_context,
     evaluate_candidate,
+    extract_segment_sources,
 )
 
 ENTITY_REASON_KEYS: tuple[str, ...] = (
@@ -156,6 +157,16 @@ def enhance_report_with_images(
                 f"reason={type(exc).__name__}: {exc}"
             )
             context = None
+        else:
+            for idx, (heading, _body, urls) in enumerate(
+                extract_segment_sources(clean_markdown, results)
+            ):
+                heading_text = heading.strip() if heading else f"<no-heading-{idx}>"
+                url_list = ", ".join(urls) if urls else "<none>"
+                logger.info(
+                    f"[IMG-TRACE] SECTION_SOURCES research={research_id} "
+                    f"section={idx} heading={heading_text!r} urls={url_list}"
+                )
         raw_candidates = bank.candidates_with_alt()
         if context is None:
             decisions = [
