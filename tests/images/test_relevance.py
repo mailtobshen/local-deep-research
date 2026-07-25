@@ -84,6 +84,7 @@ def test_foreign_entity_chongqing_is_rejected():
     )
     assert decision.status == "drop"
     assert decision.reason == "foreign_entity_conflict"
+    assert decision.source_signal == "weak"
 
 
 def test_foreign_entity_first_time_chongqing_is_rejected():
@@ -220,12 +221,7 @@ def test_unresolved_entity_relation():
     )
     decision = evaluate_candidate(candidate("某地中山纪念堂"), context)
     assert decision.status == "drop"
-    # Either foreign_entity_conflict (entity not in context) or
-    # unresolved_entity_relation depending on which rule fires first.
-    assert decision.reason in (
-        "foreign_entity_conflict",
-        "unresolved_entity_relation",
-    )
+    assert decision.reason == "unresolved_entity_relation"
 
 
 # ---------------------------------------------------------------------------
@@ -279,10 +275,7 @@ def test_named_entity_without_current_context_is_rejected():
     )
     decision = evaluate_candidate(candidate("某地中山纪念堂"), context)
     assert decision.status == "drop"
-    assert decision.reason in (
-        "foreign_entity_conflict",
-        "unresolved_entity_relation",
-    )
+    assert decision.reason == "unresolved_entity_relation"
 
 
 # ---------------------------------------------------------------------------

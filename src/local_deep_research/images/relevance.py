@@ -126,6 +126,15 @@ _STRIP_TOKENS: FrozenSet[str] = frozenset(
     {"的", "和", "与", "或", "the", "a", "an", "of", "for", "in", "on"}
 )
 
+# Vague qualifiers that turn a downstream proper-name look like a real
+# place/name when it is actually descriptive ("some place's 中山纪念堂").
+# Spans whose leftmost tokens begin with one of these prefixes are not
+# treated as real proper names and therefore do not trigger a foreign
+# entity conflict.
+_VAGUE_QUALIFIER_PREFIXES: FrozenSet[str] = frozenset(
+    {"某地", "某处", "某城", "某景点", "某景区", "某地", "某区域"}
+)
+
 
 # ---------------------------------------------------------------------------
 # Token / phrase helpers
@@ -527,7 +536,16 @@ def build_report_entity_context(
 # Candidate evaluation
 # ---------------------------------------------------------------------------
 
-_WEAK_SOURCE_HOSTS = ("instagram.com", "t.me", "twitter.com", "x.com")
+_WEAK_SOURCE_HOSTS = (
+    "instagram",
+    "tiktok",
+    "pinterest",
+    "twitter",
+    "x.com",
+    "t.me",
+    "telegram",
+    "facebook",
+)
 
 
 def _source_signal(source_url: str) -> Literal["strong", "weak", "none"]:
@@ -609,6 +627,8 @@ def evaluate_candidate(
         (some anchored, some 2-char unanchored) are treated as
         descriptive padding.
         """
+        if any(ent.startswith(p) for p in _VAGUE_QUALIFIER_PREFIXES):
+            return False
         toks = _tokens(ent)
         if not toks:
             return False
