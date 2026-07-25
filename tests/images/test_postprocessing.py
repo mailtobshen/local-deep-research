@@ -392,3 +392,95 @@ def test_postprocessing_builds_enhancer_with_vision_fill_disabled():
     # `describe` method must never be invoked from the report path.
     vision_inst = vision_cls.return_value
     vision_inst.describe.assert_not_called()
+
+def test_entity_gate_reason_keys_complete():
+    from local_deep_research.images.postprocessing import ENTITY_REASON_KEYS
+    assert set(ENTITY_REASON_KEYS) == {
+        "keep_context_match",
+        "keep_context_rescue",
+        "drop_missing_alt",
+        "drop_no_named_entity",
+        "drop_entity_extraction_failed",
+        "drop_foreign_entity_conflict",
+        "drop_unrelated_named_entity",
+        "drop_unresolved_entity_relation",
+        "drop_context_build_failed",
+    }
+
+
+def test_vague_alt_resolves_to_unresolved_entity_relation_end_to_end():
+    """某地中山纪念堂 reaches unresolved_entity_relation, not foreign_entity_conflict."""
+    import json
+    from unittest.mock import MagicMock, patch
+    findings = [{
+        "search_results": [{
+            "url": "https://src/gz",
+            "title": "广州建筑",
+            "html_content": json.dumps([
+                {"url": "https://img/vague.jpg", "alt": "某地中山纪念堂",
+                 "source_url": "https://src/misc"},
+            ]),
+        }],
+    }]
+    with patch.object(postprocessing, "ImageEnhancer") as enhancer_cls, \
+         patch.object(postprocessing, "ImageStore") as store_cls, \
+         patch.object(postprocessing, "VisionDescriber"):
+        enhancer_cls.return_value.enhance.return_value = "# r"
+        store_cls.return_value.persist.return_value = {}
+        out = enhance_report_with_images(
+            research_id="rid",
+            clean_markdown="# 广州建筑\n## 广州塔\n介绍",
+            results={"findings": findings},
+            db_session=MagicMock(),
+            enable_images=True,
+            vision_model="",
+        )
+    assert out == "# 广州建筑\n## 广州塔\n介绍"
+    enhancer_cls.assert_not_called()
+
+
+def test_chongqing_instagram_source_filtered_by_gate():
+    """End-to-end: Chongqing alt + Instagram source is dropped; Guangzhou alt is kept."""
+    from local_deep_research.images.bank import ImageBank
+    from local_deep_research.images.extractor import ExtractedImage
+    from local_deep_research.images.postprocessing import (
+        ENTITY_REASON_KEYS,
+        build_report_entity_context,
+        evaluate_candidate,
+    )
+    raw_bank = ImageBank()
+    for url, alt, src in [
+        ("https://img/cq.jpg", "重庆洪崖洞旅游攻略",
+         "https://instagram.example/popular/广州景点"),
+        ("https://img/gz.jpg", "广州塔夜景", "https://src/gz"),
+        ("https://img/vague.jpg", "某地中山纪念堂", "https://src/misc"),
+        ("https://img/empty.jpg", "", "https://src/empty"),
+    ]:
+        raw_bank.add([ExtractedImage(url, alt, src, "", None, None)])
+    context = build_report_entity_context(
+        "# 广州旅游\n## 广州景点\n广州景点介绍。",
+        {"findings": [{"search_results": [{
+            "url": "https://src/gz",
+            "title": "广州塔",
+            "content": "广州塔是广州景点的标志。",
+        }]}]},
+        query="广州旅游",
+    )
+    decisions = {
+        img.url: evaluate_candidate(img, context)
+        for img in raw_bank.candidates_with_alt()
+    }
+    # img/vague.jpg does not reach evaluate_candidate (no alt), so check it via bank.
+    assert decisions["https://img/cq.jpg"].reason == "foreign_entity_conflict"
+    assert decisions["https://img/cq.jpg"].source_signal == "weak"
+    assert decisions["https://img/gz.jpg"].status == "keep"
+    kept = [url for url, d in decisions.items() if d.status == "keep"]
+    assert kept == ["https://img/gz.jpg"]
+    eligible = raw_bank.subset(kept)
+    assert eligible.all_urls() == ["https://img/gz.jpg"]
+    assert set(ENTITY_REASON_KEYS) >= {
+        "keep_context_match",
+        "drop_foreign_entity_conflict",
+        "drop_unresolved_entity_relation",
+        "drop_missing_alt",
+    }

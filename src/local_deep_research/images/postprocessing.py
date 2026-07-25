@@ -10,7 +10,23 @@ from loguru import logger
 
 from .bank import ImageBank
 from .enhancer import DEFAULT_VISION_CAP, DEFAULT_VISION_MIN_ALT_TRIGGER, ImageEnhancer
-from .relevance import build_report_entity_context, evaluate_candidate
+from .relevance import (
+    ImageRelevanceDecision,
+    build_report_entity_context,
+    evaluate_candidate,
+)
+
+ENTITY_REASON_KEYS: tuple[str, ...] = (
+    "keep_context_match",
+    "keep_context_rescue",
+    "drop_missing_alt",
+    "drop_no_named_entity",
+    "drop_entity_extraction_failed",
+    "drop_foreign_entity_conflict",
+    "drop_unrelated_named_entity",
+    "drop_unresolved_entity_relation",
+    "drop_context_build_failed",
+)
 from .serialize import loads_images
 from .store import ImageStore, _IMG_RE
 from .vision import VisionDescriber
@@ -130,19 +146,44 @@ def enhance_report_with_images(
         query = ""
         if isinstance(results, dict):
             query = results.get("research_query") or ""
-        context = build_report_entity_context(
-            clean_markdown, results, query=query
-        )
+        try:
+            context = build_report_entity_context(
+                clean_markdown, results, query=query
+            )
+        except Exception as exc:  # ContextBuildFailed or unexpected
+            logger.warning(
+                f"[IMG-TRACE] ENTITY_GATE_BUILD_FAILED research={research_id} "
+                f"reason={type(exc).__name__}: {exc}"
+            )
+            context = None
         raw_candidates = bank.candidates_with_alt()
-        decisions = [evaluate_candidate(c, context) for c in raw_candidates]
-        reason_counts: Dict[str, int] = {}
+        if context is None:
+            decisions = [
+                ImageRelevanceDecision(
+                    url=c.url,
+                    status="drop",
+                    reason="drop_context_build_failed",
+                    entities=frozenset(),
+                    matched_sections=frozenset(),
+                    source_signal="none",
+                    evidence_refs=(),
+                )
+                for c in raw_candidates
+            ]
+        else:
+            decisions = [evaluate_candidate(c, context) for c in raw_candidates]
+        reason_counts: Dict[str, int] = {k: 0 for k in ENTITY_REASON_KEYS}
         for d in decisions:
-            reason_counts[d.reason] = reason_counts.get(d.reason, 0) + 1
+            key = d.reason if d.reason in reason_counts else "drop_unrelated_named_entity"
+            reason_counts[key] += 1
         kept_urls = [d.url for d in decisions if d.status == "keep"]
+        ordered_reasons = ", ".join(
+            f"{name}={reason_counts[name]}" for name in ENTITY_REASON_KEYS
+        )
         logger.info(
             f"[IMG-TRACE] ENTITY_GATE research={research_id} "
             f"raw={len(raw_candidates)} kept={len(kept_urls)} "
-            f"reasons={dict(sorted(reason_counts.items()))}"
+            f"{ordered_reasons}"
         )
         eligible_bank = bank.subset(kept_urls)
         logger.info(
