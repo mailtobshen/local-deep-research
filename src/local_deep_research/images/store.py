@@ -13,7 +13,20 @@ from loguru import logger
 # Network errors worth retrying (transient: DNS / TCP / TLS / proxy hiccups).
 # Permanent errors (403/404/ENOSPC/...) are NOT retried — they'd waste the
 # same failures 3x and risk CDN rate-limit escalation.
-_RETRIABLE: Tuple[type, ...] = (ConnectionError, TimeoutError)
+#
+# requests' exception tree does NOT subclass the built-in ConnectionError /
+# TimeoutError (it goes RequestException -> OSError), so the requests.*
+# types must be listed explicitly — otherwise a read timeout (the exact
+# failure mode behind bkimg.cdn.bcebos.com dropping) bypasses the retry
+# loop and fails on the first attempt.
+import requests as _requests
+
+_RETRIABLE: Tuple[type, ...] = (
+    ConnectionError,
+    TimeoutError,
+    _requests.exceptions.Timeout,
+    _requests.exceptions.ConnectionError,
+)
 
 # Hardcoded retry policy. 3 attempts, exponential backoff: 1.5s, 2.25s.
 _MAX_ATTEMPTS = 3
@@ -365,14 +378,20 @@ class ImageStore:
         sizes = url_to_size if url_to_size is not None else getattr(
             self, "_last_url_to_size", {}
         )
-        resized = under = unknown = 0
+        resized = under = unknown = dropped = 0
 
         def repl(m: re.Match) -> str:
-            nonlocal resized, under, unknown
+            nonlocal resized, under, unknown, dropped
             alt, url = m.group(1), m.group(2)
             route = url_to_route.get(url)
             if route is None:
-                return m.group(0)
+                # No local route means download failed all retries. Drop the
+                # image entirely so no remote URL / broken <img> leaks into
+                # the final report (remote URLs expire, get anti-hotlinked,
+                # and expose the scrape). Returning "" removes the whole
+                # ![alt](url) match.
+                dropped += 1
+                return ""
             size = sizes.get(url)
             if size is None:
                 unknown += 1
@@ -400,6 +419,6 @@ class ImageStore:
         logger.info(
             f"[IMG-TRACE] RESIZE chosen={len(url_to_route)} "
             f"resized={resized} under_threshold={under} unknown_size={unknown} "
-            f"max_px={_MAX_DISPLAY_PX}"
+            f"dropped_unpersisted={dropped} max_px={_MAX_DISPLAY_PX}"
         )
         return result

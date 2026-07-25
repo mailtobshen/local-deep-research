@@ -40,7 +40,9 @@ def test_rewrite_markdown_replaces_urls():
     md = "![t](https://x/a.jpg) and ![u](https://y/b.jpg)"
     out = store.rewrite_markdown(md, {"https://x/a.jpg": "/images/rid/h1.png"})
     assert "/images/rid/h1.png" in out
-    assert "https://y/b.jpg" in out  # unmapped url left intact
+    # Unmapped url = download failed all retries → dropped entirely, not
+    # left as a remote URL in the final report.
+    assert "https://y/b.jpg" not in out
 
 
 def test_persist_path_traversal_safe(tmp_path):
