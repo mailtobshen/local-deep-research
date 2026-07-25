@@ -397,13 +397,13 @@ def test_entity_gate_reason_keys_complete():
     from local_deep_research.images.postprocessing import ENTITY_REASON_KEYS
     assert ENTITY_REASON_KEYS == (
         "keep_context_match",
-        "keep_context_rescue",
         "drop_missing_alt",
         "drop_no_named_entity",
         "drop_entity_extraction_failed",
         "drop_foreign_entity_conflict",
         "drop_unrelated_named_entity",
         "drop_unresolved_entity_relation",
+        "drop_source_url_not_cited",
         "drop_context_build_failed",
     )
 

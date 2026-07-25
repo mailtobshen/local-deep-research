@@ -134,24 +134,44 @@ def test_foreign_entity_jiangxi_wuyuan_is_rejected():
 def test_context_match_guangzhou_tower():
     context = build_report_entity_context(
         "# 广州旅游\n## 广州塔珠江夜景\n广州塔是地标，珠江夜游不可错过。",
-        {"findings": []},
+        {"findings": [
+            {
+                "search_results": [
+                    {
+                        "url": "https://source.example/page",
+                        "title": "广州塔",
+                        "content": "广州塔是地标，珠江夜游不可错过。",
+                    }
+                ]
+            }
+        ]},
         query="广州旅游",
     )
     decision = evaluate_candidate(candidate("广州塔珠江夜景"), context)
     assert decision.status == "keep"
-    assert decision.reason in ("context_match", "context_entity_rescue")
+    assert decision.reason == "context_match"
     assert 1 in decision.matched_sections
 
 
 def test_context_match_section_heading_zhongshan():
     context = build_report_entity_context(
         "# 广州近代建筑\n## 中山纪念堂\n中山纪念堂位于广州。",
-        {"findings": []},
+        {"findings": [
+            {
+                "search_results": [
+                    {
+                        "url": "https://source.example/page",
+                        "title": "中山纪念堂",
+                        "content": "中山纪念堂位于广州。",
+                    }
+                ]
+            }
+        ]},
         query="广州近代建筑",
     )
     decision = evaluate_candidate(candidate("中山纪念堂"), context)
     assert decision.status == "keep"
-    assert decision.reason in ("context_match", "context_entity_rescue")
+    assert decision.reason == "context_match"
     assert 1 in decision.matched_sections
 
 
@@ -163,7 +183,7 @@ def test_context_match_zhongshan_via_search_content():
                 {
                     "search_results": [
                         {
-                            "url": "https://src/page",
+                            "url": "https://source.example/page",
                             "title": "中山纪念堂位于广州，是广州近代著名建筑。",
                             "content": "中山纪念堂位于广州，是广州近代著名建筑。",
                         }
@@ -175,7 +195,7 @@ def test_context_match_zhongshan_via_search_content():
     )
     decision = evaluate_candidate(candidate("中山纪念堂"), context)
     assert decision.status == "keep"
-    assert decision.reason in ("context_match", "context_entity_rescue")
+    assert decision.reason == "context_match"
 
 
 # ---------------------------------------------------------------------------
@@ -183,7 +203,13 @@ def test_context_match_zhongshan_via_search_content():
 # ---------------------------------------------------------------------------
 
 
-def test_context_entity_rescues_source_mapping_miss():
+def test_context_url_not_in_section_sources_is_dropped():
+    """Without section-source match, a context-relevant alt cannot be kept.
+
+    This replaces the legacy `context_entity_rescue` path: the strict
+    gate requires the image's source URL to appear in the
+    section-source map.
+    """
     context = build_report_entity_context(
         "# 广州建筑\n## 广州塔\n广州塔位于广州。",
         {"findings": []},
@@ -193,8 +219,8 @@ def test_context_entity_rescues_source_mapping_miss():
         candidate("广州塔珠江夜景", "https://unmapped.example/photo"),
         context,
     )
-    assert decision.status == "keep"
-    assert decision.reason == "context_entity_rescue"
+    assert decision.status == "drop"
+    assert decision.reason == "drop_source_url_not_cited"
 
 
 # ---------------------------------------------------------------------------
@@ -259,11 +285,22 @@ def test_whitespace_only_alt_is_dropped():
 def test_named_entity_confirmed_by_section_is_kept():
     context = build_report_entity_context(
         "# 广州近代建筑\n## 中山纪念堂\n中山纪念堂位于广州。",
-        {"findings": []},
+        {"findings": [
+            {
+                "search_results": [
+                    {
+                        "url": "https://source.example/page",
+                        "title": "中山纪念堂",
+                        "content": "中山纪念堂位于广州。",
+                    }
+                ]
+            }
+        ]},
         query="广州近代建筑",
     )
     decision = evaluate_candidate(candidate("中山纪念堂"), context)
     assert decision.status == "keep"
+    assert decision.reason == "context_match"
     assert 1 in decision.matched_sections
 
 
@@ -351,7 +388,17 @@ def test_long_english_anchor_still_keeps_candidate():
     """An English name long enough (>=4 letters) still anchors properly."""
     context = build_report_entity_context(
         "# Guangzhou sightseeing\n## Canton Tower\nCanton Tower info.",
-        {"findings": []},
+        {"findings": [
+            {
+                "search_results": [
+                    {
+                        "url": "https://source.example/page",
+                        "title": "Canton Tower",
+                        "content": "Canton Tower info.",
+                    }
+                ]
+            }
+        ]},
         query="Guangzhou sightseeing",
     )
     decision = evaluate_candidate(
@@ -359,6 +406,7 @@ def test_long_english_anchor_still_keeps_candidate():
         context,
     )
     assert decision.status == "keep"
+    assert decision.reason == "context_match"
 
 
 # ---------------------------------------------------------------------------
@@ -369,7 +417,17 @@ def test_long_english_anchor_still_keeps_candidate():
 def test_decision_is_dataclass_with_required_fields():
     context = build_report_entity_context(
         "# 广州建筑\n## 广州塔\n广州塔。",
-        {"findings": []},
+        {"findings": [
+            {
+                "search_results": [
+                    {
+                        "url": "https://source.example/page",
+                        "title": "广州塔",
+                        "content": "广州塔。",
+                    }
+                ]
+            }
+        ]},
         query="广州建筑",
     )
     decision = evaluate_candidate(candidate("广州塔"), context)

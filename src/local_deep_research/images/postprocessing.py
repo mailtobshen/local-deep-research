@@ -19,13 +19,13 @@ from .relevance import (
 
 ENTITY_REASON_KEYS: tuple[str, ...] = (
     "keep_context_match",
-    "keep_context_rescue",
     "drop_missing_alt",
     "drop_no_named_entity",
     "drop_entity_extraction_failed",
     "drop_foreign_entity_conflict",
     "drop_unrelated_named_entity",
     "drop_unresolved_entity_relation",
+    "drop_source_url_not_cited",
     "drop_context_build_failed",
 )
 from .serialize import loads_images

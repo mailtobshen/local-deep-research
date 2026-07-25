@@ -271,6 +271,89 @@ def _split_sections(markdown: str) -> list[Tuple[str, str]]:
 
 
 # ---------------------------------------------------------------------------
+# Section-scoped source URL extraction
+# ---------------------------------------------------------------------------
+
+
+def _match_terms(text: str) -> set[str]:
+    """Tokenize CJK/Latin text for section-vs-search-result overlap scoring."""
+    if not text:
+        return set()
+    out: set[str] = set()
+    for span in re.findall(r"[一-鿿A-Za-z0-9]{2,}", text):
+        out.add(span)
+    for ch in text:
+        if "一" <= ch <= "鿿":
+            out.add(ch)
+    return out
+
+
+def _score_match(a: set[str], b: set[str]) -> int:
+    if not a or not b:
+        return 0
+    score = len(a & b)
+    return score
+
+
+def extract_segment_sources(
+    markdown: str, results, top_n: int = 3
+) -> list[tuple[str, str, list[str]]]:
+    """Map each ``##`` section to the top-N search_result URLs whose
+    title/content/snippet overlap with the section heading + body.
+
+    Sections whose text matches no candidate inherit the previous
+    section's allow-list so an orphan section between two matched
+    ones still has authoritative URLs to cite. Returns ``[]`` when
+    ``results`` carries no ``search_results``.
+    """
+    if not isinstance(results, dict):
+        return []
+    candidates: list[dict] = []
+    for finding in results.get("findings", []) or []:
+        if not isinstance(finding, dict):
+            continue
+        for sr in finding.get("search_results", []) or []:
+            if not isinstance(sr, dict):
+                continue
+            url = sr.get("link") or sr.get("url")
+            if not url:
+                continue
+            candidates.append(
+                {
+                    "url": url,
+                    "title": sr.get("title") or sr.get("source_title") or "",
+                    "content": sr.get("content") or sr.get("snippet") or "",
+                    "snippet": sr.get("snippet") or "",
+                }
+            )
+    if not candidates:
+        return []
+
+    sections = _split_sections(markdown)
+    out: list[tuple[str, str, list[str]]] = []
+    inherited: list[str] = []
+    for heading, body in sections:
+        section_text = re.sub(r"^##\s+", "", heading) + "\n" + body
+        section_terms = _match_terms(section_text)
+        if not section_terms:
+            out.append((heading, body, list(inherited)))
+            continue
+        scored: list[tuple[int, str]] = []
+        for c in candidates:
+            cand_terms = _match_terms(
+                " ".join([c["title"], c["content"], c["snippet"]])
+            )
+            scored.append((_score_match(section_terms, cand_terms), c["url"]))
+        scored.sort(key=lambda x: x[0], reverse=True)
+        allowed = [url for score, url in scored if score > 0][:top_n]
+        if not allowed:
+            allowed = list(inherited)
+        out.append((heading, body, allowed))
+        inherited = allowed
+    return out
+
+
+# ---------------------------------------------------------------------------
 # Named-entity extraction
 # ---------------------------------------------------------------------------
 
@@ -615,24 +698,25 @@ def evaluate_candidate(
     # matching.
     def _anchored(ent: str) -> bool:
         # Require a *substantial* entity as the anchor: either a CJK
-        # proper-name span, or an English/Latin span of at least four
-        # letters/digits. Short English tokens such as "Asia", "LZW",
-        # "March", "Photo" are not substantial — they match too
-        # loosely and produce false-positive anchors (e.g. a candidate
-        # alt of `Photo by LZW on March 21, 2015.` would otherwise be
-        # anchored against any report that happens to mention `Asia`).
-        if ent in context.all_entities:
-            return _is_substantial(ent)
-
-        def _substantial(span: str) -> bool:
+        # proper-name span (>=3 chars), or an English/Latin span of
+        # at least 5 letters/digits. Short English tokens such as
+        # "Asia", "LZW", "March", "Photo" are not substantial — they
+        # match too loosely and produce false-positive anchors (e.g.
+        # a candidate alt of `Photo by LZW on March 21, 2015.` would
+        # otherwise be anchored against any report that happens to
+        # mention `Asia`).
+        def _is_substantial(span: str) -> bool:
             if not span:
                 return False
             if re.search(r"[一-鿿]", span):
                 return len(span) >= 3
             return len(span) >= 5
 
+        if ent in context.all_entities:
+            return _is_substantial(ent)
+
         for ce in context.all_entities:
-            if not _substantial(ce):
+            if not _is_substantial(ce):
                 continue
             if ce in ent or ent in ce:
                 return True
@@ -709,8 +793,12 @@ def evaluate_candidate(
             ents=entities,
         )
 
-    # Step 5: rescue vs. context_match. If source URL is not represented
-    # in the section-source mapping, fall back to context_entity_rescue.
+    # Step 5: source URL must be one of the section sources actually cited
+    # in the Markdown. Without this constraint, an alt that happens to
+    # mention a context entity could pass the gate even when its page is
+    # unrelated to anything the report cites (e.g. an Instagram photo
+    # that name-drops a Guangzhou landmark). We require exact match
+    # against any section source URL.
     norm_source = _normalize_url(candidate.source_url)
     source_mapped = False
     if norm_source:
@@ -718,9 +806,13 @@ def evaluate_candidate(
             if _normalize_url(url) == norm_source:
                 source_mapped = True
                 break
-    keep_reason = (
-        "context_match" if source_mapped or not norm_source else "context_entity_rescue"
-    )
+    if not source_mapped:
+        return _drop(
+            "drop_source_url_not_cited",
+            evidence=(candidate.source_url or "",),
+            ents=entities,
+        )
+    keep_reason = "context_match"
 
     return ImageRelevanceDecision(
         url=candidate.url,
