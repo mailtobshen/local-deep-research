@@ -1,7 +1,7 @@
 """In-memory aggregator for extracted images during one research run."""
 from __future__ import annotations
 
-from typing import Dict, List
+from typing import Dict, Iterable, List
 
 from loguru import logger
 
@@ -53,3 +53,10 @@ class ImageBank:
 
     def all_urls(self) -> List[str]:
         return list(self._by_url.keys())
+
+    def subset(self, urls: Iterable[str]) -> "ImageBank":
+        selected = ImageBank()
+        selected.add(
+            [self._by_url[url] for url in urls if url in self._by_url]
+        )
+        return selected

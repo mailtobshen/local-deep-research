@@ -59,7 +59,9 @@ def test_vision_triggered_when_with_alt_below_threshold():
     vision = MagicMock()
     vision.enabled = True
     vision.describe.return_value = "described"
-    ImageEnhancer(llm, vision).enhance("# R", bank)
+    # allow_vision_fill=True to exercise the legacy Vision-fill path
+    # that the report path now disables.
+    ImageEnhancer(llm, vision, allow_vision_fill=True).enhance("# R", bank)
     assert vision.describe.call_count == 5
 
 
@@ -78,7 +80,9 @@ def test_vision_skipped_when_bank_already_rich():
     vision = MagicMock()
     vision.enabled = True
     vision.describe.return_value = "described"
-    ImageEnhancer(llm, vision).enhance("# R\n\nbody", bank)
+    ImageEnhancer(llm, vision, allow_vision_fill=True).enhance(
+        "# R\n\nbody", bank
+    )
     vision.describe.assert_not_called()
 
 
@@ -96,7 +100,9 @@ def test_vision_caps_at_limit():
     vision = MagicMock()
     vision.enabled = True
     vision.describe.return_value = "described"
-    ImageEnhancer(llm, vision, cap=cap).enhance("# R", bank)
+    ImageEnhancer(
+        llm, vision, cap=cap, allow_vision_fill=True
+    ).enhance("# R", bank)
     assert vision.describe.call_count == cap
 
 
@@ -114,5 +120,26 @@ def test_vision_thresholds_are_overridable_per_instance():
     vision = MagicMock()
     vision.enabled = True
     vision.describe.return_value = "described"
-    ImageEnhancer(llm, vision, min_alt_count=5, cap=2).enhance("# R", bank)
+    ImageEnhancer(
+        llm, vision, min_alt_count=5, cap=2, allow_vision_fill=True
+    ).enhance("# R", bank)
     assert vision.describe.call_count == 2
+
+
+
+def test_enhancer_default_disables_vision_fill():
+    """The strict default is `allow_vision_fill=False`: the bank is below
+    the min-alt-count threshold but Vision must NOT be invoked."""
+    bank = ImageBank()
+    # 2 with-alt + 5 without \u2014 triggers the Vision branch when allowed.
+    bank.add(
+        [_img(f"https://real/{i}.jpg", "alt") for i in range(2)]
+        + [_img(f"https://real/n{i}.jpg", "") for i in range(5)]
+    )
+    llm = MagicMock()
+    llm.invoke.return_value = MagicMock(content="# R\n")
+    vision = MagicMock()
+    vision.enabled = True
+    vision.describe.return_value = "described"
+    ImageEnhancer(llm, vision).enhance("# R", bank)
+    vision.describe.assert_not_called()

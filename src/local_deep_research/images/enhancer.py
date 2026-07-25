@@ -58,11 +58,18 @@ class ImageEnhancer:
         vision: VisionDescriber,
         min_alt_count: int = DEFAULT_VISION_MIN_ALT_TRIGGER,
         cap: int = DEFAULT_VISION_CAP,
+        allow_vision_fill: bool = False,
     ) -> None:
         self.llm = llm
         self.vision = vision
         self.min_alt_count = min_alt_count
         self.cap = cap
+        # When False (the strict default), the report-path caller has
+        # already filtered candidates through the context-entity gate
+        # and running the Vision describer is unwanted drift. Tests
+        # that exercise the legacy Vision-fill path must opt in
+        # explicitly.
+        self.allow_vision_fill = allow_vision_fill
 
     def _vision_fill(self, bank: ImageBank) -> None:
         total_without_alt = len(bank.candidates_without_alt(limit=10**9))
@@ -117,9 +124,13 @@ class ImageEnhancer:
         candidates = bank.candidates_with_alt()
         # Vision fill when the bank is already rich would be wasted cost —
         # only run it when we genuinely lack alt coverage AND a vision model
-        # is configured.
+        # is configured. The strict-context-entity report path sets
+        # `allow_vision_fill=False` so the post-gate bank is passed through
+        # verbatim — Vision calls would re-introduce the alts the gate
+        # rejected and undermine the gate's fail-closed guarantee.
         if (
-            len(candidates) <= self.min_alt_count
+            self.allow_vision_fill
+            and len(candidates) <= self.min_alt_count
             and self.vision.enabled
         ):
             self._vision_fill(bank)

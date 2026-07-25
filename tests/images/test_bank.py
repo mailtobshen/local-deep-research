@@ -27,3 +27,17 @@ def test_without_alt_respects_limit():
     b = ImageBank()
     b.add([_img(f"https://x/{i}.jpg", "") for i in range(50)])
     assert len(b.candidates_without_alt(limit=20)) == 20
+
+
+def image(url):
+    return ExtractedImage(url, "广州塔", "https://source", "", None, None)
+
+
+def test_subset_preserves_order_and_does_not_expose_private_map():
+    bank = ImageBank()
+    bank.add([image("https://a"), image("https://b")])
+
+    subset = bank.subset(["https://b", "https://missing", "https://a"])
+
+    assert subset.all_urls() == ["https://b", "https://a"]
+    assert subset.candidates_with_alt()[0].url == "https://b"
