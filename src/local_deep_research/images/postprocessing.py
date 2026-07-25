@@ -10,6 +10,7 @@ from loguru import logger
 
 from .bank import ImageBank
 from .enhancer import DEFAULT_VISION_CAP, DEFAULT_VISION_MIN_ALT_TRIGGER, ImageEnhancer
+from .relevance import build_report_entity_context, evaluate_candidate
 from .serialize import loads_images
 from .store import ImageStore, _IMG_RE
 from .vision import VisionDescriber
@@ -120,6 +121,46 @@ def enhance_report_with_images(
             logger.info(f"[IMG-TRACE] END research={research_id} status=empty")
             return clean_markdown
 
+        # Strict context-entity gate. Every raw candidate is evaluated
+        # against the current-run report context; only kept URLs flow
+        # downstream to the LLM enhancer and the persistence path.
+        # Vision is intentionally NOT invoked from the report path —
+        # candidates whose alt was rejected by the gate are not re-
+        # described behind the gate's back.
+        query = ""
+        if isinstance(results, dict):
+            query = results.get("research_query") or ""
+        context = build_report_entity_context(
+            clean_markdown, results, query=query
+        )
+        raw_candidates = bank.candidates_with_alt()
+        decisions = [evaluate_candidate(c, context) for c in raw_candidates]
+        reason_counts: Dict[str, int] = {}
+        for d in decisions:
+            reason_counts[d.reason] = reason_counts.get(d.reason, 0) + 1
+        kept_urls = [d.url for d in decisions if d.status == "keep"]
+        logger.info(
+            f"[IMG-TRACE] ENTITY_GATE research={research_id} "
+            f"raw={len(raw_candidates)} kept={len(kept_urls)} "
+            f"reasons={dict(sorted(reason_counts.items()))}"
+        )
+        eligible_bank = bank.subset(kept_urls)
+        logger.info(
+            f"[IMG-TRACE] ELIGIBLE_BANK research={research_id} "
+            f"total={len(eligible_bank.all_urls())}"
+        )
+        if not eligible_bank.all_urls():
+            logger.info(
+                f"[IMG-TRACE] SECTION_FALLBACK research={research_id} "
+                f"status=disabled"
+            )
+            logger.info(f"[IMG-TRACE] END research={research_id} status=empty")
+            return clean_markdown
+        logger.info(
+            f"[IMG-TRACE] SECTION_FALLBACK research={research_id} "
+            f"status=disabled"
+        )
+
         llm = get_llm()
         vision = VisionDescriber(
             model_name=vision_model,
@@ -135,8 +176,9 @@ def enhance_report_with_images(
                 else DEFAULT_VISION_MIN_ALT_TRIGGER
             ),
             cap=vision_cap if vision_cap is not None else DEFAULT_VISION_CAP,
+            allow_vision_fill=False,
         )
-        enhanced = enhancer.enhance(clean_markdown, bank)
+        enhanced = enhancer.enhance(clean_markdown, eligible_bank)
 
         # Enforce "each URL at most once" deterministically. The LLM
         # prompt says it but doesn't guarantee it — generic alt text
@@ -151,6 +193,18 @@ def enhance_report_with_images(
 
         # Persist the real URLs that survived into the enhanced markdown.
         chosen = [m.group(2) for m in _IMG_RE.finditer(enhanced)]
+        # Drop any URL the enhancer surfaced that is NOT in the eligible
+        # bank — the gate already said "no", and persisting it would
+        # silently re-introduce the candidate the gate rejected.
+        eligible_urls = set(eligible_bank.all_urls())
+        kept_chosen = [u for u in chosen if u in eligible_urls]
+        dropped_chosen = [u for u in chosen if u not in eligible_urls]
+        if dropped_chosen:
+            logger.info(
+                f"[IMG-TRACE] CHOSEN_DROP research={research_id} "
+                f"count={len(dropped_chosen)}"
+            )
+        chosen = kept_chosen
         _shown = ",".join(chosen[:10]) + (
             f" +{len(chosen) - 10}_more" if len(chosen) > 10 else ""
         )
@@ -161,14 +215,14 @@ def enhance_report_with_images(
         store = ImageStore(
             research_id, db_session, firecrawl_client=firecrawl_client
         )
-        # Pull alt + source-page metadata from the bank for each chosen URL
-        # so DB records (research_images.alt/source_url/source_title) are
-        # populated for post-hoc analysis (e.g. re-fetching source HTML to
-        # backfill alt for past research).
+        # Pull alt + source-page metadata from the eligible bank for each
+        # chosen URL so DB records (research_images.alt/source_url/
+        # source_title) are populated for post-hoc analysis (e.g.
+        # re-fetching source HTML to backfill alt for past research).
         url_to_meta = {
-            url: bank._by_url[url]
+            url: eligible_bank._by_url[url]
             for url in chosen
-            if url in bank._by_url
+            if url in eligible_bank._by_url
         }
         url_to_alt = {u: m.alt for u, m in url_to_meta.items() if m.alt}
         url_to_source = {
