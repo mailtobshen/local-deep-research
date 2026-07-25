@@ -395,7 +395,7 @@ def test_postprocessing_builds_enhancer_with_vision_fill_disabled():
 
 def test_entity_gate_reason_keys_complete():
     from local_deep_research.images.postprocessing import ENTITY_REASON_KEYS
-    assert set(ENTITY_REASON_KEYS) == {
+    assert ENTITY_REASON_KEYS == (
         "keep_context_match",
         "keep_context_rescue",
         "drop_missing_alt",
@@ -405,7 +405,7 @@ def test_entity_gate_reason_keys_complete():
         "drop_unrelated_named_entity",
         "drop_unresolved_entity_relation",
         "drop_context_build_failed",
-    }
+    )
 
 
 def test_vague_alt_resolves_to_unresolved_entity_relation_end_to_end():
@@ -424,7 +424,8 @@ def test_vague_alt_resolves_to_unresolved_entity_relation_end_to_end():
     }]
     with patch.object(postprocessing, "ImageEnhancer") as enhancer_cls, \
          patch.object(postprocessing, "ImageStore") as store_cls, \
-         patch.object(postprocessing, "VisionDescriber"):
+         patch.object(postprocessing, "VisionDescriber"), \
+         patch.object(postprocessing.logger, "info") as log_info:
         enhancer_cls.return_value.enhance.return_value = "# r"
         store_cls.return_value.persist.return_value = {}
         out = enhance_report_with_images(
@@ -437,6 +438,14 @@ def test_vague_alt_resolves_to_unresolved_entity_relation_end_to_end():
         )
     assert out == "# 广州建筑\n## 广州塔\n介绍"
     enhancer_cls.assert_not_called()
+    joined = "\n".join(call.args[0] for call in log_info.call_args_list)
+    assert "[IMG-TRACE] ENTITY_GATE" in joined
+    for key in (
+        "keep_context_match=",
+        "drop_foreign_entity_conflict=",
+        "drop_unresolved_entity_relation=",
+    ):
+        assert key in joined
 
 
 def test_chongqing_instagram_source_filtered_by_gate():
