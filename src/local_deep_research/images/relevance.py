@@ -614,10 +614,27 @@ def evaluate_candidate(
     # `广州塔珠江夜景`), ignore them and proceed with anchored-only
     # matching.
     def _anchored(ent: str) -> bool:
+        # Require a *substantial* entity as the anchor: either a CJK
+        # proper-name span, or an English/Latin span of at least four
+        # letters/digits. Short English tokens such as "Asia", "LZW",
+        # "March", "Photo" are not substantial — they match too
+        # loosely and produce false-positive anchors (e.g. a candidate
+        # alt of `Photo by LZW on March 21, 2015.` would otherwise be
+        # anchored against any report that happens to mention `Asia`).
         if ent in context.all_entities:
-            return True
+            return _is_substantial(ent)
+
+        def _substantial(span: str) -> bool:
+            if not span:
+                return False
+            if re.search(r"[一-鿿]", span):
+                return len(span) >= 2
+            return len(span) >= 4
+
         for ce in context.all_entities:
-            if ce and len(ce) >= 3 and (ce in ent or ent in ce):
+            if not _substantial(ce):
+                continue
+            if ce in ent or ent in ce:
                 return True
         return False
 

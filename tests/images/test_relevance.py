@@ -279,6 +279,89 @@ def test_named_entity_without_current_context_is_rejected():
 
 
 # ---------------------------------------------------------------------------
+# Regression: short English tokens must not be a sufficient anchor
+# ---------------------------------------------------------------------------
+
+
+def test_short_english_anchor_does_not_keep_photo_by_lzw():
+    """`Asia`, `LZW`, `March`, `Photo` are too generic to anchor a candidate.
+
+    Even when the report context mentions `Asian Elephants ... Guangzhou`,
+    a candidate whose alt is only `Photo by LZW on March 21, 2015.` must
+    be rejected. The loose-substring match against `Asia` is exactly the
+    bug the strict gate should not tolerate.
+    """
+    context = build_report_entity_context(
+        "# 广州旅游\n## 广州景点\n广州塔介绍。",
+        {
+            "findings": [
+                {
+                    "search_results": [
+                        {
+                            "url": "https://blog.axiaoxin.com/post/gz-chimelong-safari-park-en/",
+                            "title": "Asian Elephants at Guangzhou Chimelong Safari Park",
+                            "content": "Asian Elephants at Guangzhou Chimelong Safari Park",
+                        }
+                    ]
+                }
+            ]
+        },
+        query="广州旅游",
+    )
+    decision = evaluate_candidate(
+        candidate("Photo by LZW on March 21, 2015."),
+        context,
+    )
+    assert decision.status == "drop"
+    assert decision.reason in ("foreign_entity_conflict", "unresolved_entity_relation")
+
+
+def test_new_asia_life_magazine_anchor_does_not_keep_candidate():
+    """`Asia` in `New Asia Life Monthly Magazine` must not count as anchor
+    even when the report contains `Asian Elephants ... Guangzhou`.
+    """
+    context = build_report_entity_context(
+        "# 广州旅游\n## 广州景点\n广州塔介绍。",
+        {
+            "findings": [
+                {
+                    "search_results": [
+                        {
+                            "url": "https://blog.axiaoxin.com/post/gz-chimelong-safari-park-en/",
+                            "title": "Asian Elephants at Guangzhou Chimelong Safari Park",
+                        }
+                    ]
+                }
+            ]
+        },
+        query="广州旅游",
+    )
+    decision = evaluate_candidate(
+        candidate(
+            "《新亞生活》周刊（2008-09）New Asia Life Monthly Magazine (2008-09)",
+            "https://fliphtml5.com/xhegu/rafe/.../",
+        ),
+        context,
+    )
+    assert decision.status == "drop"
+    assert decision.reason in ("foreign_entity_conflict", "unresolved_entity_relation")
+
+
+def test_long_english_anchor_still_keeps_candidate():
+    """An English name long enough (>=4 letters) still anchors properly."""
+    context = build_report_entity_context(
+        "# Guangzhou sightseeing\n## Canton Tower\nCanton Tower info.",
+        {"findings": []},
+        query="Guangzhou sightseeing",
+    )
+    decision = evaluate_candidate(
+        candidate("Canton Tower at night"),
+        context,
+    )
+    assert decision.status == "keep"
+
+
+# ---------------------------------------------------------------------------
 # Sanity checks on the dataclass surface
 # ---------------------------------------------------------------------------
 
