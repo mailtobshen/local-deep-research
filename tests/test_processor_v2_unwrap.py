@@ -42,12 +42,16 @@ def test_new_structure_normal():
 
 
 def test_legacy_structure_compatibility():
-    """Legacy shape: pass-through, empty submission."""
+    """Legacy shape: pass-through to both slots (submission-time fields live
+    in the same flattened dict as settings fields)."""
     qp = QueueProcessorV2.__new__(QueueProcessorV2)
     legacy = {"report.enable_images": {"value": True}}
     snapshot, submission = qp._unwrap_research_settings(legacy)
     assert snapshot == {"report.enable_images": {"value": True}}
-    assert submission == {}
+    # Legacy contract: same dict in both slots so downstream
+    # `submission_params.get("model_provider")` finds values that were
+    # stored flat in the legacy QueuedResearch row.
+    assert submission == legacy
 
 
 def test_none_input():
@@ -209,7 +213,13 @@ def test_path_b_new_structure_unwrapped():
 
 
 def test_path_b_legacy_structure_backward_compat():
-    """Path B with legacy-structure QueuedResearch row: passthrough."""
+    """Path B with legacy-structure QueuedResearch row: passthrough.
+
+    Legacy rows had submission-time fields (model_provider, model, etc.)
+    flattened into the same dict as settings. Both slots must therefore
+    receive the full dict so downstream start_research_process kwargs
+    resolve correctly.
+    """
     qp = QueueProcessorV2.__new__(QueueProcessorV2)
 
     legacy_queued = {"report.enable_images": {"value": True}}
@@ -219,4 +229,4 @@ def test_path_b_legacy_structure_backward_compat():
     )
 
     assert inner_snapshot == {"report.enable_images": {"value": True}}
-    assert submission_params == {}
+    assert submission_params == legacy_queued

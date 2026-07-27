@@ -361,7 +361,9 @@ class QueueProcessorV2:
             (settings_snapshot, submission_params) 两个 dict：
               - settings_snapshot: 内层 {key: val}（线程参数用）
               - submission_params: {model_provider, model, ...}（start_research_process
-                显式参数用；旧结构时为 {}）
+                显式参数用）。旧结构时 submission_params 与 settings_snapshot
+                同一 dict——因为旧结构把 submission-time 字段（model_provider 等）
+                与 settings 字段直接混在同一层，必须两份都拿到才能兼容。
 
         不抛异常——异常形状仅记日志。
         """
@@ -395,8 +397,9 @@ class QueueProcessorV2:
                 settings_snapshot = {}
             return settings_snapshot, submission_params
 
-        # 旧结构: 直接 {key: val}，原样透传
-        return research_settings, {}
+        # 旧结构: 直接 {key: val}，submission-time 字段与 settings 字段混在一起，
+        # 原样透传到两个 slot——保持与重构前 inline 逻辑一致。
+        return research_settings, research_settings
 
     def _start_research_directly(
         self, username: str, research_id: str, password: str, **kwargs
