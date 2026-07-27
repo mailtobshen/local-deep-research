@@ -827,7 +827,9 @@ def start_research():
             logger.warning("Could not save research strategy")
 
         # Debug logging for settings snapshot
-        snapshot_data = research_settings.get("settings_snapshot", {})
+        snapshot_data, _ = queue_processor._unwrap_research_settings(
+            research_settings
+        )
         log_settings(snapshot_data, "Settings snapshot being passed to thread")
         if "search.tool" in snapshot_data:
             logger.debug(
