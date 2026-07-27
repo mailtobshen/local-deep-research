@@ -66,17 +66,17 @@ def test_empty_dict_input():
     assert submission == {}
 
 
-def test_submission_not_a_dict_warns(caplog):
+def test_submission_not_a_dict_warns(loguru_caplog):
     """submission present but not dict → warn + empty submission_params."""
     qp = QueueProcessorV2.__new__(QueueProcessorV2)
     weird = {
         "submission": "not-a-dict",
         "settings_snapshot": {"report.enable_images": {"value": True}},
     }
-    with caplog.at_level(logging.WARNING):
+    with loguru_caplog.at_level(logging.WARNING):
         snapshot, submission = qp._unwrap_research_settings(weird)
     assert submission == {}
-    assert "submission is not a dict" in caplog.text
+    assert "submission is not a dict" in loguru_caplog.text
     # settings_snapshot should still be returned
     assert snapshot == {"report.enable_images": {"value": True}}
 
@@ -132,7 +132,7 @@ def test_path_c_unwrap_inner_snapshot_reaches_start_research_process(monkeypatch
         False,
         settings_snapshot=inner_snapshot,
     )
-    assert enable_images is True
+    assert enable_images
     assert submission_params == {"model_provider": "openai"}
 
 
