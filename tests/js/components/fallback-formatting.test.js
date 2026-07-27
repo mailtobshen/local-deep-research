@@ -91,6 +91,16 @@ describe('fallback formatting', () => {
         it('handles zero seconds', () => {
             expect(fallbackFormatting.formatDuration(0)).toBe('0s');
         });
+
+        it('formats hours, minutes, and seconds when >= 1 hour', () => {
+            expect(fallbackFormatting.formatDuration(3600)).toBe('1h 0m 0s');
+            expect(fallbackFormatting.formatDuration(3661)).toBe('1h 1m 1s');
+            expect(fallbackFormatting.formatDuration(7200)).toBe('2h 0m 0s');
+        });
+
+        it('stays in minutes-and-seconds form just under one hour', () => {
+            expect(fallbackFormatting.formatDuration(3599)).toBe('59m 59s');
+        });
     });
 
     describe('formatFileSize', () => {
