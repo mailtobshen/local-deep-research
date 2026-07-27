@@ -1251,6 +1251,11 @@ def run_research_process(research_id, query, mode, **kwargs):
                                     vision_cap=vision_cap,
                                     firecrawl_client=firecrawl_client,
                                 )
+                        else:
+                            logger.info(
+                                "[IMG-TRACE] SKIP research=%s reason=enable_images=False",
+                                research_id,
+                            )
                     except Exception:
                         logger.exception(
                             "Image enhancement step failed; continuing with text-only report"
