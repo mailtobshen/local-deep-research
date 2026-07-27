@@ -192,6 +192,31 @@ def temp_data_dir():
 
 
 @pytest.fixture(autouse=True)
+def isolated_lrd_data_dir(monkeypatch, tmp_path):
+    """Force every test to use a fresh per-test data directory.
+
+    Without this, tests/ui_tests/*.py are live-server integration scripts
+    that hit a long-running ``ldr-web`` on 127.0.0.1:5000 and register
+    random users, leaving behind real per-user encrypted databases under
+    the host's default ``LDR_DATA_DIR`` (typically
+    ``~/.local/share/local-deep-research/encrypted_databases/``).
+    Observed: 1174 files / 1.4G accumulated before this fixture existed.
+
+    This fixture points ``LDR_DATA_DIR`` at pytest's per-test tmp_path so
+    test-side database writes never escape into the host's real data
+    directory, regardless of whether the test path-A-creates-db directly
+    or path-B-posts-to-a-live-server.
+
+    Test code that needs the temp dir explicitly should still request
+    ``temp_data_dir``; this fixture is purely an isolation backstop.
+    """
+    data_dir = tmp_path / "lrd_data"
+    data_dir.mkdir()
+    monkeypatch.setenv("LDR_DATA_DIR", str(data_dir))
+    yield
+
+
+@pytest.fixture(autouse=True)
 def cleanup_database_connections():
     """Clean up database connections before and after each test.
 
