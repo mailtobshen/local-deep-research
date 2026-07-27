@@ -33,7 +33,7 @@ C 是后加的，漏了。
 
 ### 新组件
 
-`processor_v2.py` 内 `QueueProcessor` 类新增私有方法：
+`processor_v2.py` 内 `QueueProcessorV2` 类新增私有方法：
 
 ```python
 def _unwrap_research_settings(
@@ -51,7 +51,10 @@ def _unwrap_research_settings(
       - settings_snapshot: 内层 {key: val}（线程用）
       - submission_params: {model_provider, model, custom_endpoint, ...}
         （start_research_process 显式参数用）
-        旧结构时为 {}
+        旧结构时返回 `(research_settings, research_settings)`——同一 dict
+        透传到两个 slot，因为旧结构 QueuedResearch 行把 submission-time 字段
+        （model_provider 等）与 settings 字段直接混在同一层，必须两份都拿到
+        才能兼容历史数据。
 
     不抛异常；异常形状仅记日志，不阻塞调用。
     """
@@ -72,7 +75,7 @@ def _unwrap_research_settings(
 | `research_settings = None` | 返回 `({}, {})` | debug |
 | `research_settings = {}` | 返回 `({}, {})` | debug |
 | 新结构但 `submission` 不是 dict | 返回 `(内层, {})` | warn |
-| 旧结构（无 `submission` key） | 返回 `(research_settings, {})` | 无（合法形状） |
+| 旧结构（无 `submission` key） | 返回 `(research_settings, research_settings)` | 无（合法形状） |
 
 沿用 `processor_v2.py` 已有模块 logger，不引入新 logger。
 
@@ -82,7 +85,7 @@ def _unwrap_research_settings(
 
 **A. 工具函数单元测试**（6 个）
 1. 新结构正常：`(内层, submission)`
-2. 旧结构兼容：`(原 dict, {})`
+2. 旧结构兼容：`(原 dict, 原 dict)`（同一 dict 透传到两个 slot）
 3. None 输入：`({}, {})` + 不抛
 4. 空 dict：`({}, {})` + 不抛
 5. 异常形状（`submission` 不是 dict）：fallback + warn 日志
