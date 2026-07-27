@@ -114,8 +114,9 @@ services:
         hard: -1
 
     # 最小权限 (与仓库默认一致; entrypoint root 阶段需要这些 cap, 之后降权到 ldruser)
-    security_opt:
-      - "no-new-privileges:true"
+    # security_opt / cap_drop / cap_add 全部继承 docker-compose.yml 基类,
+    # 此处若重复定义 security_opt 会触发 Compose 列表合并校验:
+    # "items at 0 and 1 are equal"
     cap_drop:
       - ALL
     cap_add:
