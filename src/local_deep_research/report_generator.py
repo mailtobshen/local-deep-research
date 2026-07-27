@@ -182,7 +182,10 @@ class IntegratedReportGenerator:
 
         Make the structure specific to the content, not generic.
         Each subsection must include its purpose after the | symbol.
-        DO NOT include sections about sources, citations, references, or methodology.
+        DO NOT include sections about sources, citations, references, methodology,
+        scope, limitations, disclaimers, neutrality, privacy, academic integrity,
+        or compliance. None of those belong in the TOC of a research report —
+        they are filler.
         {self._get_language_directive()}"""
 
         response = search_utilities.remove_think_tags(
@@ -314,6 +317,45 @@ class IntegratedReportGenerator:
             f"CRITICAL: The above content has already been written. Do NOT repeat "
             f"these points, examples, or explanations. Focus on NEW information "
             f"not covered above.\n"
+        )
+
+    def _build_no_boilerplate_directive(self) -> str:
+        """Anti-boilerplate directive injected into every section/subsection prompt.
+
+        Detailed-mode reports tend to grow long stretches of meta-text
+        ("调查背景与范围界定", "信息局限性说明", "隐私保护原则",
+        "信息来源限制", "客观中立立场", "合法合规要求", "学术诚信",
+        etc.) when the LLM is asked to fill a section whose research output is
+        thin. These are NOT generated from any prompt in this codebase —
+        they are the model's own padding — and they have no value to the
+        reader. Forbid them explicitly.
+        """
+        return (
+            "\n\n=== OUTPUT RULES — READ CAREFULLY ===\n"
+            "1. Write ONLY content that directly answers the user's research "
+            "question. Every sentence must carry substantive information "
+            "(facts, data, named entities, dates, numbers, mechanisms, "
+            "trade-offs, examples).\n"
+            "2. Do NOT include any of the following 'boilerplate / disclaimer / "
+            "methodology' sections or sentences — none of them belong in a "
+            "research report:\n"
+            "   - '调查背景与范围界定' / '研究背景' / '调研背景'\n"
+            "   - '信息局限性说明' / '局限性' / '研究局限'\n"
+            "   - '隐私保护原则' / '隐私声明'\n"
+            "   - '信息来源限制' / '来源说明'\n"
+            "   - '客观中立立场' / '中立性声明'\n"
+            "   - '合法合规要求' / '合规说明'\n"
+            "   - '学术诚信' / '诚信声明'\n"
+            "   - '免责声明' / 'disclaimer' / 'caveats'\n"
+            "   - 'methodology' / 'scope and limitations' / 'note on sources'\n"
+            "   - Any paragraph that merely *declares* a principle, ethics "
+            "stance, or process without giving concrete findings.\n"
+            "3. If the research findings on a subsection are insufficient, "
+            "prefer saying briefly '*No reliable information was found on this "
+            "specific point.*' over filling the section with meta-commentary.\n"
+            "4. The reader does not need a methodology recap or a warning "
+            "about AI-generated text. Just deliver the answer.\n"
+            "=== END OF OUTPUT RULES ===\n\n"
         )
 
     def _research_and_generate_sections(
@@ -454,6 +496,7 @@ class IntegratedReportGenerator:
                         f"For conclusion sections: synthesize key findings and provide forward-looking insights. "
                         f"Build upon the research findings from earlier sections to create a cohesive narrative. "
                         f"{self._get_language_directive()}"
+                        f"{self._build_no_boilerplate_directive()}"
                     )
                 else:
                     # Subsection-level prompt - more focused
@@ -472,6 +515,7 @@ class IntegratedReportGenerator:
                         f"IMPORTANT: Avoid repeating information that would logically be covered in other sections - focus on what makes this subsection unique. "
                         f"Previous research exists - find specific angles for this subsection. "
                         f"{self._get_language_directive()}"
+                        f"{self._build_no_boilerplate_directive()}"
                     )
 
                 logger.info(
