@@ -1060,19 +1060,9 @@ class QueueProcessorV2:
         research.status = ResearchStatus.IN_PROGRESS
         db_session.commit()
 
-        # Extract settings
-        settings_snapshot = queued_research.settings_snapshot or {}
-
-        # Handle new vs legacy structure
-        if (
-            isinstance(settings_snapshot, dict)
-            and "submission" in settings_snapshot
-        ):
-            submission_params = settings_snapshot.get("submission", {})
-            complete_settings = settings_snapshot.get("settings_snapshot", {})
-        else:
-            submission_params = settings_snapshot
-            complete_settings = {}
+        complete_settings, submission_params = self._unwrap_research_settings(
+            queued_research.settings_snapshot
+        )
 
         try:
             research_thread = start_research_process(
