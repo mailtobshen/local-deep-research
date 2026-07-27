@@ -412,7 +412,8 @@ class QueueProcessorV2:
         """
         query = kwargs.get("query")
         mode = kwargs.get("mode")
-        settings_snapshot = kwargs.get("settings_snapshot", {})
+        outer_settings = kwargs.get("settings_snapshot", {})
+        settings_snapshot, _ = self._unwrap_research_settings(outer_settings)
 
         # Create active research record
         try:
@@ -422,7 +423,7 @@ class QueueProcessorV2:
                     research_id=research_id,
                     status=ResearchStatus.IN_PROGRESS,
                     thread_id="pending",
-                    settings_snapshot=settings_snapshot,
+                    settings_snapshot=outer_settings,
                 )
                 db_session.add(active_record)
                 db_session.commit()
