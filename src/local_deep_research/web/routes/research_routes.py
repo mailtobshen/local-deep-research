@@ -55,6 +55,7 @@ from ...database.session_context import get_g_db_session, get_user_db_session
 from ..auth.decorators import login_required
 from ..auth.password_utils import get_user_password
 from ..models.database import calculate_duration
+from ..queue.processor_v2 import queue_processor
 from ..services.research_service import (
     export_report_to_memory,
     run_research_process,
@@ -339,8 +340,6 @@ def _queue_research(
     logger.info(
         f"Queued research {research_id} at position {max_position + 1} for user {username}"
     )
-
-    from ..queue.processor_v2 import queue_processor
 
     queue_processor.notify_research_queued(
         username,

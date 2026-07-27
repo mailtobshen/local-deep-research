@@ -230,3 +230,29 @@ def test_path_b_legacy_structure_backward_compat():
 
     assert inner_snapshot == {"report.enable_images": {"value": True}}
     assert submission_params == legacy_queued
+
+
+# --- E. Import-scope regression test (1) ---
+
+
+def test_research_routes_queue_processor_module_scope():
+    """Regression: `queue_processor` must be reachable from start_research's
+    scope as a module-level name.
+
+    Bug introduced in Task 5: `queue_processor` was imported inside
+    `_queue_research()` only, so path A (direct-start in `start_research()`)
+    raised `NameError: name 'queue_processor' is not defined` at
+    research_routes.py:830.
+    """
+    from local_deep_research.web.routes import research_routes
+
+    # Module must have queue_processor at module scope (not function-local).
+    assert hasattr(research_routes, "queue_processor"), (
+        "queue_processor must be imported at module scope so that "
+        "start_research() (path A) can resolve it without a NameError"
+    )
+
+    # And it must reference the same processor_v2 instance (sanity).
+    from local_deep_research.web.queue.processor_v2 import queue_processor
+
+    assert research_routes.queue_processor is queue_processor
