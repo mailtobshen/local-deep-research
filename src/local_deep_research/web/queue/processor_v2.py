@@ -346,6 +346,58 @@ class QueueProcessorV2:
         except Exception:
             logger.exception(f"Failed to update queue status for {username}")
 
+    def _unwrap_research_settings(self, research_settings):
+        """Unwrap research_settings outer dict into (snapshot, submission).
+
+        research_settings 历史上承担两种语义——DB 持久化形态（嵌套结构）
+        和线程参数形态（内层 key-value）。所有路径在传给
+        start_research_process 之前都需要做这个转换。
+
+        Args:
+            research_settings: 外层 dict（新结构 {submission, system,
+                settings_snapshot, ...}），旧结构 {key: val}，或 None。
+
+        Returns:
+            (settings_snapshot, submission_params) 两个 dict：
+              - settings_snapshot: 内层 {key: val}（线程参数用）
+              - submission_params: {model_provider, model, ...}（start_research_process
+                显式参数用；旧结构时为 {}）
+
+        不抛异常——异常形状仅记日志。
+        """
+        if not research_settings:
+            logger.debug(
+                "unwrap: research_settings is empty or None, "
+                "returning empty snapshot"
+            )
+            return {}, {}
+
+        # 新结构: 有 submission key（即使 submission 不是 dict）
+        if "submission" in research_settings:
+            submission = research_settings.get("submission", {})
+            if not isinstance(submission, dict):
+                logger.warning(
+                    f"unwrap: research_settings.submission is not a "
+                    f"dict (got {type(submission).__name__}), "
+                    "using empty submission_params"
+                )
+                submission_params = {}
+            else:
+                submission_params = submission
+            settings_snapshot = research_settings.get("settings_snapshot", {})
+            if not isinstance(settings_snapshot, dict):
+                logger.warning(
+                    f"unwrap: research_settings.settings_snapshot "
+                    f"is not a dict (got "
+                    f"{type(settings_snapshot).__name__}), "
+                    "falling back to empty snapshot"
+                )
+                settings_snapshot = {}
+            return settings_snapshot, submission_params
+
+        # 旧结构: 直接 {key: val}，原样透传
+        return research_settings, {}
+
     def _start_research_directly(
         self, username: str, research_id: str, password: str, **kwargs
     ):
