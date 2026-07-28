@@ -3,6 +3,7 @@ import json
 import os
 import threading
 import time
+from contextlib import contextmanager
 from datetime import datetime, UTC
 from pathlib import Path
 
@@ -340,6 +341,73 @@ def _generate_report_path(query: str) -> Path:
     return OUTPUT_DIR / (
         f"research_report_{query_hash}_{int(datetime.now(UTC).timestamp())}.md"
     )
+
+
+@contextmanager
+def _open_image_enhancer_session(username, settings_snapshot):
+    """Read report.image_* settings, build a Firecrawl client, open DB session.
+
+    Yields (args, db_session) where args is a dict unpackable into
+    ``enhance_report_with_images(**)``. The DB session is opened for the
+    duration of the with-block. Any Firecrawl client construction error
+    is downgraded to a debug log and ``firecrawl_client`` is yielded as
+    ``None`` — the caller decides whether to fail or fall back.
+    """
+    from ...config.thread_settings import get_setting_from_snapshot
+    from ...research_library.downloaders.extraction import (
+        pipeline as extract_pipeline,
+    )
+
+    enable_images = get_setting_from_snapshot(
+        "report.enable_images", False, settings_snapshot=settings_snapshot,
+    )
+    vision_model = get_setting_from_snapshot(
+        "report.image_vision_model", "", settings_snapshot=settings_snapshot,
+    )
+    vision_url = get_setting_from_snapshot(
+        "report.image_vision_url", "", settings_snapshot=settings_snapshot,
+    )
+    vision_key = get_setting_from_snapshot(
+        "report.image_vision_api_key", "", settings_snapshot=settings_snapshot,
+    )
+    vision_min_alt_count = get_setting_from_snapshot(
+        "report.image_vision_min_alt_count", 3,
+        settings_snapshot=settings_snapshot,
+    )
+    vision_cap = get_setting_from_snapshot(
+        "report.image_vision_cap", 10, settings_snapshot=settings_snapshot,
+    )
+    # Backward compat: if URL empty but model set, fall back to the main
+    # Ollama endpoint — matches the inline behaviour in quick branch.
+    if vision_model and not vision_url:
+        vision_url = get_setting_from_snapshot(
+            "llm.ollama.url", "http://localhost:11434",
+            settings_snapshot=settings_snapshot,
+        )
+    firecrawl_client = None
+    try:
+        firecrawl_client = (
+            extract_pipeline._new_firecrawl_client_from_snapshot(
+                settings_snapshot
+            )
+        )
+    except Exception:
+        logger.debug(
+            "Firecrawl client unavailable for image persist fallback",
+            exc_info=True,
+        )
+
+    args = dict(
+        vision_model=vision_model,
+        vision_url=vision_url or None,
+        vision_api_key=vision_key or None,
+        vision_min_alt_count=vision_min_alt_count,
+        vision_cap=vision_cap,
+        firecrawl_client=firecrawl_client,
+        enable_images=enable_images,
+    )
+    with get_user_db_session(username) as db_session:
+        yield args, db_session
 
 
 @log_for_research
@@ -1161,101 +1229,27 @@ def run_research_process(research_id, query, mode, **kwargs):
                         from ...images.postprocessing import (
                             enhance_report_with_images,
                         )
-                        from ...images.vision import VisionDescriber
-                        from ...config.thread_settings import (
-                            get_setting_from_snapshot,
-                        )
-
-                        enable_images = get_setting_from_snapshot(
-                            "report.enable_images",
-                            False,
-                            settings_snapshot=settings_snapshot,
-                        )
-                        vision_model = get_setting_from_snapshot(
-                            "report.image_vision_model",
-                            "",
-                            settings_snapshot=settings_snapshot,
-                        )
-                        vision_url = get_setting_from_snapshot(
-                            "report.image_vision_url",
-                            "",
-                            settings_snapshot=settings_snapshot,
-                        )
-                        vision_key = get_setting_from_snapshot(
-                            "report.image_vision_api_key",
-                            "",
-                            settings_snapshot=settings_snapshot,
-                        )
-                        vision_min_alt_count = get_setting_from_snapshot(
-                            "report.image_vision_min_alt_count",
-                            3,
-                            settings_snapshot=settings_snapshot,
-                        )
-                        vision_cap = get_setting_from_snapshot(
-                            "report.image_vision_cap",
-                            10,
-                            settings_snapshot=settings_snapshot,
-                        )
-                        # Backward compat: if URL empty but model set,
-                        # fall back to the main Ollama endpoint.
-                        if vision_model and not vision_url:
-                            vision_url = get_setting_from_snapshot(
-                                "llm.ollama.url",
-                                "http://localhost:11434",
-                                settings_snapshot=settings_snapshot,
-                            )
-                        vision = VisionDescriber(
-                            model_name=vision_model,
-                            base_url=vision_url or None,
-                            api_key=vision_key or None,
-                        )
-                        if enable_images:
-                            progress_callback(
-                                "Enhancing report with real images...",
-                                92,
-                                {"phase": "image_enhancement"},
-                            )
-                            # Build a Firecrawl client for the image-persist
-                            # fallback so anti-hotlink 403s can be resolved
-                            # by re-fetching the source page through a real
-                            # browser. Failures here are non-fatal — when
-                            # the client can't be built, the fast path
-                            # (Referer + UA) is the only download strategy.
-                            firecrawl_client = None
-                            try:
-                                from ...research_library.downloaders.extraction import (
-                                    pipeline as extract_pipeline,
+                        with _open_image_enhancer_session(
+                            username, settings_snapshot
+                        ) as (img_args, img_db_session):
+                            if not img_args["enable_images"]:
+                                logger.info(
+                                    f"[IMG-TRACE] SKIP research={research_id} "
+                                    f"reason=enable_images=False"
                                 )
-                                firecrawl_client = (
-                                    extract_pipeline._new_firecrawl_client_from_snapshot(
-                                        settings_snapshot
-                                    )
+                            else:
+                                progress_callback(
+                                    "Enhancing report with real images...",
+                                    92,
+                                    {"phase": "image_enhancement"},
                                 )
-                            except Exception:
-                                logger.debug(
-                                    "Firecrawl client unavailable for image "
-                                    "persist fallback",
-                                    exc_info=True,
-                                )
-                            with get_user_db_session(username) as img_db_session:
                                 clean_markdown = enhance_report_with_images(
                                     research_id=research_id,
                                     clean_markdown=clean_markdown,
                                     results=results,
                                     db_session=img_db_session,
-                                    enable_images=True,
-                                    vision_model=vision_model,
-                                    vision_url=vision_url or None,
-                                    vision_api_key=vision_key or None,
-                                    vision_min_alt_count=vision_min_alt_count,
-                                    vision_cap=vision_cap,
-                                    firecrawl_client=firecrawl_client,
+                                    **img_args,
                                 )
-                        else:
-                            logger.info(
-                                "[IMG-TRACE] SKIP research=%s reason=enable_images=False",
-                                research_id,
-                            )
                     except Exception:
                         logger.exception(
                             "Image enhancement step failed; continuing with text-only report"
@@ -1574,6 +1568,63 @@ def run_research_process(research_id, query, mode, **kwargs):
             final_report = report_generator.generate_report(
                 results, query, progress_callback=report_progress_callback
             )
+
+            # === Detailed-mode image enhancement (parity with quick branch) ===
+            try:
+                # Re-fill any URLs added by per-section analyze_topic() calls
+                # whose html_content is still empty (langgraph strategy only;
+                # idempotent — only fetches URLs missing html_content).
+                try:
+                    from ...advanced_search_system.strategies.langgraph_agent_strategy import (
+                        LangGraphAgentStrategy,
+                    )
+                    strategy = getattr(search_system, "strategy", None)
+                    if isinstance(strategy, LangGraphAgentStrategy) and hasattr(
+                        strategy, "collector"
+                    ):
+                        all_results = list(
+                            getattr(strategy.collector, "results", []) or []
+                        )
+                        if all_results:
+                            strategy._ensure_images_for_results(all_results)
+                except Exception:
+                    logger.debug(
+                        "Detailed-mode image auto-fill skipped", exc_info=True,
+                    )
+
+                logger.info(
+                    f"[IMG-TRACE] DETAILED_MODE_BEGIN research={research_id} "
+                    f"markdown_len={len(final_report['content'])}"
+                )
+                from ...images.postprocessing import (
+                    enhance_report_with_images,
+                )
+                with _open_image_enhancer_session(
+                    username, settings_snapshot
+                ) as (img_args, img_db_session):
+                    if not img_args["enable_images"]:
+                        logger.info(
+                            f"[IMG-TRACE] SKIP research={research_id} "
+                            f"reason=enable_images=False"
+                        )
+                    else:
+                        progress_callback(
+                            "Enhancing detailed report with real images...",
+                            92,
+                            {"phase": "image_enhancement"},
+                        )
+                        final_report["content"] = enhance_report_with_images(
+                            research_id=research_id,
+                            clean_markdown=final_report["content"],
+                            results=results,
+                            db_session=img_db_session,
+                            **img_args,
+                        )
+            except Exception:
+                logger.exception(
+                    "Detailed-mode image enhancement step failed; "
+                    "continuing with text-only report"
+                )
 
             progress_callback(
                 "Report generation complete", 95, {"phase": "report_complete"}

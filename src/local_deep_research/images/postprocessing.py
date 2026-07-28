@@ -117,6 +117,27 @@ def enhance_report_with_images(
             f"serialized_before_dedup={serialized_before_dedup} "
             f"sr_with_images={findings_with_images}"
         )
+        logger.info(
+            f"[IMG-TRACE] BANK_FULL_SUMMARY research={research_id} count={total}"
+        )
+        if os.getenv("LDR_IMG_TRACE_BANK_SUMMARY") == "1":
+            for _i, _c in enumerate(bank.candidates_with_alt()):
+                logger.info(
+                    "[IMG-TRACE] BANK_ENTRY research={} idx={} url={} alt={}",
+                    research_id,
+                    _i,
+                    _c.url,
+                    (_c.alt or "")[:200],
+                )
+            for _i, _c in enumerate(
+                bank.candidates_without_alt(limit=10**9)
+            ):
+                logger.info(
+                    "[IMG-TRACE] BANK_ENTRY_NO_ALT research={} idx={} url={}",
+                    research_id,
+                    _i,
+                    _c.url,
+                )
         if os.getenv("LDR_IMG_TRACE_CANDIDATES") == "1":
             for candidate in bank.candidates_with_alt():
                 logger.info(
@@ -158,15 +179,23 @@ def enhance_report_with_images(
             )
             context = None
         else:
-            for idx, (heading, _body, urls) in enumerate(
+            sections_list = list(
                 extract_segment_sources(clean_markdown, results)
-            ):
+            )
+            for idx, (heading, _body, urls) in enumerate(sections_list):
                 heading_text = heading.strip() if heading else f"<no-heading-{idx}>"
                 url_list = ", ".join(urls) if urls else "<none>"
                 logger.info(
                     f"[IMG-TRACE] SECTION_SOURCES research={research_id} "
                     f"section={idx} heading={heading_text!r} urls={url_list}"
                 )
+            _matched = sum(1 for _, _, urls in sections_list if urls)
+            _orphans = len(sections_list) - _matched
+            logger.info(
+                f"[IMG-TRACE] SECTION_SOURCES_SUMMARY research={research_id} "
+                f"sections={len(sections_list)} matched={_matched} "
+                f"orphans={_orphans}"
+            )
         raw_candidates = bank.candidates_with_alt()
         if context is None:
             decisions = [
@@ -203,6 +232,28 @@ def enhance_report_with_images(
         logger.info(
             f"[IMG-TRACE] ELIGIBLE_BANK research={research_id} "
             f"total={len(eligible_bank.all_urls())}"
+        )
+        _keep_per_section: Dict[int, list[str]] = {}
+        for _d in decisions:
+            if _d.status != "keep":
+                continue
+            for _sidx in _d.matched_sections:
+                _keep_per_section.setdefault(_sidx, []).append(_d.url)
+        for _sidx in sorted(_keep_per_section):
+            _urls_for_section = _keep_per_section[_sidx]
+            _preview = ",".join(_urls_for_section[:5]) + (
+                f" +{len(_urls_for_section) - 5}_more"
+                if len(_urls_for_section) > 5
+                else ""
+            )
+            logger.info(
+                f"[IMG-TRACE] KEEP_BY_SECTION research={research_id} "
+                f"section={_sidx} kept={len(_urls_for_section)} urls={_preview}"
+            )
+        logger.info(
+            f"[IMG-TRACE] KEEP_BY_SECTION_SUMMARY research={research_id} "
+            f"sections_with_keep={len(_keep_per_section)} "
+            f"total_kept={len(kept_urls)}"
         )
         logger.info(
             f"[IMG-TRACE] SECTION_FALLBACK research={research_id} "
