@@ -16,6 +16,7 @@ from tenacity import (
 from ..security.safe_requests import safe_get
 from .bank import ImageBank
 from .extractor import ExtractedImage
+from .relevance import _split_sections
 from .vision import VisionDescriber
 
 _PROMPT = """You are editing a research report to add real images.
@@ -306,4 +307,24 @@ class ImageEnhancer:
             candidates = bank.candidates_with_alt()
         if not candidates:
             return markdown
-        return self._run_enhance(markdown, candidates)
+        sections = _split_sections(markdown)
+        if not sections:
+            return markdown
+        # Tiny reports (no headings): fall back to the single-shot path.
+        if len(sections) == 1:
+            return self._run_enhance(markdown, candidates)
+        enhanced_parts: list[str] = []
+        for idx, (heading, body) in enumerate(sections):
+            chunk = (
+                f"{heading}\n\n{body}".strip() if heading else body.strip()
+            )
+            if not chunk:
+                continue
+            enhanced_chunk = self._run_enhance(chunk, candidates)
+            enhanced_parts.append(enhanced_chunk)
+            logger.info(
+                f"[IMG-TRACE] SECTION_ENHANCE idx={idx} "
+                f"heading={heading[:80]!r} len_in={len(chunk)} "
+                f"len_out={len(enhanced_chunk)}"
+            )
+        return "\n\n".join(enhanced_parts)

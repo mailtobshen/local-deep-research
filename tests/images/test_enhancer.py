@@ -143,3 +143,61 @@ def test_enhancer_default_disables_vision_fill():
     vision.describe.return_value = "described"
     ImageEnhancer(llm, vision).enhance("# R", bank)
     vision.describe.assert_not_called()
+
+
+def test_enhance_calls_llm_per_section():
+    """Each ## section gets its own LLM invocation."""
+    bank = ImageBank()
+    bank.add([_img("https://real/a.jpg", "Canton Tower")])
+    llm = MagicMock()
+    llm.invoke.return_value = MagicMock(content="# a\n\n![a](https://real/a.jpg)")
+    vision = MagicMock()
+    vision.enabled = False
+    md = "# H1\n\nbody1\n\n## H2\n\nbody2\n\n## H3\n\nbody3"
+    ImageEnhancer(llm, vision).enhance(md, bank)
+    # 3 sections \u2192 3 calls
+    assert llm.invoke.call_count == 3
+    # Each prompt should reference the section's own body, not the whole doc
+    called_prompts = [c.args[0] for c in llm.invoke.call_args_list]
+    assert any("body1" in p for p in called_prompts)
+    assert any("body2" in p for p in called_prompts)
+    assert any("body3" in p for p in called_prompts)
+
+
+def test_enhance_section_failure_keeps_other_sections():
+    """A failing section (Exception) doesn't poison the others."""
+    bank = ImageBank()
+    bank.add([_img("https://real/a.jpg", "x")])
+    llm = MagicMock()
+    # Echo-back the prompt's section heading into the response so we can
+    # tell which section's output is in the joined result. Sections 1 and
+    # 3 succeed (echo their heading); section 2 raises (Exception).
+    def _echo(prompt):
+        m = MagicMock()
+        if "body1" in prompt:
+            m.content = "# H1\n\nok1"
+        elif "body3" in prompt:
+            m.content = "## H3\n\nok3"
+        else:
+            raise Exception("500 server error")
+        return m
+    llm.invoke.side_effect = _echo
+    vision = MagicMock()
+    vision.enabled = False
+    md = "# H1\n\nbody1\n\n## H2\n\nbody2\n\n## H3\n\nbody3"
+    out = ImageEnhancer(llm, vision).enhance(md, bank)
+    # All 3 section headings must be in the output, and section 2's
+    # verbatim body must survive intact because the LLM call failed.
+    assert "ok1" in out and "ok3" in out and "body2" in out
+
+
+def test_enhance_no_headings_falls_back_to_single_call():
+    bank = ImageBank()
+    bank.add([_img("https://real/a.jpg", "x")])
+    llm = MagicMock()
+    llm.invoke.return_value = MagicMock(content="ok")
+    vision = MagicMock()
+    vision.enabled = False
+    out = ImageEnhancer(llm, vision).enhance("Just prose, no headings.", bank)
+    assert llm.invoke.call_count == 1
+    assert out == "ok"
