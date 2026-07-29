@@ -32,6 +32,73 @@ def test_extract_registered_domain_basic():
     assert _extract_registered_domain("https://") == ""
 
 
+# ---- _extract_registered_domain boundary cases ----
+
+def test_extract_registered_domain_strips_explicit_port():
+    assert _extract_registered_domain("https://a.ctrip.com:8080/x") == "ctrip.com"
+    assert _extract_registered_domain("http://192.168.1.1:8080/x") == "192.168.1.1"
+
+
+def test_extract_registered_domain_handles_userinfo():
+    assert _extract_registered_domain("https://user:pass@a.ctrip.com/x") == "ctrip.com"
+
+
+def test_extract_registered_domain_handles_path_query_fragment():
+    assert _extract_registered_domain(
+        "https://a.ctrip.com/path?q=1&z=2#anchor"
+    ) == "ctrip.com"
+
+
+def test_extract_registered_domain_is_lowercase():
+    assert _extract_registered_domain("HTTPS://A1.CTRIP.COM/x") == "ctrip.com"
+
+
+def test_extract_registered_domain_idn_chinese():
+    """Punycode / Unicode IDN domains come back as eTLD+1 with the
+    Chinese label (tldextract normalises to the Unicode form)."""
+    assert _extract_registered_domain("https://例子.cn/x") == "例子.cn"
+
+
+def test_extract_registered_domain_ip_urls():
+    """IP literals are returned verbatim. They will not match any
+    registered-domain entry on the allow-list, which is the correct
+    fail-closed behavior — IPs are not part of the citation graph."""
+    assert _extract_registered_domain("http://127.0.0.1/x.jpg") == "127.0.0.1"
+    assert _extract_registered_domain("http://[::1]/x.jpg") == "[::1]"
+    assert _extract_registered_domain("http://[2001:db8::1]/x.jpg") == "[2001:db8::1]"
+
+
+def test_extract_registered_domain_strips_whitespace():
+    """Without explicit stripping, "  https://x.com  " was tokenised
+    by tldextract into "https" as the registered domain. Must be
+    stripped so the real domain is extracted."""
+    assert _extract_registered_domain("  https://a.ctrip.com/x  ") == "ctrip.com"
+
+
+def test_extract_registered_domain_rejects_control_bytes():
+    """Embedded NUL or other control chars confuse downstream URL
+    parsers. We never expect them in real search-result URLs — fail
+    closed with empty string."""
+    assert _extract_registered_domain("https://a.ctrip.com\x00.com/x") == ""
+    assert _extract_registered_domain("https://a.ctrip.com\x07.com/x") == ""
+
+
+def test_extract_registered_domain_localhost_no_tld():
+    """`localhost` is a single-label host with no eTLD+1; tldextract
+    returns it as-is. Will not match any registered-domain allow-list
+    entry — caller treats as unknown."""
+    assert _extract_registered_domain("http://localhost/x") == "localhost"
+
+
+def test_extract_registered_domain_extreme_length():
+    """A 2000+ char URL should not blow up; tldextract parses the
+    host regardless of path length."""
+    long_path = "a" * 2000
+    assert _extract_registered_domain(
+        f"https://a.ctrip.com/{long_path}"
+    ) == "ctrip.com"
+
+
 # ---- build_section_allowed_domains ----
 
 def test_build_section_allowed_domains_collapses_subdomains():

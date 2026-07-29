@@ -213,14 +213,27 @@ def _extract_registered_domain(url: str) -> str:
     """Return eTLD+1 ('ctrip.com', 'bbc.co.uk', 'github.io') for a URL.
 
     Returns "" on any failure (malformed URL, tldextract error, missing
-    hostname). Callers MUST treat "" as "unknown" and conservatively
-    reject candidates whose domain could not be determined, to keep
-    the per-section same-domain filter fail-closed.
+    hostname, embedded control characters, leading/trailing whitespace).
+    Callers MUST treat "" as "unknown" and conservatively reject
+    candidates whose domain could not be determined, to keep the
+    per-section same-domain filter fail-closed.
     """
     if not url:
         return ""
+    # Strip whitespace first — "  https://x.com  " otherwise has its
+    # scheme tokenised by tldextract and returns "https" as the
+    # registered domain (real bug observed during boundary testing).
+    stripped = url.strip()
+    # Reject embedded NUL/control bytes — they confuse urlparse downstream
+    # and we never expect them in real search-result URLs.
+    if any(ord(c) < 0x20 for c in stripped):
+        logger.debug(
+            f"[IMG-TRACE] DOMAIN_EXTRACT url={url!r} "
+            f"reason=control_char_in_url"
+        )
+        return ""
     try:
-        ext = _TLDEX(url)
+        ext = _TLDEX(stripped)
     except Exception as exc:  # tldextract raises on bizarre inputs
         logger.debug(
             f"[IMG-TRACE] DOMAIN_EXTRACT url={url!r} reason=tldextract_error "
