@@ -22,12 +22,42 @@ from loguru import logger
 from ...citation_handler import CitationHandler
 from ...config.thread_settings import get_bool_setting_from_snapshot
 from ...exceptions import ResearchTerminatedException
+from ...text_optimization.citation_formatter import (
+    CITE_LIST_ROW_RE,
+    find_sources_section,
+)
 from ...utilities.search_utilities import (
     extract_links_from_search_results,
     format_links_to_markdown,
 )
 from ..tools.fetch import FETCH_MODES, build_fetch_tool
 from .base_strategy import BaseSearchStrategy
+
+
+def _parse_sources_markdown_urls(formatted_output: str) -> set[str]:
+    """Return the set of URLs cited in the report's trailing Sources block.
+
+    Parses the ``## Sources`` (or ``## 参考文献``) section produced by
+    ``format_links_to_markdown``. Each row has the form
+    ``[N] Title (source nr: ...)\\n   URL: <url>``. The URLs are
+    returned exactly as written (canonical form, since
+    ``format_links_to_markdown`` runs ``canonical_url_key`` itself).
+
+    Empty when the document has no References block or no rows with
+    a ``URL:`` line. Rows without a URL are silently skipped — the
+    caller cannot act on them.
+    """
+    out: set[str] = set()
+    start = find_sources_section(formatted_output)
+    if start < 0:
+        return out
+    sources_content = formatted_output[start:]
+    for m in CITE_LIST_ROW_RE.finditer(sources_content):
+        url = (m.group(3) or "").strip()
+        if url:
+            out.add(url)
+    return out
+
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -777,7 +807,9 @@ class LangGraphAgentStrategy(BaseSearchStrategy):
             logger.exception("Fallback synthesis failed")
             return f"Research collected {len(results)} sources but synthesis failed: {exc}"
 
-    def _ensure_images_for_results(self, all_search_results: list) -> None:
+    def _ensure_images_for_results(
+        self, all_search_results: list, allowed_urls: set[str] | None = None
+    ) -> None:
         """Ensure URLs have html_content for the report-stage image enhancer.
 
         The langgraph agent may decide not to invoke the ``fetch_content`` tool,
@@ -786,6 +818,14 @@ class LangGraphAgentStrategy(BaseSearchStrategy):
         method proactively fetches images for every URL that doesn't yet have
         ``html_content``, so image extraction is independent of the agent's
         tool-call decisions.
+
+        ``allowed_urls`` constrains the fetch to URLs the caller has decided
+        are worth scraping. Pass ``None`` to allow every URL (the legacy
+        behaviour); pass an empty set to skip fetching entirely; pass a
+        populated set to restrict the fetch to that intersection. The set
+        is compared as-is; callers should pre-normalise (e.g. via
+        ``canonical_url_key``) when they care about trailing-slash /
+        scheme-case equivalence.
         """
         if not get_bool_setting_from_snapshot(
             "report.enable_images",
@@ -797,7 +837,17 @@ class LangGraphAgentStrategy(BaseSearchStrategy):
             )
             return
 
-        # Collect top URLs that don't yet have html_content.
+        # An explicit empty allowlist means the caller has decided no URL
+        # is worth fetching. Distinct from "no allowlist given" (= legacy
+        # behaviour, fetch everything missing html_content).
+        if allowed_urls is not None and not allowed_urls:
+            logger.info(
+                "[IMG-TRACE] langgraph auto-image-fill: skipped (allowed_urls is empty)"
+            )
+            return
+
+        # Collect top URLs that don't yet have html_content, restricted
+        # to the allowlist when one is provided.
         urls_to_fetch: list[str] = []
         titles_attr = getattr(self, "titles", None)
         titles = titles_attr if isinstance(titles_attr, dict) else {}
@@ -807,11 +857,13 @@ class LangGraphAgentStrategy(BaseSearchStrategy):
             url = r.get("link") or r.get("url")
             if not url or r.get("html_content"):
                 continue
+            if allowed_urls is not None and url not in allowed_urls:
+                continue
             if url not in urls_to_fetch:
                 urls_to_fetch.append(url)
         if not urls_to_fetch:
             logger.info(
-                "[IMG-TRACE] langgraph auto-image-fill: skipped (no source missing html_content)"
+                "[IMG-TRACE] langgraph auto-image-fill: skipped (no source missing html_content after allowlist)"
             )
             return
 
@@ -864,10 +916,11 @@ class LangGraphAgentStrategy(BaseSearchStrategy):
         synthesized_content = final_answer
         documents: list = []
 
-        # Bypass LLM tool-call decisions: if report.enable_images is on,
-        # proactively fetch images for top URLs that don't yet have
-        # html_content, so the report-stage image enhancer has data.
-        self._ensure_images_for_results(all_search_results)
+        # Image fetch is deferred until after the Sources block is
+        # built (see below) so the allowlist can be derived from the
+        # URLs the LLM actually chose to cite — the previous behaviour
+        # of "fetch every URL missing html_content" was wasteful and
+        # scraped pages the report never referenced.
 
         # Citation handling — only if we have results
         if all_search_results:
@@ -901,6 +954,51 @@ class LangGraphAgentStrategy(BaseSearchStrategy):
                         formatted_output = f"{synthesized_content}\n\n## Sources\n\n{sources_md}"
             except Exception:
                 logger.exception("Failed to format source links")
+
+        # Now that the Sources block is in formatted_output, restrict
+        # the proactive image fetch to URLs the LLM actually cited.
+        # The set is intersected with all_search_results URLs so we
+        # only fetch URLs the agent already discovered (URLs the LLM
+        # hallucinated into the Sources block are silently dropped).
+        if all_search_results:
+            try:
+                cited_urls = _parse_sources_markdown_urls(formatted_output)
+            except Exception:
+                logger.exception(
+                    "Failed to parse Sources block for image-fetch allowlist; "
+                    "falling back to no fetch"
+                )
+                cited_urls = set()
+            if cited_urls:
+                # Intersect with the URLs the agent actually discovered.
+                # canonical_url_key normalises trailing slash / case /
+                # scheme so the two lists match cleanly.
+                from local_deep_research.utilities.url_utils import (
+                    canonical_url_key,
+                )
+                discovered = {
+                    r.get("link") or r.get("url")
+                    for r in all_search_results
+                    if isinstance(r, dict)
+                }
+                discovered_canon = {
+                    canonical_url_key(u) for u in discovered if u
+                }
+                allowed = {
+                    u
+                    for u in cited_urls
+                    if canonical_url_key(u) in discovered_canon
+                }
+                logger.info(
+                    f"[IMG-TRACE] langgraph auto-image-fill: allowlist "
+                    f"cited={len(cited_urls)} intersected={len(allowed)}"
+                )
+                self._ensure_images_for_results(all_search_results, allowed)
+            else:
+                logger.info(
+                    "[IMG-TRACE] langgraph auto-image-fill: skipped "
+                    "(no URLs in Sources block)"
+                )
 
         # Build reasoning trace from agent messages
         reasoning_trace = []
