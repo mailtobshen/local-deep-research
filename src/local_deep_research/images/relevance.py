@@ -359,20 +359,39 @@ def extract_segment_sources(
     sections = _split_sections(markdown)
     out: list[tuple[str, str, list[str]]] = []
     inherited: list[str] = []
+    # Token-overlap threshold: a candidate URL is considered relevant
+    # to a section only when its title/content/snippet share both
+    # - at least one token with the section text, AND
+    # - at least 30% of its OWN tokens with the section text.
+    # The bare ``score > 0`` rule accepted URLs whose only overlap was
+    # a single weak token (e.g. a blog that mentioned "Canton" once in
+    # a general skyscraper roundup), which then poisoned the per-section
+    # domain allow-list — letting unrelated-domain images slip through
+    # the eTLD+1 filter. 30% is the clean gap observed between real
+    # matches (ratio 0.57–0.70) and weak mentions (0.12–0.17).
+    _MIN_SCORE = 1
+    _MIN_RATIO = 0.30
     for heading, body in sections:
         section_text = re.sub(r"^##\s+", "", heading) + "\n" + body
         section_terms = _match_terms(section_text)
         if not section_terms:
             out.append((heading, body, list(inherited)))
             continue
-        scored: list[tuple[int, str]] = []
+        scored: list[tuple[int, float, str]] = []
         for c in candidates:
             cand_terms = _match_terms(
                 " ".join([c["title"], c["content"], c["snippet"]])
             )
-            scored.append((_score_match(section_terms, cand_terms), c["url"]))
-        scored.sort(key=lambda x: x[0], reverse=True)
-        allowed = [url for score, url in scored if score > 0][:top_n]
+            if not cand_terms:
+                continue
+            score = _score_match(section_terms, cand_terms)
+            ratio = score / len(cand_terms)
+            scored.append((score, ratio, c["url"]))
+        scored.sort(key=lambda x: (x[0], x[1]), reverse=True)
+        allowed = [
+            url for score, ratio, url in scored
+            if score >= _MIN_SCORE and ratio >= _MIN_RATIO
+        ][:top_n]
         if not allowed:
             allowed = list(inherited)
         out.append((heading, body, allowed))

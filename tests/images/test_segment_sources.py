@@ -62,3 +62,79 @@ def test_extract_segment_sources_uses_top_n_per_segment():
     ]}
     out = extract_segment_sources(md, results, top_n=1)
     assert out[0][2] == ["https://xiamen-travel.com"]
+
+
+# ---- Stricter token-overlap threshold (宁缺毋滥: drop weak matches) ----
+
+def test_extract_segment_sources_drops_weak_single_token_match():
+    """A candidate whose only overlap with the section is a single weak
+    token (e.g. "Canton" mentioned in passing) must NOT enter the
+    per-section allowed URL set — it would poison the eTLD+1 same-source
+    filter for unrelated domains."""
+    md = "Canton Tower is a 604-meter landmark in Guangzhou."
+    results = {"findings": [
+        {"search_results": [
+            # Real, dedicated match — must keep
+            {"link": "https://a1.ctrip.com/guide/canton-tower",
+             "title": "Canton Tower Travel Guide",
+             "content": "Canton Tower is a 604-meter landmark in Guangzhou",
+             "snippet": "book tours via Ctrip"},
+            # Weak mention: only "Canton" overlaps, everything else is
+            # unrelated skyscrapers content. Must drop.
+            {"link": "https://b.example.com/blog/skyline",
+             "title": "Various Skyscrapers Around the World",
+             "content": "Tall buildings in many cities",
+             "snippet": "general architecture commentary with Canton reference"},
+        ]}
+    ]}
+    out = extract_segment_sources(md, results)
+    urls = out[0][2]
+    assert "https://a1.ctrip.com/guide/canton-tower" in urls
+    assert "https://b.example.com/blog/skyline" not in urls
+
+
+def test_extract_segment_sources_drops_long_diluted_candidate():
+    """A long candidate with only one shared token relative to a short
+    section has a low overlap ratio and must be dropped under the
+    stricter threshold."""
+    md = "## Ctrip\n\nCtrip booking platform."
+    results = {"findings": [
+        {"search_results": [
+            {"link": "https://ctrip.com/about",
+             "title": "Ctrip",
+             "content": "Ctrip is a large online travel agency platform "
+                        "offering flights hotels and tours",
+             "snippet": "Ctrip mobile app"},
+        ]}
+    ]}
+    out = extract_segment_sources(md, results)
+    # The single candidate has score=2 (Ctrip + Ctrip) but its ratio
+    # is ~0.14 because the candidate has many own tokens; under the
+    # stricter rule it must be dropped, leaving the section empty
+    # (宁缺毋滥).
+    assert out[0][2] == []
+
+
+def test_extract_segment_sources_drops_passing_mention():
+    """Paris General News mentioning 'Paris' once must not be linked
+    to the Eiffel Tower section — it's not Eiffel Tower content."""
+    md = ("## Eiffel Tower\n\nThe Eiffel Tower is a landmark in Paris "
+          "built in 1889.")
+    results = {"findings": [
+        {"search_results": [
+            # Real Eiffel content
+            {"link": "https://a.com/eiffel",
+             "title": "Eiffel Tower Guide",
+             "content": "Eiffel Tower Paris France landmark",
+             "snippet": "tour Eiffel"},
+            # Weak: only "Paris" matches
+            {"link": "https://a.com/paris-news",
+             "title": "Paris General News",
+             "content": "Paris news today",
+             "snippet": "general Paris news"},
+        ]}
+    ]}
+    out = extract_segment_sources(md, results)
+    urls = out[0][2]
+    assert "https://a.com/eiffel" in urls
+    assert "https://a.com/paris-news" not in urls
