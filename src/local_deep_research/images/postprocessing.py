@@ -13,12 +13,11 @@ from .enhancer import DEFAULT_VISION_CAP, DEFAULT_VISION_MIN_ALT_TRIGGER, ImageE
 from .extractor import ExtractedImage
 from .relevance import (
     ImageRelevanceDecision,
-    _candidates_for_section,
     _split_sections,
     build_report_entity_context,
-    build_section_allowed_domains,
     evaluate_candidate,
     extract_segment_sources,
+    filter_candidates_by_section_citations,
     is_skipped_section_heading,
 )
 
@@ -289,8 +288,10 @@ def enhance_report_with_images(
         sections_for_filter = list(
             extract_segment_sources(clean_markdown, results)
         )
+        # urls per section for the single-pass domain filter. The list
+        # is aligned with _split_sections' output by the drift guard
+        # below.
         section_urls_list = [urls for _, _, urls in sections_for_filter]
-        allowed_per_section = build_section_allowed_domains(section_urls_list)
 
         # Section-index drift guard. extract_segment_sources and the
         # enhancer's _split_sections MUST align (both call _split_sections
@@ -322,6 +323,10 @@ def enhance_report_with_images(
                     f"[IMG-TRACE] SECTION_HEADING_SKIP "
                     f"research={research_id} sections={sorted(_skipped_sections)}"
                 )
+            # Per-section cited-domain count, populated alongside the
+            # filter pass. Used by the IMG-TRACE log without an
+            # independent recomputation.
+            _section_cited_domain_count: Dict[int, int] = {}
             for sidx, urls in _keep_per_section.items():
                 if sidx in _skipped_sections:
                     # References/Sources sections get an empty pool so
@@ -337,14 +342,22 @@ def enhance_report_with_images(
                         pool.append(img)
                 if not pool:
                     per_section_candidates[sidx] = []
+                    _section_cited_domain_count[sidx] = 0
                     continue
-                allowed = allowed_per_section.get(sidx, set())
-                kept, dropped_no_source, dropped_domain_mismatch = (
-                    _candidates_for_section(
-                        pool, allowed, section_idx=sidx
-                    )
+                # Single-pass filter: section's cited URLs → eTLD+1 set
+                # ∩ candidate's source_url eTLD+1. Fail-closed on
+                # unparseable URLs (no_source drop).
+                section_citations = section_urls_list[sidx]
+                (
+                    kept,
+                    dropped_no_source,
+                    dropped_domain_mismatch,
+                    cited_domain_count,
+                ) = filter_candidates_by_section_citations(
+                    pool, section_citations, section_idx=sidx
                 )
                 per_section_candidates[sidx] = kept
+                _section_cited_domain_count[sidx] = cited_domain_count
                 _total_dropped_no_source += dropped_no_source
                 _total_dropped_domain_mismatch += dropped_domain_mismatch
             # Sections with no _keep_per_section entry also need a
@@ -353,12 +366,12 @@ def enhance_report_with_images(
                 per_section_candidates.setdefault(sidx, [])
 
             for sidx in sorted(per_section_candidates):
-                allowed = allowed_per_section.get(sidx, set())
                 logger.info(
                     f"[IMG-TRACE] PER_SECTION_CANDIDATES research={research_id} "
                     f"section={sidx} candidates_in_section="
                     f"{len(per_section_candidates[sidx])} "
-                    f"domains_in_section={len(allowed)}"
+                    f"domains_in_section="
+                    f"{_section_cited_domain_count.get(sidx, 0)}"
                 )
             _total_after = sum(
                 len(v) for v in per_section_candidates.values()

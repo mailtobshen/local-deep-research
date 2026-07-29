@@ -548,10 +548,85 @@ _LATIN_PROPER_RE = re.compile(
 _CJK_PROPER_RE = re.compile(r"[一-鿿]{2,}")
 
 
+def filter_candidates_by_section_citations(
+    candidates: list[ExtractedImage],
+    section_citations: list[str],
+    *,
+    section_idx: int,
+) -> tuple[list[ExtractedImage], int, int, int]:
+    """Filter candidates to those whose source_url shares an eTLD+1
+    ("pure domain") with any of this section's cited URLs.
+
+    Combines the previous two-step pipeline (build the section's
+    allowed-domain set, then test candidate eTLD+1 membership) into
+    a single pass. Same-domain means same registrable domain —
+    ``a1.ctrip.com`` and ``b.ctrip.com`` both reduce to ``ctrip.com``,
+    ``en.wikipedia.org`` and ``zh.wikipedia.org`` both reduce to
+    ``wikipedia.org``, but ``wikipedia.org`` and ``pedia.org`` do
+    NOT match (the "pedia trap" — tldextract correctly distinguishes
+    the registrable units).
+
+    Behaviour mirrors the previous two-step pipeline:
+
+    * If the section has no cited URLs (or none parseable), returns
+      an empty list. The section comes out image-free.
+    * Images with empty / un-parseable source_url are dropped
+      (fail-closed).
+    * Images whose eTLD+1 is not in the cited set are dropped
+      (logged as domain_mismatch).
+
+    Returns:
+        ``(kept, dropped_no_source, dropped_domain_mismatch,
+        cited_domain_count)`` — the last element is the count of
+        distinct eTLD+1s the section cited, used by the caller
+        for the IMG-TRACE log without re-deriving it.
+    """
+    cited_domains: set[str] = {
+        d
+        for d in (_extract_registered_domain(u) for u in section_citations or [])
+        if d
+    }
+    kept: list[ExtractedImage] = []
+    dropped_no_source = 0
+    dropped_domain_mismatch = 0
+    for img in candidates:
+        d = _extract_registered_domain(img.source_url or "")
+        if not d:
+            dropped_no_source += 1
+            logger.debug(
+                f"[IMG-TRACE] SECTION_FILTER section={section_idx} "
+                f"drop=unknown_domain url={img.url} source_url={img.source_url}"
+            )
+            continue
+        if d not in cited_domains:
+            dropped_domain_mismatch += 1
+            logger.debug(
+                f"[IMG-TRACE] SECTION_FILTER section={section_idx} "
+                f"drop=domain_mismatch url={img.url} image_domain={d} "
+                f"cited_domains={sorted(cited_domains)}"
+            )
+            continue
+        kept.append(img)
+    logger.info(
+        f"[IMG-TRACE] SECTION_FILTER_SUMMARY section={section_idx} "
+        f"candidates_in={len(candidates)} kept={len(kept)} "
+        f"dropped={dropped_no_source + dropped_domain_mismatch} "
+        f"(no_source={dropped_no_source} "
+        f"domain_mismatch={dropped_domain_mismatch}) "
+        f"cited_domains={sorted(cited_domains)}"
+    )
+    return kept, dropped_no_source, dropped_domain_mismatch, len(cited_domains)
+
+
 def build_section_allowed_domains(
     per_section_citations: list[list[str]],
 ) -> dict[int, set[str]]:
     """Map section_idx → set of eTLD+1 domains cited by that section.
+
+    Kept for backwards compatibility (one internal caller and a few
+    tests still reference this name). The image-filter pipeline now
+    uses :func:`filter_candidates_by_section_citations` directly,
+    which folds the build-and-filter steps into one pass.
 
     A section with no cited URLs gets an empty set (NOT inherited from
     the previous section here — inheritance is the caller's concern, see
@@ -576,9 +651,9 @@ def _candidates_for_section(
     section_idx: int,
 ) -> tuple[list[ExtractedImage], int, int]:
     """Filter candidates to those whose source_url eTLD+1 is in
-    ``allowed_domains``. Images with empty/un-parseable source_url are
-    dropped (fail-closed). Logs every drop with logger.debug and a
-    one-line IMG-TRACE summary at the end.
+    ``allowed_domains``. Kept for backwards compatibility (a few tests
+    reference this name). The image-filter pipeline now uses
+    :func:`filter_candidates_by_section_citations` directly.
 
     Returns:
         ``(kept, dropped_no_source, dropped_domain_mismatch)`` —

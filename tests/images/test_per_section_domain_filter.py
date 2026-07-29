@@ -10,6 +10,7 @@ from local_deep_research.images.relevance import (
     _extract_registered_domain,
     build_section_allowed_domains,
     domains_match,
+    filter_candidates_by_section_citations,
 )
 from local_deep_research.images.vision import VisionDescriber
 
@@ -221,6 +222,89 @@ def test_candidates_for_section_drops_all_when_allowed_empty():
     assert kept == []
     assert dropped_no_source == 0
     assert dropped_domain_mismatch == 1
+
+
+# ---- filter_candidates_by_section_citations (single-pass filter) ----
+
+def test_filter_candidates_by_section_citations_keeps_matching_domain():
+    """A cited URL set → eTLD+1 set is matched against each
+    candidate's source_url eTLD+1 in one pass. Subdomain variants
+    on both sides collapse via tldextract."""
+    cands = [
+        _img("https://img.ctrip.com/a.jpg", "https://a1.ctrip.com/x"),
+        _img("https://img.example.com/b.jpg", "https://example.com/y"),
+    ]
+    citations = ["https://b.ctrip.com/photo"]
+    kept, d_no_src, d_mismatch, d_count = filter_candidates_by_section_citations(
+        cands, citations, section_idx=3
+    )
+    assert [c.url for c in kept] == ["https://img.ctrip.com/a.jpg"]
+    assert d_no_src == 0
+    assert d_mismatch == 1
+    assert d_count == 1  # one eTLD+1 in citations
+
+
+def test_filter_candidates_by_section_citations_drops_empty_source_url():
+    """A candidate whose source_url is empty / un-parseable is
+    dropped (fail-closed)."""
+    cands = [
+        _img("https://img.x.com/1.jpg", ""),
+    ]
+    kept, d_no_src, d_mismatch, d_count = filter_candidates_by_section_citations(
+        cands, ["https://x.com/page"], section_idx=4
+    )
+    assert kept == []
+    assert d_no_src == 1
+    assert d_mismatch == 0
+    assert d_count == 1
+
+
+def test_filter_candidates_by_section_citations_empty_citations_means_empty_pool():
+    """If the section has no parseable citations, the section comes
+    out image-free. Same fail-closed contract as
+    build_section_allowed_domains returning an empty set."""
+    cands = [
+        _img("https://img.x.com/1.jpg", "https://x.com/page"),
+    ]
+    kept, d_no_src, d_mismatch, d_count = filter_candidates_by_section_citations(
+        cands, [], section_idx=5
+    )
+    assert kept == []
+    assert d_no_src == 0
+    assert d_mismatch == 1
+    assert d_count == 0
+
+
+def test_filter_candidates_by_section_citations_multiple_cited_domains():
+    """Multiple cited URLs mapping to multiple eTLD+1s produce a
+    matching cited_domain_count."""
+    cands = [
+        _img("https://img.ctrip.com/a.jpg", "https://a1.ctrip.com/x"),
+        _img("https://img.wikipedia.com/b.jpg", "https://en.wikipedia.org/wiki/X"),
+    ]
+    citations = [
+        "https://b.ctrip.com/y",
+        "https://en.wikipedia.org/wiki/Y",
+    ]
+    kept, _, _, d_count = filter_candidates_by_section_citations(
+        cands, citations, section_idx=6
+    )
+    assert len(kept) == 2
+    assert d_count == 2  # ctrip.com + wikipedia.org
+
+
+def test_filter_candidates_by_section_citations_pedia_trap():
+    """``wikipedia.org`` and ``pedia.org`` do not share an eTLD+1,
+    so a wikipedia image is rejected when the section cites only
+    ``pedia.org`` (and vice versa). Locks in the tldextract-based
+    discrimination of substring SLD overlaps."""
+    cands = [
+        _img("https://img.wikipedia.com/a.jpg", "https://wikipedia.org"),
+    ]
+    kept, _, _, _ = filter_candidates_by_section_citations(
+        cands, ["https://pedia.org"], section_idx=7
+    )
+    assert kept == []
 
 
 # ---- ImageEnhancer.enhance integration ----
