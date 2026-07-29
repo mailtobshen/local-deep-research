@@ -59,6 +59,71 @@ def _parse_sources_markdown_urls(formatted_output: str) -> set[str]:
     return out
 
 
+def _normalize_for_lookup(url: str) -> str:
+    """Normalise a URL for in-memory lookup: lower-case host, drop
+    fragment, strip trailing slash on path. Empty/None-safe."""
+    from urllib.parse import urlparse, urlunparse
+
+    if not url:
+        return ""
+    try:
+        p = urlparse(url.strip())
+        path = p.path.rstrip("/") or ""
+        return urlunparse(
+            (p.scheme.lower(), p.netloc.lower(), path, p.params, p.query, "")
+        )
+    except Exception:
+        return url.strip()
+
+
+def _select_urls_to_fetch(
+    all_search_results: list, allowed_urls: set[str] | None
+) -> list[str]:
+    """Compute the deduped list of URLs to fetch.
+
+    When ``allowed_urls`` is given, the set itself is the source of
+    truth (typically the cited URLs from the markdown References
+    block). We only skip a URL if the agent already has
+    ``html_content`` for it in ``all_search_results`` — a cited URL
+    the agent never searched is still fetched.
+
+    When ``allowed_urls`` is None, the legacy behaviour is preserved:
+    fetch every URL in ``all_search_results`` that is missing
+    ``html_content``.
+
+    Returns URLs in the order they were first encountered.
+    """
+    fetched_lookup: dict[str, str] = {}
+    for r in all_search_results or []:
+        if not isinstance(r, dict):
+            continue
+        url = r.get("link") or r.get("url")
+        if not url:
+            continue
+        fetched_lookup[_normalize_for_lookup(url)] = (
+            r.get("html_content") or ""
+        )
+
+    if allowed_urls is None:
+        candidates = [
+            u for u, content in fetched_lookup.items() if not content
+        ]
+    else:
+        candidates = [
+            u
+            for u in allowed_urls
+            if u and not fetched_lookup.get(_normalize_for_lookup(u))
+        ]
+
+    seen: set[str] = set()
+    out: list[str] = []
+    for u in candidates:
+        if u not in seen:
+            out.append(u)
+            seen.add(u)
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -845,21 +910,8 @@ class LangGraphAgentStrategy(BaseSearchStrategy):
             )
             return
 
-        # Collect top URLs that don't yet have html_content, restricted
-        # to the allowlist when one is provided.
-        urls_to_fetch: list[str] = []
-        titles_attr = getattr(self, "titles", None)
-        titles = titles_attr if isinstance(titles_attr, dict) else {}
-        for r in all_search_results:
-            if not isinstance(r, dict):
-                continue
-            url = r.get("link") or r.get("url")
-            if not url or r.get("html_content"):
-                continue
-            if allowed_urls is not None and url not in allowed_urls:
-                continue
-            if url not in urls_to_fetch:
-                urls_to_fetch.append(url)
+        urls_to_fetch = _select_urls_to_fetch(all_search_results, allowed_urls)
+
         if not urls_to_fetch:
             logger.info(
                 "[IMG-TRACE] langgraph auto-image-fill: skipped (no source missing html_content after allowlist)"
