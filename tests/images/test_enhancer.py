@@ -1,8 +1,16 @@
 # tests/images/test_enhancer.py
+import httpx
 from unittest.mock import MagicMock
 from local_deep_research.images.extractor import ExtractedImage
 from local_deep_research.images.bank import ImageBank
-from local_deep_research.images.enhancer import ImageEnhancer
+from local_deep_research.images.enhancer import (
+    ImageEnhancer,
+    _extract_base_url,
+    _http_status_from_exc,
+    _invoke_with_retry,
+    _is_retryable,
+    _preflight,
+)
 
 
 def _img(url, alt):
@@ -201,3 +209,133 @@ def test_enhance_no_headings_falls_back_to_single_call():
     out = ImageEnhancer(llm, vision).enhance("Just prose, no headings.", bank)
     assert llm.invoke.call_count == 1
     assert out == "ok"
+
+
+# ---------------------------------------------------------------------------
+# Task 4: preflight + retry helpers
+# ---------------------------------------------------------------------------
+
+
+def _llm_with_base(url):
+    """Build a fake chat model exposing openai_api_base like ChatOpenAI does."""
+    llm = MagicMock()
+    llm.openai_api_base = url
+    llm.model_name = "test-model"
+    llm.invoke.return_value = MagicMock(content="ok")
+    return llm
+
+
+def test_preflight_returns_true_on_2xx(monkeypatch):
+    resp = MagicMock(status_code=200)
+    monkeypatch.setattr(
+        "local_deep_research.images.enhancer.safe_get",
+        lambda *a, **k: resp,
+    )
+    assert _preflight(_llm_with_base("http://localhost:11434")) is True
+
+
+def test_preflight_returns_false_on_5xx(monkeypatch):
+    resp = MagicMock(status_code=503)
+    monkeypatch.setattr(
+        "local_deep_research.images.enhancer.safe_get",
+        lambda *a, **k: resp,
+    )
+    assert _preflight(_llm_with_base("http://localhost:11434")) is False
+
+
+def test_preflight_returns_false_on_connection_error(monkeypatch):
+    def boom(*a, **k):
+        raise httpx.ConnectError("refused")
+    monkeypatch.setattr(
+        "local_deep_research.images.enhancer.safe_get", boom
+    )
+    assert _preflight(_llm_with_base("http://localhost:11434")) is False
+
+
+def test_preflight_returns_true_when_no_base_url():
+    """No base URL → can't probe, be permissive."""
+    llm = MagicMock(spec=[])  # no attributes
+    assert _preflight(llm) is True
+
+
+def test_retry_succeeds_after_one_5xx(monkeypatch):
+    """Mock the underlying llm.invoke to raise 500 once then succeed."""
+    import tenacity as _t
+
+    llm = MagicMock()
+    llm.openai_api_base = ""
+    llm.model_name = "m"
+    good = MagicMock(content="ok")
+    bad = Exception("upstream 500")
+    bad.status_code = 500
+    llm.invoke.side_effect = [bad, good]
+    monkeypatch.setattr(
+        "local_deep_research.images.enhancer.wait_exponential",
+        lambda **k: _t.wait_none(),
+    )
+    out = _invoke_with_retry(llm, "p")
+    assert out is good
+    assert llm.invoke.call_count == 2
+
+
+def test_retry_does_not_retry_4xx(monkeypatch):
+    """4xx is a config bug — propagate immediately, no retry."""
+    import tenacity as _t
+
+    llm = MagicMock()
+    llm.invoke.side_effect = Exception("bad request")
+    llm.invoke.side_effect.status_code = 400
+    monkeypatch.setattr(
+        "local_deep_research.images.enhancer.wait_exponential",
+        lambda **k: _t.wait_none(),
+    )
+    raised = False
+    try:
+        _invoke_with_retry(llm, "p")
+    except Exception:
+        raised = True
+    assert raised
+    assert llm.invoke.call_count == 1
+
+
+def test_retry_exhausts_then_raises(monkeypatch):
+    import tenacity as _t
+
+    llm = MagicMock()
+    llm.invoke.side_effect = httpx.ConnectError("refused")
+    monkeypatch.setattr(
+        "local_deep_research.images.enhancer.wait_exponential",
+        lambda **k: _t.wait_none(),
+    )
+    raised = False
+    try:
+        _invoke_with_retry(llm, "p")
+    except Exception:
+        raised = True
+    assert raised
+    # tenacity default stop_after_attempt=3
+    assert llm.invoke.call_count == 3
+
+
+def test_is_retryable_distinguishes_5xx_from_4xx():
+    e5 = Exception("x")
+    e5.status_code = 503
+    e4 = Exception("x")
+    e4.status_code = 400
+    assert _is_retryable(e5) is True
+    assert _is_retryable(e4) is False
+    assert _is_retryable(httpx.ConnectError("x")) is True
+    assert _is_retryable(httpx.ReadTimeout("x")) is True
+    assert _is_retryable(ValueError("x")) is False
+
+
+def test_extract_base_url_finds_openai_api_base():
+    llm = MagicMock(openai_api_base="http://x:1234/v1")
+    assert _extract_base_url(llm) == "http://x:1234/v1"
+
+
+def test_http_status_from_exc_handles_response_object():
+    resp = MagicMock(status_code=502)
+    exc = Exception("bad gateway")
+    exc.response = resp
+    assert _http_status_from_exc(exc) == 502
