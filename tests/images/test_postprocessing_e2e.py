@@ -121,24 +121,43 @@ def _capture_logs(monkeypatch):
 # ---------------------------------------------------------------------------
 
 def test_postprocessing_filters_cross_domain_images(monkeypatch):
-    """A Canton Tower quick-summary research with 2 search results
-    (ctrip.com cited, example.com NOT cited) + 2 image candidates
-    must produce output where only the ctrip image is in the LLM
-    prompt pool."""
+    """A Canton Tower quick-summary research with 2 image candidates
+    (ctrip.com cited via [1] in body, example.com NOT cited) + 1
+    orphan must produce output where only the ctrip image is in the
+    LLM prompt pool.
+
+    Updated 2026-07-30: the per-section domain filter now keys off
+    the markdown's trailing References section rather than the
+    search_results candidate pool. The cross-domain filtering
+    behaviour is unchanged — only the URL source moves from
+    ``results.findings[].search_results`` to the markdown's
+    ``[N] → URL`` mapping.
+    """
     captured_prompts = []
     trace_lines = _capture_logs(monkeypatch)
     _patch_get_llm(monkeypatch, captured_prompts)
     _patch_preflight(monkeypatch)
     _patch_image_store(monkeypatch, {})
 
+    # Markdown with a `## Heading` section body that cites [1] and a
+    # trailing References block. The cited URL is a1.ctrip.com; the
+    # image from img.ctrip.com shares the eTLD+1 (ctrip.com) and
+    # should pass. The img.example.com candidate's source URL is not
+    # in the References list, so its domain is not in the section's
+    # allow-list → filtered out. The orphan candidate has no
+    # source_url → fail-closed drop.
     clean_markdown = (
-        "Canton Tower is a 604-meter landmark in Guangzhou. "
-        "Many travelers use Ctrip to book tickets."
+        "## Canton Tower\n\n"
+        "Canton Tower is a 604-meter landmark in Guangzhou [1].\n\n"
+        "## References\n"
+        "[1] Ctrip guide\n"
+        "   URL: https://a1.ctrip.com/guide/canton-tower\n"
     )
     results = {
         "research_query": "Canton Tower facts",
         "findings": [
             {"search_results": [
+                # Cited-domain image: eTLD+1 = ctrip.com
                 _search_result(
                     "https://a1.ctrip.com/guide/canton-tower",
                     "Canton Tower Travel Guide from Ctrip",
@@ -149,6 +168,8 @@ def test_postprocessing_filters_cross_domain_images(monkeypatch):
                         "https://a1.ctrip.com/guide/canton-tower",
                     ),
                 ),
+                # Non-cited-domain image: eTLD+1 = example.com — not
+                # in the References list, must be filtered out.
                 _search_result(
                     "https://b.example.com/blog/skyline",
                     "Various Skyscrapers Around the World",
@@ -159,6 +180,7 @@ def test_postprocessing_filters_cross_domain_images(monkeypatch):
                         "https://b.example.com/blog/skyline",
                     ),
                 ),
+                # Orphan image: no source_url → fail-closed drop.
                 _search_result(
                     "https://random-cdn.com/page",
                     "Random page with one Canton mention",
@@ -195,7 +217,7 @@ def test_postprocessing_filters_cross_domain_images(monkeypatch):
     assert isinstance(out, str)
     assert len(out) > 0
 
-    # ---- 2. Exactly one LLM call (no headings → single section) ----
+    # ---- 2. Exactly one LLM call (single section) ----
     assert len(captured_prompts) == 1, (
         f"expected 1 LLM call, got {len(captured_prompts)}"
     )

@@ -16,6 +16,34 @@ _SOURCES_SECTION_PATTERNS = [
     ),
 ]
 
+# Inline [N] citation markers in body text. Negative lookbehind/lookahead
+# avoid matching already-formatted citations like "[[1]](url)" or "[1]]".
+# Also matches full-width lenticular brackets 【N】 that LLMs sometimes
+# generate. Lifted to module level so other modules (e.g. images/relevance
+# for per-section URL mapping) can compile-free import them.
+CITE_INLINE_RE = re.compile(
+    r"(?<![\[【])[\[【](\d+)[\]】](?![\]】])"
+)
+
+# Inline comma-group citations like [1, 2, 3] — a single bracket pair
+# containing several citation numbers. LLMs emit this style as well as
+# the single-number [N] form. Group 1 is the comma-separated number
+# string, e.g. "1, 2, 3". Used alongside CITE_INLINE_RE; downstream
+# code splits the captured text on "," to recover each number.
+CITE_INLINE_GROUP_RE = re.compile(
+    r"[\[【](\d+(?:,\s*\d+)+)[\]】]"
+)
+
+# A row in the trailing References list:
+#   [N] Title
+#      URL: https://...
+# Group 1 = citation number (or comma-separated list), group 2 = title,
+# group 3 = URL (optional).
+CITE_LIST_ROW_RE = re.compile(
+    r"^\[(\d+(?:,\s*\d+)*)\]\s*(.+?)(?:\n\s*URL:\s*(.+?))?$",
+    re.MULTILINE,
+)
+
 
 def find_sources_section(content: str) -> int:
     """Find the start position of the sources/references section in *content*.
@@ -56,20 +84,16 @@ class CitationFormatter:
 
     def __init__(self, mode: CitationMode = CitationMode.NUMBER_HYPERLINKS):
         self.mode = mode
-        # Use negative lookbehind and lookahead to avoid matching already formatted citations
-        # Also match Unicode lenticular brackets 【】 (U+3010 and U+3011) that LLMs sometimes generate
-        self.citation_pattern = re.compile(
-            r"(?<![\[【])[\[【](\d+)[\]】](?![\]】])"
-        )
-        self.comma_citation_pattern = re.compile(
-            r"[\[【](\d+(?:,\s*\d+)+)[\]】]"
-        )
+        # Inline citation markers — reference the module-level
+        # CITE_INLINE_RE so the regex is compiled once and shared with
+        # other modules (e.g. images/relevance).
+        self.citation_pattern = CITE_INLINE_RE
+        self.comma_citation_pattern = CITE_INLINE_GROUP_RE
         # Also match "Source X" or "source X" patterns
         self.source_word_pattern = re.compile(r"\b[Ss]ource\s+(\d+)\b")
-        self.sources_pattern = re.compile(
-            r"^\[(\d+(?:,\s*\d+)*)\]\s*(.+?)(?:\n\s*URL:\s*(.+?))?$",
-            re.MULTILINE,
-        )
+        # Trailing References list rows — reference the module-level
+        # CITE_LIST_ROW_RE for the same reason.
+        self.sources_pattern = CITE_LIST_ROW_RE
 
     def _create_source_word_replacer(self, formatter_func):
         """Create a replacement function for 'Source X' patterns.

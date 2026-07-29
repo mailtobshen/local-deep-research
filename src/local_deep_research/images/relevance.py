@@ -16,6 +16,12 @@ import tldextract
 from loguru import logger
 
 from .extractor import ExtractedImage
+from ..text_optimization.citation_formatter import (
+    CITE_INLINE_RE,
+    CITE_INLINE_GROUP_RE,
+    CITE_LIST_ROW_RE,
+    find_sources_section,
+)
 
 _TLDEX = tldextract.TLDExtract(suffix_list_urls=(), fallback_to_snapshot=True)
 
@@ -310,6 +316,69 @@ def _split_sections(markdown: str) -> list[Tuple[str, str]]:
     return sections
 
 
+def _section_offsets(markdown: str) -> list[int]:
+    """Char offset of each section's heading start in the original markdown.
+
+    Aligned with ``_split_sections``: ``section_offsets[i]`` is the char
+    position of the i-th heading's start. The body slice for section ``i``
+    is then ``markdown[section_offsets[i] : section_offsets[i+1]]``
+    (or to the end of the document for the last section). Using the
+    heading start (not the heading end) keeps the heading line itself
+    inside the body slice — which is fine because the citation pattern
+    only matches ``[N]`` tokens, not heading text.
+
+    For a document with no headings at all, ``_split_sections`` returns
+    a single implicit section with body = full markdown, and we return
+    ``[0]`` to match.
+    """
+    if not markdown:
+        return []
+    matches = list(_HEADING_RE.finditer(markdown))
+    if not matches:
+        return [0]
+    return [m.start() for m in matches]
+
+
+def _scan_references_block(markdown: str) -> Dict[str, str]:
+    """Parse the trailing References/Sources/参考文献 block.
+
+    Returns ``{citation_number_str: url}``. Returns an empty dict when
+    the markdown has no References heading. Comma groups like
+    ``[1, 2] URL: ...`` produce entries for each individual number.
+    Rows without a URL line are skipped (the section can never cite
+    a URL it does not know about).
+
+    English headings (``## References`` etc.) are matched by
+    ``find_sources_section``. CJK headings (``## 参考文献`` /
+    ``## 参考资料`` / ``## 引用来源``) are matched here against
+    ``_SKIPPED_SECTION_HEADINGS`` — the per-section image filter
+    already recognises the same set, so we keep the CJK vocabulary
+    co-located with the only module that owns it (this file).
+    """
+    out: Dict[str, str] = {}
+    start = find_sources_section(markdown)
+    if start < 0:
+        for m in _HEADING_RE.finditer(markdown):
+            heading = m.group(2).strip()
+            if heading.lower() in _SKIPPED_SECTION_HEADINGS:
+                start = m.end()
+                break
+    if start < 0:
+        return out
+    sources_content = markdown[start:]
+    for m in CITE_LIST_ROW_RE.finditer(sources_content):
+        nums_str = m.group(1)
+        url = (m.group(3) or "").strip()
+        if not url:
+            continue
+        for num in nums_str.split(","):
+            num = num.strip()
+            if num:
+                # Last write wins on duplicates; deterministic.
+                out[num] = url
+    return out
+
+
 # Headings the per-section image filter must skip. These sections list
 # citations / external references rather than substantive content —
 # inserting images here is wasted work and pollutes the report with
@@ -373,89 +442,62 @@ def _score_match(a: set[str], b: set[str]) -> int:
 def extract_segment_sources(
     markdown: str, results, top_n: int = 3
 ) -> list[tuple[str, str, list[str]]]:
-    """Map each ``##`` section to the top-N search_result URLs whose
-    title/content/snippet overlap with the section heading + body.
+    """Map each ``##`` section to URLs cited by ``[N]`` markers in its body.
 
-    Sections whose text matches no candidate inherit the previous
-    section's allow-list so an orphan section between two matched
-    ones still has authoritative URLs to cite. Returns ``[]`` when
-    ``results`` carries no ``search_results``.
+    Resolved against the trailing References list in the same document
+    (see ``_scan_references_block``). Deterministic — no fuzzy token
+    matching, no ratio gate. A ``[N]`` whose number appears in the
+    References list with a URL is a citation; the URL flows into the
+    section's allow-list.
+
+    Sections without any ``[N]`` marker inherit the previous section's
+    URL list, so an orphan section between two cited sections still
+    carries the prior section's authoritative source. Returns the
+    same per-section tuples as before, preserving the drift-guard
+    contract with ``_split_sections`` in postprocessing.
+
+    The ``results`` parameter is retained for API compatibility but is
+    not consulted — every strategy in this repo writes
+    ``"findings": []``, so the previous search-results path was dead
+    code in practice. The Markdown's own references are the
+    authoritative source.
     """
-    if not isinstance(results, dict):
-        return []
-    candidates: list[dict] = []
-    for finding in results.get("findings", []) or []:
-        if not isinstance(finding, dict):
-            continue
-        for sr in finding.get("search_results", []) or []:
-            if not isinstance(sr, dict):
-                continue
-            url = sr.get("link") or sr.get("url")
-            if not url:
-                continue
-            candidates.append(
-                {
-                    "url": url,
-                    "title": sr.get("title") or sr.get("source_title") or "",
-                    "content": sr.get("content") or sr.get("snippet") or "",
-                    "snippet": sr.get("snippet") or "",
-                }
-            )
-    if not candidates:
+    del results  # not used; kept for API compatibility
+    if not markdown:
         return []
 
+    num_to_url = _scan_references_block(markdown)
     sections = _split_sections(markdown)
+    offsets = _section_offsets(markdown)
     out: list[tuple[str, str, list[str]]] = []
     inherited: list[str] = []
-    # Token-overlap threshold: a candidate URL is considered relevant
-    # to a section only when its title/content/snippet share both
-    # - at least one token with the section text, AND
-    # - at least 30% of its OWN tokens with the section text.
-    # The bare ``score > 0`` rule accepted URLs whose only overlap was
-    # a single weak token (e.g. a blog that mentioned "Canton" once in
-    # a general skyscraper roundup), which then poisoned the per-section
-    # domain allow-list — letting unrelated-domain images slip through
-    # the eTLD+1 filter. 30% is the clean gap observed between real
-    # matches (ratio 0.57–0.70) and weak mentions (0.12–0.17).
-    _MIN_SCORE = 1
-    _MIN_RATIO = 0.30
-    for heading, body in sections:
-        # Heading tokens carry tighter topical signal than body tokens
-        # (the section heading is the most reliable statement of what
-        # the section is about). Weight heading matches × 2 so a
-        # candidate whose own title literally names the heading can
-        # pass the score/ratio gate even when its body overlap is
-        # weak. The ratio denominator is the candidate's own token
-        # count, so heading weight does not save diluted candidates.
-        heading_terms = _match_terms(
-            re.sub(r"^##\s+", "", heading)
-        )
-        body_terms = _match_terms(body)
-        section_terms = heading_terms | body_terms
-        if not section_terms:
-            out.append((heading, body, list(inherited)))
-            continue
-        scored: list[tuple[int, float, str]] = []
-        for c in candidates:
-            cand_terms = _match_terms(
-                " ".join([c["title"], c["content"], c["snippet"]])
-            )
-            if not cand_terms:
-                continue
-            heading_overlap = heading_terms & cand_terms
-            body_overlap = body_terms & cand_terms
-            score = 2 * len(heading_overlap) + len(body_overlap)
-            ratio = score / len(cand_terms)
-            scored.append((score, ratio, c["url"]))
-        scored.sort(key=lambda x: (x[0], x[1]), reverse=True)
-        allowed = [
-            url for score, ratio, url in scored
-            if score >= _MIN_SCORE and ratio >= _MIN_RATIO
-        ][:top_n]
-        if not allowed:
-            allowed = list(inherited)
-        out.append((heading, body, allowed))
-        inherited = allowed
+
+    for idx, (heading, body) in enumerate(sections):
+        body_start = offsets[idx]
+        body_end = offsets[idx + 1] if idx + 1 < len(offsets) else len(markdown)
+        body_slice = markdown[body_start:body_end]
+        # Layer 1 dedup: set comprehension collapses [1][1][1] -> {1}
+        # and [1, 2, 3] -> {"1", "2", "3"} after splitting the captured
+        # comma-separated number string.
+        nums: set[str] = set()
+        for m in CITE_INLINE_RE.finditer(body_slice):
+            nums.add(m.group(1))
+        for m in CITE_INLINE_GROUP_RE.finditer(body_slice):
+            for n in m.group(1).split(","):
+                nums.add(n.strip())
+        # Layer 2 dedup: multiple numbers mapping to the same URL are
+        # collapsed so the per-section list never carries duplicates.
+        urls: list[str] = []
+        seen: set[str] = set()
+        for n in nums:
+            u = num_to_url.get(n)
+            if u and u not in seen:
+                urls.append(u)
+                seen.add(u)
+        if not urls:
+            urls = list(inherited)
+        out.append((heading, body, urls[:top_n]))
+        inherited = urls
     return out
 
 
