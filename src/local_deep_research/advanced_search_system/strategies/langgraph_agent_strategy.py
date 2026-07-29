@@ -970,24 +970,25 @@ class LangGraphAgentStrategy(BaseSearchStrategy):
                 )
                 cited_urls = set()
             if cited_urls:
-                # Intersect with the URLs the agent actually discovered.
-                # canonical_url_key normalises trailing slash / case /
-                # scheme so the two lists match cleanly.
-                from local_deep_research.utilities.url_utils import (
-                    canonical_url_key,
+                # Intersect with the URLs the agent actually discovered,
+                # using eTLD+1 ("pure domain") equality. A cited URL is
+                # in the allowlist when it shares its registrable
+                # domain with any URL the agent already found in
+                # search results — so a1.ctrip.com and b.ctrip.com both
+                # match ctrip.com, and distributed image CDNs under
+                # the same operator pass through.
+                from local_deep_research.images.relevance import (
+                    domains_match,
                 )
-                discovered = {
+                discovered = [
                     r.get("link") or r.get("url")
                     for r in all_search_results
                     if isinstance(r, dict)
-                }
-                discovered_canon = {
-                    canonical_url_key(u) for u in discovered if u
-                }
+                ]
                 allowed = {
                     u
                     for u in cited_urls
-                    if canonical_url_key(u) in discovered_canon
+                    if any(domains_match(u, d) for d in discovered)
                 }
                 logger.info(
                     f"[IMG-TRACE] langgraph auto-image-fill: allowlist "

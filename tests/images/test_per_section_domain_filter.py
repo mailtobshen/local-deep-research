@@ -9,6 +9,7 @@ from local_deep_research.images.relevance import (
     _candidates_for_section,
     _extract_registered_domain,
     build_section_allowed_domains,
+    domains_match,
 )
 from local_deep_research.images.vision import VisionDescriber
 
@@ -97,6 +98,75 @@ def test_extract_registered_domain_extreme_length():
     assert _extract_registered_domain(
         f"https://a.ctrip.com/{long_path}"
     ) == "ctrip.com"
+
+
+# ---- domains_match (eTLD+1-based pure-domain comparison) ----
+
+def test_domains_match_ctrip_subdomains_collapse():
+    """Distributed image CDNs under the same operator match.
+
+    This is the original motivation for the helper: the per-section
+    eTLD+1 allow-list collapses a1.ctrip.com and b.ctrip.com to the
+    same registrable unit, so a Canton-Tower image hosted on either
+    subdomain is accepted when the section cites ctrip.com once.
+    """
+    assert domains_match(
+        "https://a1.ctrip.com/guide/canton-tower",
+        "https://b.ctrip.com/photo-of-tower",
+    ) is True
+    assert domains_match(
+        "https://a1.ctrip.com/x", "https://ctrip.com"
+    ) is True
+
+
+def test_domains_match_wikipedia_subdomain_variants():
+    """en/zh/ja wikipedia subdomains are the same source."""
+    assert domains_match(
+        "https://en.wikipedia.org/wiki/Canton_Tower",
+        "https://zh.wikipedia.org/wiki/广州塔",
+    ) is True
+
+
+def test_domains_match_rejects_pedia_trap():
+    """``wikipedia.org`` and ``pedia.org`` share the SLD ``pedia`` as
+    a substring accident but their eTLD+1s differ, so they must NOT
+    match. Catches a naive right-of-dot-suffix implementation."""
+    assert domains_match(
+        "https://wikipedia.org", "https://pedia.org"
+    ) is False
+
+
+def test_domains_match_rejects_different_registrable():
+    """``bbc.co.uk`` and ``bbc.com`` are different registrable units
+    (different public suffixes), not the same source."""
+    assert domains_match(
+        "https://bbc.co.uk", "https://bbc.com"
+    ) is False
+
+
+def test_domains_match_ignores_path_query_fragment():
+    """Path / query / fragment / case / scheme are not part of the
+    domain — they should not affect the result."""
+    assert domains_match(
+        "https://x.com",
+        "https://x.com/path?query=1#frag",
+    ) is True
+    assert domains_match(
+        "HTTPS://X.COM/x",
+        "https://x.com/y",
+    ) is True
+
+
+def test_domains_match_fail_closed_on_bad_input():
+    """An unparseable URL cannot be allowed through; returns False."""
+    assert domains_match("", "https://x.com") is False
+    assert domains_match("https://x.com", "") is False
+    assert domains_match("not a url", "https://x.com") is False
+    assert domains_match("https://x.com", "also not a url") is False
+    # Embedded control byte: rejected by _extract_registered_domain.
+    assert domains_match(
+        "https://x.com", "https://x.com\x00.com"
+    ) is False
 
 
 # ---- build_section_allowed_domains ----

@@ -250,6 +250,42 @@ def _extract_registered_domain(url: str) -> str:
     return reg.lower()
 
 
+def domains_match(url_a: str, url_b: str) -> bool:
+    """True when the two URLs share the same eTLD+1 (registrable domain).
+
+    Used for same-source checks between a section's cited URLs and a
+    candidate image's ``source_url``. eTLD+1 is the right granularity:
+
+    * ``a1.ctrip.com/x`` and ``b.ctrip.com/y`` both reduce to
+      ``ctrip.com`` → match. This is what we want for distributed
+      image CDNs that all sit under the same operator.
+    * ``https://en.wikipedia.org/wiki/Canton_Tower`` and
+      ``https://zh.wikipedia.org/wiki/广州塔`` both reduce to
+      ``wikipedia.org`` → match. Subdomain variants of the same
+      project are treated as the same source.
+    * ``wikipedia.org`` and ``pedia.org`` both have ``org`` as their
+      public suffix but reduce to ``wikipedia.org`` and ``pedia.org``
+      respectively → no match. The shared-label overlap (``pedia``)
+      is purely a substring accident.
+    * ``bbc.co.uk`` and ``bbc.com`` reduce to ``bbc.co.uk`` and
+      ``bbc.com`` → no match. Different registrable units.
+
+    Fail-closed: if either URL cannot be parsed (returns ``""`` from
+    ``_extract_registered_domain``) the function returns False. This
+    keeps a malformed URL from sneaking through the filter; the
+    conservative outcome is that the candidate is rejected.
+
+    Empty inputs return False.
+    """
+    if not url_a or not url_b:
+        return False
+    a = _extract_registered_domain(url_a)
+    b = _extract_registered_domain(url_b)
+    if not a or not b:
+        return False
+    return a == b
+
+
 def _is_compound_generic(alt: str) -> bool:
     """True if the alt is purely composed of generic tokens.
 
