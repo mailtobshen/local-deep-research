@@ -3,8 +3,17 @@ from __future__ import annotations
 
 from typing import List
 
+import httpx
 from loguru import logger
+from tenacity import (
+    RetryError,
+    retry,
+    retry_if_exception,
+    stop_after_attempt,
+    wait_exponential,
+)
 
+from ..security.safe_requests import safe_get
 from .bank import ImageBank
 from .extractor import ExtractedImage
 from .vision import VisionDescriber
@@ -49,6 +58,128 @@ def _format_list(images: List[ExtractedImage]) -> str:
         f"- {i.url} | {i.alt} | {i.source_url or '(unknown)'}"
         for i in images
     )
+
+
+def _extract_base_url(llm) -> str:
+    """Best-effort base URL from a LangChain chat model.
+
+    The exact attribute differs by class: ``ChatOpenAI`` exposes
+    ``openai_api_base``; ``ChatOllama`` exposes ``base_url``; bare
+    wrappers expose ``client.base_url``. Returns "" when nothing
+    recognisable is found.
+    """
+    for attr in ("openai_api_base", "base_url"):
+        v = getattr(llm, attr, None)
+        if v:
+            return str(v)
+    inner = getattr(llm, "client", None) or getattr(llm, "_client", None)
+    if inner is not None:
+        v = getattr(inner, "base_url", None)
+        if v:
+            return str(v)
+    return ""
+
+
+def _extract_model(llm) -> str:
+    for attr in ("model_name", "model"):
+        v = getattr(llm, attr, None)
+        if v:
+            return str(v)
+    return ""
+
+
+def _provider_from_base_url(base_url: str) -> str:
+    if not base_url:
+        return "unknown"
+    bl = base_url.lower()
+    if "ollama" in bl or ":11434" in bl:
+        return "ollama"
+    if "openrouter" in bl:
+        return "openrouter"
+    if "anthropic" in bl:
+        return "anthropic"
+    if bl.startswith(("http://localhost", "http://127.", "http://0.0.0.0",
+                       "https://localhost", "https://127.", "https://0.0.0.0")):
+        return "local"
+    return "openai_endpoint"
+
+
+def _http_status_from_exc(exc: Exception) -> int:
+    """Pull the HTTP status code off common exception shapes."""
+    for attr in ("status_code", "status"):
+        v = getattr(exc, attr, None)
+        if isinstance(v, int):
+            return v
+    resp = getattr(exc, "response", None)
+    if resp is not None:
+        sc = getattr(resp, "status_code", None)
+        if isinstance(sc, int):
+            return sc
+    return 0
+
+
+def _preflight(llm) -> bool:
+    """Light GET /api/tags against the LLM endpoint.
+
+    Returns True when the endpoint answers 2xx (server alive and
+    serving the chat API). Returns False on any connection / DNS /
+    timeout error OR on 5xx — both signal the LLM is unusable for
+    this run and we'd rather short-circuit the whole report than
+    hammer it with N section prompts.
+    """
+    base = _extract_base_url(llm).rstrip("/")
+    if not base:
+        # No base URL → can't preflight. Be permissive: don't block.
+        return True
+    probe = f"{base}/api/tags"
+    try:
+        resp = safe_get(probe, timeout=5, allow_private_ips=True)
+    except Exception:
+        logger.info(
+            f"[IMG-TRACE] PREFLIGHT url={probe} status=unreachable"
+        )
+        return False
+    sc = getattr(resp, "status_code", 0)
+    if 200 <= sc < 300:
+        logger.info(
+            f"[IMG-TRACE] PREFLIGHT url={probe} status=ok http_status={sc}"
+        )
+        return True
+    logger.info(
+        f"[IMG-TRACE] PREFLIGHT url={probe} status=bad http_status={sc}"
+    )
+    return False
+
+
+def _is_retryable(exc: Exception) -> bool:
+    """Retry only on transport / 5xx; 4xx means a config bug we
+    should NOT paper over."""
+    sc = _http_status_from_exc(exc)
+    if sc and 500 <= sc < 600:
+        return True
+    if isinstance(exc, (ConnectionError, TimeoutError, httpx.HTTPError)):
+        return True
+    if isinstance(exc, RetryError):
+        return False
+    return False
+
+
+def _invoke_with_retry(llm, prompt: str):
+    """Invoke the LLM with exponential backoff on 5xx and network errors.
+
+    4xx and other exceptions are NOT retried — propagate so the caller
+    can log + skip that section.
+    """
+    @retry(
+        retry=retry_if_exception(lambda e: _is_retryable(e)
+                                 and not isinstance(e, RetryError)),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        stop=stop_after_attempt(3),
+        reraise=True,
+    )
+    def _do():
+        return llm.invoke(prompt)
+    return _do()
 
 
 class ImageEnhancer:
