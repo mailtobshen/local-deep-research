@@ -822,10 +822,9 @@ class LangGraphAgentStrategy(BaseSearchStrategy):
         ``allowed_urls`` constrains the fetch to URLs the caller has decided
         are worth scraping. Pass ``None`` to allow every URL (the legacy
         behaviour); pass an empty set to skip fetching entirely; pass a
-        populated set to restrict the fetch to that intersection. The set
-        is compared as-is; callers should pre-normalise (e.g. via
-        ``canonical_url_key``) when they care about trailing-slash /
-        scheme-case equivalence.
+        populated set to fetch only URLs in that set. The set is compared
+        as-is — callers should pre-normalise (e.g. drop trailing slash,
+        lower-case host) when they care about formatting equivalence.
         """
         if not get_bool_setting_from_snapshot(
             "report.enable_images",
@@ -970,31 +969,23 @@ class LangGraphAgentStrategy(BaseSearchStrategy):
                 )
                 cited_urls = set()
             if cited_urls:
-                # Intersect with the URLs the agent actually discovered,
-                # using eTLD+1 ("pure domain") equality. A cited URL is
-                # in the allowlist when it shares its registrable
-                # domain with any URL the agent already found in
-                # search results — so a1.ctrip.com and b.ctrip.com both
-                # match ctrip.com, and distributed image CDNs under
-                # the same operator pass through.
-                from local_deep_research.images.relevance import (
-                    domains_match,
-                )
-                discovered = [
-                    r.get("link") or r.get("url")
-                    for r in all_search_results
-                    if isinstance(r, dict)
-                ]
-                allowed = {
-                    u
-                    for u in cited_urls
-                    if any(domains_match(u, d) for d in discovered)
-                }
+                # The LLM-cited URL set is the allowlist. We trust it
+                # directly — a cited URL whose registrable domain
+                # cannot be parsed drops out via _ensure_images_for_results'
+                # own eTLD+1 check. Cross-domain hallucination
+                # (e.g. LLM writing "example.com" in Sources when it
+                # never searched example.com) is bounded by the
+                # per-section eTLD+1 gate in postprocessing; the
+                # fetched images must still match a section's cited
+                # domain to be admitted. So an extra "must also
+                # appear in search results" check is redundant.
                 logger.info(
                     f"[IMG-TRACE] langgraph auto-image-fill: allowlist "
-                    f"cited={len(cited_urls)} intersected={len(allowed)}"
+                    f"cited={len(cited_urls)}"
                 )
-                self._ensure_images_for_results(all_search_results, allowed)
+                self._ensure_images_for_results(
+                    all_search_results, cited_urls
+                )
             else:
                 logger.info(
                     "[IMG-TRACE] langgraph auto-image-fill: skipped "
