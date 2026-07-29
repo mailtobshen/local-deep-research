@@ -30,14 +30,24 @@ the final stitched report, so pick the best fit for THIS section only.
 
 STRICT RULES:
 - You may ONLY use image URLs from the "Available images" list below.
+  The list below is already pre-filtered to images whose source page
+  shares a registered domain (eTLD+1, e.g. a1.ctrip.com/... and
+  a2.ctrip.com/... both resolve to ctrip.com) with at least one URL
+  this section cites. If the list is empty, that means this section
+  has no qualifying image — NOT a bug. Insert nothing in that case.
 - You MUST NOT invent, modify, or guess any image URL.
 - Do NOT change any factual text, numbers, or citations in the report.
 - STRICT SAME-SOURCE RULE: For each image, both the image's alt text AND
   its source URL must be topically related to the section you place it in.
-  "Same source" means the page the image was crawled from is about the
-  same subject as the section. If a section has no image whose source
-  page matches, LEAVE THAT SECTION IMAGE-FREE — do not borrow an
-  image from a different source.
+  "Same source" means the page the image was crawled from (the value in
+  the "source_url" column) is about the same subject as the section AND
+  shares the same registered domain as one of the URLs the section
+  actually cites. The image list has ALREADY been filtered to satisfy
+  this rule — every image you see here is, by construction, from a
+  domain cited in this section. If the list looks empty, that means no
+  image satisfied the rule for this section: insert nothing (LEAVE THE
+  SECTION IMAGE-FREE). Never invent a different source page and never
+  reach for an image from a different domain.
 - Each image URL may appear at most ONCE in the output.
 - Insert images using markdown: ![alt](url), placed immediately after the
   section's heading line.
@@ -297,7 +307,12 @@ class ImageEnhancer:
         enhanced = self._call_llm_with_trace(prompt)
         return enhanced if enhanced else markdown_chunk
 
-    def enhance(self, markdown: str, bank: ImageBank) -> str:
+    def enhance(
+        self,
+        markdown: str,
+        bank: ImageBank,
+        per_section_candidates: dict[int, list[ExtractedImage]] | None = None,
+    ) -> str:
         candidates = bank.candidates_with_alt()
         # Vision fill when the bank is already rich would be wasted cost —
         # only run it when we genuinely lack alt coverage AND a vision model
@@ -318,8 +333,13 @@ class ImageEnhancer:
         if not sections:
             return markdown
         # Tiny reports (no headings): fall back to the single-shot path.
+        # If per_section_candidates was provided, still partition (one
+        # section, idx=0) so the prompt sees the section's filtered pool.
         if len(sections) == 1:
-            return self._run_enhance(markdown, candidates)
+            if per_section_candidates is None:
+                return self._run_enhance(markdown, candidates)
+            section_candidates = per_section_candidates.get(0, [])
+            return self._run_enhance(markdown, section_candidates)
         enhanced_parts: list[str] = []
         for idx, (heading, body) in enumerate(sections):
             chunk = (
@@ -327,11 +347,16 @@ class ImageEnhancer:
             )
             if not chunk:
                 continue
-            enhanced_chunk = self._run_enhance(chunk, candidates)
+            if per_section_candidates is None:
+                section_candidates = candidates  # legacy: full pool
+            else:
+                section_candidates = per_section_candidates.get(idx, [])
+            enhanced_chunk = self._run_enhance(chunk, section_candidates)
             enhanced_parts.append(enhanced_chunk)
             logger.info(
                 f"[IMG-TRACE] SECTION_ENHANCE idx={idx} "
                 f"heading={heading[:80]!r} len_in={len(chunk)} "
-                f"len_out={len(enhanced_chunk)}"
+                f"len_out={len(enhanced_chunk)} "
+                f"candidates_in_section={len(section_candidates)}"
             )
         return "\n\n".join(enhanced_parts)
