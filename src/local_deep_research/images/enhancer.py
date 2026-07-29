@@ -339,6 +339,12 @@ class ImageEnhancer:
             if per_section_candidates is None:
                 return self._run_enhance(markdown, candidates)
             section_candidates = per_section_candidates.get(0, [])
+            if not section_candidates:
+                logger.info(
+                    "[IMG-TRACE] SECTION_SKIP idx=0 reason=empty_pool "
+                    "heading='' candidates_in_section=0"
+                )
+                return markdown
             return self._run_enhance(markdown, section_candidates)
         enhanced_parts: list[str] = []
         for idx, (heading, body) in enumerate(sections):
@@ -351,6 +357,19 @@ class ImageEnhancer:
                 section_candidates = candidates  # legacy: full pool
             else:
                 section_candidates = per_section_candidates.get(idx, [])
+            # Skip the LLM call when the per-section pool is empty —
+            # the prompt would be a guaranteed no-op and ~2 s per
+            # section is wasted. The section markdown passes through
+            # unchanged; a SECTION_SKIP line is emitted so an operator
+            # can see the skip in IMG-TRACE.
+            if not section_candidates:
+                logger.info(
+                    f"[IMG-TRACE] SECTION_SKIP idx={idx} "
+                    f"reason=empty_pool heading={heading[:80]!r} "
+                    f"candidates_in_section=0"
+                )
+                enhanced_parts.append(chunk)
+                continue
             enhanced_chunk = self._run_enhance(chunk, section_candidates)
             enhanced_parts.append(enhanced_chunk)
             logger.info(

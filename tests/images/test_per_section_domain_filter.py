@@ -224,9 +224,10 @@ def test_enhance_backward_compat_no_third_arg():
         assert "img.example.com/b.jpg" in prompt
 
 
-def test_enhance_empty_per_section_pool_runs_but_no_images():
-    """A section with no candidates still gets an LLM call (with an
-    empty 'Available images' block) and returns the section unchanged."""
+def test_enhance_single_section_empty_pool_skips_llm():
+    """A section with no candidates must not trigger an LLM call;
+    the section markdown is returned unchanged. Saves ~2 s per
+    empty section."""
     bank = ImageBank()
     bank.add([_img("https://a.com/x.jpg", "https://a.com/p")])
 
@@ -235,10 +236,26 @@ def test_enhance_empty_per_section_pool_runs_but_no_images():
     md = "# Solo\n\nbody"
     out = _enhancer(llm).enhance(md, bank, per_section_candidates=per_section)
 
-    # The LLM was still called once (single section), but it echoes the
-    # body back so the output equals the input.
-    assert llm.calls
-    assert "body" in out
+    assert llm.calls == []
+    assert out == md
+
+
+def test_enhance_multi_section_one_pool_empty_skips_that_section():
+    """When only one of two per-section pools is empty, the LLM
+    is called for the populated section only; the empty section is
+    returned unchanged and the other section is enhanced."""
+    img_a = _img("https://img.ctrip.com/a.jpg", "https://a1.ctrip.com/p")
+    bank = ImageBank()
+    bank.add([img_a])
+
+    llm = _CaptureLLM()
+    per_section = {0: [img_a], 1: []}
+    md = "# Section A\n\nbody a\n\n## Section B\n\nbody b"
+    out = _enhancer(llm).enhance(md, bank, per_section_candidates=per_section)
+
+    assert len(llm.calls) == 1
+    assert "body a" in out
+    assert "body b" in out
 
 
 # ---- Quick-summary path (single section, document-level filter) ----
