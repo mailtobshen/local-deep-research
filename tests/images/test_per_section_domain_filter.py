@@ -48,26 +48,42 @@ def test_build_section_allowed_domains_collapses_subdomains():
 
 def test_candidates_for_section_keeps_matching_domain():
     img = _img("https://img.ctrip.com/x.jpg", "https://a1.ctrip.com/page")
-    kept = _candidates_for_section([img], {"ctrip.com"}, section_idx=0)
+    kept, dropped_no_source, dropped_domain_mismatch = _candidates_for_section(
+        [img], {"ctrip.com"}, section_idx=0
+    )
     assert len(kept) == 1
+    assert dropped_no_source == 0
+    assert dropped_domain_mismatch == 0
 
 
 def test_candidates_for_section_drops_mismatched_domain():
     img = _img("https://other.com/x.jpg", "https://other.com/page")
-    kept = _candidates_for_section([img], {"ctrip.com"}, section_idx=0)
+    kept, dropped_no_source, dropped_domain_mismatch = _candidates_for_section(
+        [img], {"ctrip.com"}, section_idx=0
+    )
     assert kept == []
+    assert dropped_no_source == 0
+    assert dropped_domain_mismatch == 1
 
 
 def test_candidates_for_section_drops_empty_source_url():
     img = _img("https://x.com/x.jpg", "")
-    kept = _candidates_for_section([img], {"x.com"}, section_idx=0)
+    kept, dropped_no_source, dropped_domain_mismatch = _candidates_for_section(
+        [img], {"x.com"}, section_idx=0
+    )
     assert kept == []
+    assert dropped_no_source == 1
+    assert dropped_domain_mismatch == 0
 
 
 def test_candidates_for_section_drops_all_when_allowed_empty():
     img = _img("https://a.com/x.jpg", "https://a.com/page")
-    kept = _candidates_for_section([img], set(), section_idx=0)
+    kept, dropped_no_source, dropped_domain_mismatch = _candidates_for_section(
+        [img], set(), section_idx=0
+    )
     assert kept == []
+    assert dropped_no_source == 0
+    assert dropped_domain_mismatch == 1
 
 
 # ---- ImageEnhancer.enhance integration ----

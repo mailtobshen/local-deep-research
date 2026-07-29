@@ -305,6 +305,8 @@ def enhance_report_with_images(
             per_section_candidates = None
         else:
             per_section_candidates: Dict[int, List[ExtractedImage]] = {}
+            _total_dropped_no_source = 0
+            _total_dropped_domain_mismatch = 0
             for sidx, urls in _keep_per_section.items():
                 pool: list[ExtractedImage] = []
                 for u in urls:
@@ -315,9 +317,14 @@ def enhance_report_with_images(
                     per_section_candidates[sidx] = []
                     continue
                 allowed = allowed_per_section.get(sidx, set())
-                per_section_candidates[sidx] = _candidates_for_section(
-                    pool, allowed, section_idx=sidx
+                kept, dropped_no_source, dropped_domain_mismatch = (
+                    _candidates_for_section(
+                        pool, allowed, section_idx=sidx
+                    )
                 )
+                per_section_candidates[sidx] = kept
+                _total_dropped_no_source += dropped_no_source
+                _total_dropped_domain_mismatch += dropped_domain_mismatch
             # Sections with no _keep_per_section entry also need a
             # (possibly empty) entry so the IMG-TRACE log covers all.
             for sidx in range(_n_sections_split):
@@ -341,7 +348,9 @@ def enhance_report_with_images(
                 f"[IMG-TRACE] PER_SECTION_CANDIDATES_SUMMARY research={research_id} "
                 f"sections={len(per_section_candidates)} "
                 f"sections_with_candidates={_sections_with_cands} "
-                f"total_candidate_url_pairs={_total_after}"
+                f"total_candidate_url_pairs={_total_after} "
+                f"total_dropped_domain_mismatch={_total_dropped_domain_mismatch} "
+                f"total_dropped_no_source={_total_dropped_no_source}"
             )
 
         enhanced = enhancer.enhance(

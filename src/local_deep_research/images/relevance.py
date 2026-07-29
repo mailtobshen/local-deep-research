@@ -436,11 +436,16 @@ def _candidates_for_section(
     allowed_domains: set[str],
     *,
     section_idx: int,
-) -> list[ExtractedImage]:
+) -> tuple[list[ExtractedImage], int, int]:
     """Filter candidates to those whose source_url eTLD+1 is in
     ``allowed_domains``. Images with empty/un-parseable source_url are
     dropped (fail-closed). Logs every drop with logger.debug and a
     one-line IMG-TRACE summary at the end.
+
+    Returns:
+        ``(kept, dropped_no_source, dropped_domain_mismatch)`` —
+        callers aggregate the dropped counts to emit a single
+        per-research summary line at the end of the pipeline.
     """
     kept: list[ExtractedImage] = []
     dropped = 0
@@ -473,7 +478,7 @@ def _candidates_for_section(
         f"domain_mismatch={dropped_domain_mismatch}) "
         f"allowed_domains={sorted(allowed_domains)}"
     )
-    return kept
+    return kept, dropped_no_source, dropped_domain_mismatch
 
 
 def _candidate_spans(text: str) -> Iterable[str]:
