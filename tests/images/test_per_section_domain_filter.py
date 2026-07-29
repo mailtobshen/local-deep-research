@@ -156,3 +156,49 @@ def test_enhance_empty_per_section_pool_runs_but_no_images():
     # body back so the output equals the input.
     assert llm.calls
     assert "body" in out
+
+
+# ---- Quick-summary path (single section, document-level filter) ----
+
+def test_enhance_quick_summary_filters_to_cited_domains():
+    """Quick-summary markdown typically has no headings → a single
+    'section' (idx=0). The eTLD+1 filter must still apply at the
+    document level: only images whose source_url eTLD+1 matches one
+    of the document's cited domains reach the LLM prompt.
+
+    Simulates the path: bank contains 3 candidates; per_section_candidates
+    has only the kept pool at idx=0 (postprocessing would compute this
+    from _keep_per_section + allowed_per_section).
+    """
+    img_ctrip = _img(
+        "https://img.ctrip.com/tower.jpg", "https://a1.ctrip.com/p"
+    )
+    img_other = _img(
+        "https://img.other.com/x.jpg", "https://other.com/p"
+    )
+    img_orphan = _img(
+        "https://cdn.com/x.jpg", ""  # no source_url → fail-closed drop
+    )
+    bank = ImageBank()
+    bank.add([img_ctrip, img_other, img_orphan])
+
+    # postprocessing.py would have built this from _keep_per_section
+    # intersected with the allowed-domain set for the document:
+    # only img_ctrip survives.
+    per_section = {0: [img_ctrip]}
+
+    # Quick-summary markdown: prose, no headings.
+    md = "Canton Tower is a 604m landmark in Guangzhou. Visitors enjoy views."
+
+    llm = _CaptureLLM()
+    _enhancer(llm).enhance(md, bank, per_section_candidates=per_section)
+
+    # Exactly one LLM call (single section path).
+    assert len(llm.calls) == 1
+    p0 = llm.calls[0]
+    # Cited-domain image is in the pool.
+    assert "img.ctrip.com/tower.jpg" in p0
+    # Non-cited-domain image is filtered out.
+    assert "img.other.com/x.jpg" not in p0
+    # Orphan (no source_url) is filtered out.
+    assert "cdn.com/x.jpg" not in p0
