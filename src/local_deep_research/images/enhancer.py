@@ -21,6 +21,13 @@ from .vision import VisionDescriber
 
 _PROMPT = """You are editing a research report to add real images.
 
+You are seeing ONE section of a larger report at a time (the report is
+split into sections for prompt-size reasons). Place any images you
+select immediately after this section's heading line (the first line
+of the markdown below); do not worry about other sections — a separate
+call handles each one. Every image URL you place here will appear in
+the final stitched report, so pick the best fit for THIS section only.
+
 STRICT RULES:
 - You may ONLY use image URLs from the "Available images" list below.
 - You MUST NOT invent, modify, or guess any image URL.
