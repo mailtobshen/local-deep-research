@@ -12,7 +12,12 @@ from dataclasses import dataclass
 from typing import Any, Dict, FrozenSet, Iterable, Literal, Tuple
 from urllib.parse import urlparse
 
+import tldextract
+from loguru import logger
+
 from .extractor import ExtractedImage
+
+_TLDEX = tldextract.TLDExtract(suffix_list_urls=(), fallback_to_snapshot=True)
 
 
 # ---------------------------------------------------------------------------
@@ -204,6 +209,28 @@ def _normalize_url(url: str) -> str:
     return (url or "").strip().rstrip("/")
 
 
+def _extract_registered_domain(url: str) -> str:
+    """Return eTLD+1 ('ctrip.com', 'bbc.co.uk', 'github.io') for a URL.
+
+    Returns "" on any failure (malformed URL, tldextract error, missing
+    hostname). Callers MUST treat "" as "unknown" and conservatively
+    reject candidates whose domain could not be determined, to keep
+    the per-section same-domain filter fail-closed.
+    """
+    if not url:
+        return ""
+    try:
+        ext = _TLDEX(url)
+    except Exception as exc:  # tldextract raises on bizarre inputs
+        logger.debug(
+            f"[IMG-TRACE] DOMAIN_EXTRACT url={url!r} reason=tldextract_error "
+            f"exc={type(exc).__name__}"
+        )
+        return ""
+    reg = ".".join(p for p in (ext.domain, ext.suffix) if p)
+    return reg.lower()
+
+
 def _is_compound_generic(alt: str) -> bool:
     """True if the alt is purely composed of generic tokens.
 
@@ -362,6 +389,72 @@ _LATIN_PROPER_RE = re.compile(
     r"\b([A-Z][A-Za-z0-9'-]{1,}(?:\s+[A-Z][A-Za-z0-9'-]{1,})*)\b"
 )
 _CJK_PROPER_RE = re.compile(r"[一-鿿]{2,}")
+
+
+def build_section_allowed_domains(
+    per_section_citations: list[list[str]],
+) -> dict[int, set[str]]:
+    """Map section_idx → set of eTLD+1 domains cited by that section.
+
+    A section with no cited URLs gets an empty set (NOT inherited from
+    the previous section here — inheritance is the caller's concern, see
+    extract_segment_sources). An empty set means "this section must
+    come out image-free" under the new filter.
+    """
+    out: dict[int, set[str]] = {}
+    for idx, urls in enumerate(per_section_citations):
+        domains: set[str] = set()
+        for u in urls or []:
+            d = _extract_registered_domain(u)
+            if d:
+                domains.add(d)
+        out[idx] = domains
+    return out
+
+
+def _candidates_for_section(
+    candidates: list[ExtractedImage],
+    allowed_domains: set[str],
+    *,
+    section_idx: int,
+) -> list[ExtractedImage]:
+    """Filter candidates to those whose source_url eTLD+1 is in
+    ``allowed_domains``. Images with empty/un-parseable source_url are
+    dropped (fail-closed). Logs every drop with logger.debug and a
+    one-line IMG-TRACE summary at the end.
+    """
+    kept: list[ExtractedImage] = []
+    dropped = 0
+    dropped_no_source = 0
+    dropped_domain_mismatch = 0
+    for img in candidates:
+        d = _extract_registered_domain(img.source_url or "")
+        if not d:
+            dropped += 1
+            dropped_no_source += 1
+            logger.debug(
+                f"[IMG-TRACE] SECTION_FILTER section={section_idx} "
+                f"drop=unknown_domain url={img.url} source_url={img.source_url}"
+            )
+            continue
+        if d not in allowed_domains:
+            dropped += 1
+            dropped_domain_mismatch += 1
+            logger.debug(
+                f"[IMG-TRACE] SECTION_FILTER section={section_idx} "
+                f"drop=domain_mismatch url={img.url} image_domain={d} "
+                f"allowed={sorted(allowed_domains)}"
+            )
+            continue
+        kept.append(img)
+    logger.info(
+        f"[IMG-TRACE] SECTION_FILTER_SUMMARY section={section_idx} "
+        f"candidates_in={len(candidates)} kept={len(kept)} "
+        f"dropped={dropped} (no_source={dropped_no_source} "
+        f"domain_mismatch={dropped_domain_mismatch}) "
+        f"allowed_domains={sorted(allowed_domains)}"
+    )
+    return kept
 
 
 def _candidate_spans(text: str) -> Iterable[str]:
