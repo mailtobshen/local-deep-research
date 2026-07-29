@@ -70,21 +70,21 @@ def _extract_base_url(llm) -> str:
     """
     for attr in ("openai_api_base", "base_url"):
         v = getattr(llm, attr, None)
-        if v:
-            return str(v)
+        if isinstance(v, str) and v:
+            return v
     inner = getattr(llm, "client", None) or getattr(llm, "_client", None)
     if inner is not None:
         v = getattr(inner, "base_url", None)
-        if v:
-            return str(v)
+        if isinstance(v, str) and v:
+            return v
     return ""
 
 
 def _extract_model(llm) -> str:
     for attr in ("model_name", "model"):
         v = getattr(llm, attr, None)
-        if v:
-            return str(v)
+        if isinstance(v, str) and v:
+            return v
     return ""
 
 
@@ -234,22 +234,60 @@ class ImageEnhancer:
             f"[IMG-TRACE] VISION end attempted={attempted} filled={filled}"
         )
 
+    def _call_llm_with_trace(self, prompt: str):
+        """Run one LLM call, log full provenance, return content or None."""
+        base_url = _extract_base_url(self.llm)
+        provider = _provider_from_base_url(base_url)
+        model = _extract_model(self.llm)
+        if not _preflight(self.llm):
+            logger.info(
+                f"[IMG-TRACE] LLM_CALL provider={provider} model={model} "
+                f"base_url={base_url} status=preflight_failed"
+            )
+            return None
+        try:
+            resp = _invoke_with_retry(self.llm, prompt)
+        except Exception as exc:
+            sc = _http_status_from_exc(exc)
+            exc_name = type(exc).__name__
+            logger.info(
+                f"[IMG-TRACE] LLM_CALL provider={provider} model={model} "
+                f"base_url={base_url} status=error http_status={sc} "
+                f"response_content_type= exc_class={exc_name}"
+            )
+            logger.debug(
+                f"Image-enhance LLM call failed ({exc_name}): {exc}"
+            )
+            return None
+        content = str(getattr(resp, "content", "")).strip()
+        # Best-effort content type — the LangChain object has no field for
+        # this; we record "" when unknown and try response.response_headers
+        # for the rare OpenAI wrapper that exposes them.
+        ctype = ""
+        inner = getattr(resp, "response_metadata", None) or {}
+        if isinstance(inner, dict):
+            ctype = inner.get("content_type", "") or ""
+        if not ctype:
+            raw = getattr(resp, "response", None)
+            if raw is not None:
+                headers = getattr(raw, "headers", None) or {}
+                ctype = headers.get("content-type", "") if hasattr(headers, "get") else ""
+        logger.info(
+            f"[IMG-TRACE] LLM_CALL provider={provider} model={model} "
+            f"base_url={base_url} status=ok http_status=200 "
+            f"response_content_type={ctype or 'text/plain'}"
+        )
+        return content or None
+
     def _run_enhance(
         self, markdown_chunk: str, candidates: List[ExtractedImage]
     ) -> str:
         """Single-shot LLM enhancement. On failure returns the chunk unchanged."""
-        try:
-            prompt = _PROMPT.format(
-                image_list=_format_list(candidates), markdown=markdown_chunk
-            )
-            resp = self.llm.invoke(prompt)
-            enhanced = str(getattr(resp, "content", "")).strip()
-            return enhanced if enhanced else markdown_chunk
-        except Exception:
-            logger.exception(
-                "Image enhancement failed; returning original chunk"
-            )
-            return markdown_chunk
+        prompt = _PROMPT.format(
+            image_list=_format_list(candidates), markdown=markdown_chunk
+        )
+        enhanced = self._call_llm_with_trace(prompt)
+        return enhanced if enhanced else markdown_chunk
 
     def enhance(self, markdown: str, bank: ImageBank) -> str:
         candidates = bank.candidates_with_alt()
