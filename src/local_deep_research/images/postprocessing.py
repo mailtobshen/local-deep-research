@@ -4,15 +4,19 @@ from __future__ import annotations
 import json
 import os
 import re
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from loguru import logger
 
 from .bank import ImageBank
 from .enhancer import DEFAULT_VISION_CAP, DEFAULT_VISION_MIN_ALT_TRIGGER, ImageEnhancer
+from .extractor import ExtractedImage
 from .relevance import (
     ImageRelevanceDecision,
+    _candidates_for_section,
+    _split_sections,
     build_report_entity_context,
+    build_section_allowed_domains,
     evaluate_candidate,
     extract_segment_sources,
 )
@@ -280,7 +284,71 @@ def enhance_report_with_images(
             cap=vision_cap if vision_cap is not None else DEFAULT_VISION_CAP,
             allow_vision_fill=False,
         )
-        enhanced = enhancer.enhance(clean_markdown, eligible_bank)
+        # --- NEW: build per-section filtered candidate pool (eTLD+1) ---
+        sections_for_filter = list(
+            extract_segment_sources(clean_markdown, results)
+        )
+        section_urls_list = [urls for _, _, urls in sections_for_filter]
+        allowed_per_section = build_section_allowed_domains(section_urls_list)
+
+        # Section-index drift guard. extract_segment_sources and the
+        # enhancer's _split_sections MUST align (both call _split_sections
+        # internally). Mismatch → log + fall back to legacy full-pool.
+        _n_sections_split = len(_split_sections(clean_markdown))
+        if _n_sections_split != len(sections_for_filter):
+            logger.warning(
+                f"[IMG-TRACE] SECTION_INDEX_DRIFT "
+                f"split_sections={_n_sections_split} "
+                f"citations_sections={len(sections_for_filter)} — "
+                f"falling back to global candidate pool"
+            )
+            per_section_candidates = None
+        else:
+            per_section_candidates: Dict[int, List[ExtractedImage]] = {}
+            for sidx, urls in _keep_per_section.items():
+                pool: list[ExtractedImage] = []
+                for u in urls:
+                    img = eligible_bank._by_url.get(u)
+                    if img is not None:
+                        pool.append(img)
+                if not pool:
+                    per_section_candidates[sidx] = []
+                    continue
+                allowed = allowed_per_section.get(sidx, set())
+                per_section_candidates[sidx] = _candidates_for_section(
+                    pool, allowed, section_idx=sidx
+                )
+            # Sections with no _keep_per_section entry also need a
+            # (possibly empty) entry so the IMG-TRACE log covers all.
+            for sidx in range(_n_sections_split):
+                per_section_candidates.setdefault(sidx, [])
+
+            for sidx in sorted(per_section_candidates):
+                allowed = allowed_per_section.get(sidx, set())
+                logger.info(
+                    f"[IMG-TRACE] PER_SECTION_CANDIDATES research={research_id} "
+                    f"section={sidx} candidates_in_section="
+                    f"{len(per_section_candidates[sidx])} "
+                    f"domains_in_section={len(allowed)}"
+                )
+            _total_after = sum(
+                len(v) for v in per_section_candidates.values()
+            )
+            _sections_with_cands = sum(
+                1 for v in per_section_candidates.values() if v
+            )
+            logger.info(
+                f"[IMG-TRACE] PER_SECTION_CANDIDATES_SUMMARY research={research_id} "
+                f"sections={len(per_section_candidates)} "
+                f"sections_with_candidates={_sections_with_cands} "
+                f"total_candidate_url_pairs={_total_after}"
+            )
+
+        enhanced = enhancer.enhance(
+            clean_markdown,
+            eligible_bank,
+            per_section_candidates=per_section_candidates,
+        )
 
         # Enforce "each URL at most once" deterministically. The LLM
         # prompt says it but doesn't guarantee it — generic alt text
