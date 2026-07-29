@@ -144,27 +144,30 @@ def test_extract_segment_sources_drops_passing_mention():
 
 
 def test_extract_segment_sources_heading_match_doubles_score():
-    """A candidate whose only overlap with the section is the
-    heading tokens must be allowed when its own title is short
-    enough to keep the ratio above 0.30.
+    """The headline red-green test for the heading-weight boost.
 
-    Section heading = "广州塔" → heading_terms = {广州, 塔} (2 CJK
-    2-char runs). The body has no overlap. The candidate title
-    "广州塔珠江夜景" yields 6 CJK 2-char runs
-    ({广州, 塔, 珠, 江, 夜, 景}). heading_overlap = 2,
-    body_overlap = 0, score = 2*2 + 0 = 4, ratio = 4/6 ≈ 0.67,
-    well above 0.30. Allowed."""
-    md = "## 广州塔\n\nshort body"
+    Section heading = "Eiffel" → heading_terms = {Eiffel}.
+    Body is non-overlapping with the candidate.
+    Candidate has 4 own tokens ({Eiffel, tours, Paris, France}).
+    Old formula: score = |{Eiffel} ∩ cand| = 1; ratio = 1/4 = 0.25 < 0.30 → DROPPED.
+    New formula: score = 2*|{Eiffel} ∩ cand| + |body ∩ cand| = 2 + 0 = 2;
+                 ratio = 2/4 = 0.50 ≥ 0.30 → ALLOWED.
+
+    This is the case the user described as '广州塔段查 tiktok.com 图'
+    — a candidate whose only overlap with the section is the heading
+    token itself, with a short own title. The boost from 1 → 2 is
+    the difference between being dropped and being allowed."""
+    md = "## Eiffel\n\nLocal delicious food."  # body has no overlap
     results = {"findings": [
         {"search_results": [
-            {"link": "https://ctrip.com/canton-tower",
-             "title": "广州塔珠江夜景",
+            {"link": "https://ctrip.com/eiffel",
+             "title": "Eiffel tours Paris France",
              "content": "",
              "snippet": ""},
         ]}
     ]}
     out = extract_segment_sources(md, results)
-    assert "https://ctrip.com/canton-tower" in out[0][2]
+    assert "https://ctrip.com/eiffel" in out[0][2]
 
 
 def test_extract_segment_sources_body_only_match_unchanged_behavior():
