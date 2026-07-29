@@ -78,6 +78,60 @@ def _format_list(images: List[ExtractedImage]) -> str:
     )
 
 
+# Prompt-leak pollution markers. The STRICT RULES paragraph lives in
+# _PROMPT (enhancer._PROMPT). When the LLM regurgitates it back, the
+# response contains these strings verbatim. Each marker is a short,
+# distinctive phrase that's unlikely to appear in genuine report
+# content.
+_PROMPT_LEAK_MARKERS: tuple[str, ...] = (
+    "Since the Available images list is completely empty",
+    "According to the STRICT RULES",
+    "STRICT SAME-SOURCE RULE",
+    "STRICT RULES",
+    "Insert nothing in that case.",
+    "no qualifying image — NOT a bug",
+)
+
+
+def _response_is_polluted(response: str, chunk: str) -> bool:
+    """True when the LLM response echoes prompt text rather than editing
+    the section.
+
+    Two pollution shapes are detected:
+    1. Verbatim STRICT RULES / Available-images list fragments that
+       only live inside the prompt. Their presence is conclusive —
+       the response is contaminated, no need to look further.
+    2. Net-added prose that's significantly larger than the section
+       and doesn't contain a meaningful fraction of the section's
+       original text. This catches the "the LLM wrote an essay
+       explaining why it didn't insert anything" failure mode that
+       looks like a legitimate response but pollutes the report.
+    """
+    for marker in _PROMPT_LEAK_MARKERS:
+        if marker in response:
+            return True
+    chunk_stripped = chunk.strip()
+    if not chunk_stripped:
+        return False
+    # If the response grew a lot AND lost most of the original chunk,
+    # treat it as pollution. A clean edit only adds image markdown
+    # lines; it never rewrites the body.
+    if len(response) > len(chunk_stripped) * 2 + 400:
+        # Heuristic: a single image insertion adds at most ~120 chars
+        # (`![alt](https://real/a.jpg)\n`). 2× + 400 accommodates the
+        # case where several images were added to a tiny section.
+        # Anything beyond that is prose, not an edit.
+        overlap = sum(
+            1 for line in chunk_stripped.splitlines() if line.strip() and line.strip() in response
+        )
+        original_lines = sum(
+            1 for line in chunk_stripped.splitlines() if line.strip()
+        )
+        if original_lines > 0 and overlap / original_lines < 0.5:
+            return True
+    return False
+
+
 def _extract_base_url(llm) -> str:
     """Best-effort base URL from a LangChain chat model.
 
@@ -300,12 +354,30 @@ class ImageEnhancer:
     def _run_enhance(
         self, markdown_chunk: str, candidates: List[ExtractedImage]
     ) -> str:
-        """Single-shot LLM enhancement. On failure returns the chunk unchanged."""
+        """Single-shot LLM enhancement. On failure returns the chunk unchanged.
+
+        Guard against prompt-leak pollution: when the LLM sees an empty
+        image list it sometimes echoes the prompt's STRICT RULES text
+        back into its output ("Since the Available images list is
+        completely empty..."). The output then contains verbatim
+        instructions that don't belong in the report. We detect two
+        concrete pollution patterns and reject the response in favor of
+        the untouched chunk.
+        """
         prompt = _PROMPT.format(
             image_list=_format_list(candidates), markdown=markdown_chunk
         )
         enhanced = self._call_llm_with_trace(prompt)
-        return enhanced if enhanced else markdown_chunk
+        if not enhanced:
+            return markdown_chunk
+        if _response_is_polluted(enhanced, markdown_chunk):
+            logger.info(
+                "[IMG-TRACE] ENHANCE_REJECTED reason=pollution "
+                f"chunk_len={len(markdown_chunk)} "
+                f"response_len={len(enhanced)}"
+            )
+            return markdown_chunk
+        return enhanced
 
     def enhance(
         self,

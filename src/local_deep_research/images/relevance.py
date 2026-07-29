@@ -310,6 +310,41 @@ def _split_sections(markdown: str) -> list[Tuple[str, str]]:
     return sections
 
 
+# Headings the per-section image filter must skip. These sections list
+# citations / external references rather than substantive content —
+# inserting images here is wasted work and pollutes the report with
+# decorative images at the very end. Comparison is exact (after strip)
+# and case-insensitive; the list covers the variants observed in
+# production reports (Chinese + English).
+_SKIPPED_SECTION_HEADINGS: frozenset[str] = frozenset(
+    h.lower()
+    for h in (
+        "参考文献",
+        "参考资料",
+        "引用来源",
+        "References",
+        "Reference",
+        "Sources",
+        "Source",
+        "Bibliography",
+        "Citations",
+    )
+)
+
+
+def is_skipped_section_heading(heading: str) -> bool:
+    """True when the heading names a references/sources/citations
+    section that the per-section image filter must skip.
+
+    The check is case-insensitive and ignores leading/trailing
+    whitespace. Headings with extra decoration ("## References 📚")
+    are NOT matched — exact match after strip keeps the rule narrow.
+    """
+    if not heading:
+        return False
+    return heading.strip().lower() in _SKIPPED_SECTION_HEADINGS
+
+
 # ---------------------------------------------------------------------------
 # Section-scoped source URL extraction
 # ---------------------------------------------------------------------------

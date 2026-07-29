@@ -10,18 +10,22 @@ def _store() -> ImageStore:
     return ImageStore("test-research", db_session=None, base_dir=Path("/tmp"))
 
 
-def test_rewrite_emits_html_img_with_attrs_for_oversized():
+def test_rewrite_keeps_markdown_for_oversized():
+    """Oversized images stay as standard markdown `![alt](route)`.
+
+    The earlier implementation emitted `<img width=600 height=300>` HTML
+    to enforce a 600px long-side cap; we dropped that so the report
+    body stays pure markdown. WebUI CSS handles display-size capping
+    downstream (see styles.css `.ldr-markdown-content img`).
+    """
     md = "![长隆](https://example.com/big.jpg)"
     sizes = {"https://example.com/big.jpg": (2000, 1000)}
     routes = {"https://example.com/big.jpg": "/images/abc.jpg"}
 
     out = _store().rewrite_markdown(md, routes, sizes)
 
-    assert "<img" in out
-    assert 'src="/images/abc.jpg"' in out
-    assert 'width="600"' in out
-    assert 'height="300"' in out
-    assert out.strip().startswith("<img") and out.strip().endswith("/>")
+    assert out == "![长隆](/images/abc.jpg)"
+    assert "<img" not in out
 
 
 def test_rewrite_keeps_markdown_for_small_or_unknown():

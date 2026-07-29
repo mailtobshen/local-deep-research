@@ -19,6 +19,7 @@ from .relevance import (
     build_section_allowed_domains,
     evaluate_candidate,
     extract_segment_sources,
+    is_skipped_section_heading,
 )
 
 ENTITY_REASON_KEYS: tuple[str, ...] = (
@@ -307,7 +308,28 @@ def enhance_report_with_images(
             per_section_candidates: Dict[int, List[ExtractedImage]] = {}
             _total_dropped_no_source = 0
             _total_dropped_domain_mismatch = 0
+            # Headings whose section must be skipped (References /
+            # Sources / 参考文献). Their SECTION_FILTER_SUMMARY log line
+            # is suppressed and their per-section pool is forced empty
+            # so the enhancer's existing SECTION_SKIP path takes over.
+            _skipped_sections = {
+                sidx
+                for sidx, (heading, _body, _urls) in enumerate(sections_for_filter)
+                if is_skipped_section_heading(heading)
+            }
+            if _skipped_sections:
+                logger.info(
+                    f"[IMG-TRACE] SECTION_HEADING_SKIP "
+                    f"research={research_id} sections={sorted(_skipped_sections)}"
+                )
             for sidx, urls in _keep_per_section.items():
+                if sidx in _skipped_sections:
+                    # References/Sources sections get an empty pool so
+                    # the enhancer logs SECTION_SKIP reason=empty_pool
+                    # for them (consistent with other no-image sections)
+                    # and no SECTION_FILTER_SUMMARY line is emitted.
+                    per_section_candidates[sidx] = []
+                    continue
                 pool: list[ExtractedImage] = []
                 for u in urls:
                     img = eligible_bank._by_url.get(u)

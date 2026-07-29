@@ -229,3 +229,38 @@ def test_extract_segment_sources_heading_match_does_not_save_tiny_candidate():
     ]}
     out = extract_segment_sources(md, results)
     assert "https://ctrip.com/ct" not in out[0][2]
+
+
+# ---------------------------------------------------------------------------
+# References / Sources section skip
+# ---------------------------------------------------------------------------
+
+
+def test_extract_segment_sources_no_filter_change_for_content_sections():
+    """Substantive sections still get URL lists; the skip is opt-in by
+    heading name only."""
+    from local_deep_research.images.relevance import is_skipped_section_heading
+
+    md = "## 鼓浪嶼\n\nbody\n\n## Sources\n\nlist of urls"
+    results = {"findings": [
+        {"search_results": [
+            {"link": "https://x.com/a", "title": "鼓浪屿",
+             "content": "鼓浪屿介绍", "snippet": ""},
+        ]}
+    ]}
+    out = extract_segment_sources(md, results)
+    # 2 sections present, both return tuples
+    assert len(out) == 2
+    assert out[0][0] == "鼓浪嶼"
+    assert out[1][0] == "Sources"
+    assert is_skipped_section_heading("Sources") is True
+    assert is_skipped_section_heading("参考文献") is True
+    assert is_skipped_section_heading("References") is True
+    assert is_skipped_section_heading("参考资料") is True
+    assert is_skipped_section_heading("Citations") is True
+    assert is_skipped_section_heading("Bibliography") is True
+    assert is_skipped_section_heading("## Foo") is False
+    assert is_skipped_section_heading("") is False
+    # Case-insensitive
+    assert is_skipped_section_heading("SOURCES") is True
+    assert is_skipped_section_heading(" sources ") is True

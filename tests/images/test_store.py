@@ -149,32 +149,34 @@ def test_persist_stashes_url_to_size(tmp_path):
     assert sizes.get("https://x/big.jpg") == (1200, 800)
 
 
-def test_rewrite_markdown_emits_html_for_landscape_oversize(tmp_path):
-    """Oversized landscape image becomes an <img> with width=600, height=400."""
+def test_rewrite_markdown_keeps_markdown_for_landscape_oversize(tmp_path):
+    """Oversized landscape image stays as standard markdown.
+
+    Earlier this branch emitted ``<img width=600 height=400>`` HTML to
+    enforce a 600px long-side cap. That broke the report body's
+    pure-markdown promise, so we drop the cap: oversized images now
+    render at native size, expressed as ``![alt](route)``.
+    """
     store = ImageStore("rid", MagicMock(), base_dir=tmp_path)
     md = "![t](https://x/a.jpg)"
     sizes = {"https://x/a.jpg": (1200, 800)}
     out = store.rewrite_markdown(
         md, {"https://x/a.jpg": "/local.png"}, url_to_size=sizes
     )
-    assert out.startswith("<img")
-    assert 'src="/local.png"' in out
-    assert f'width="{_MAX_DISPLAY_PX}"' in out
-    assert 'height="400"' in out
-    assert "loading=\"lazy\"" in out
+    assert out == "![t](/local.png)"
+    assert "<img" not in out
 
 
-def test_rewrite_markdown_emits_html_for_portrait_oversize(tmp_path):
-    """Oversized portrait image becomes an <img> with height=600, width=300."""
+def test_rewrite_markdown_keeps_markdown_for_portrait_oversize(tmp_path):
+    """Oversized portrait image stays as standard markdown, no <img>."""
     store = ImageStore("rid", MagicMock(), base_dir=tmp_path)
     md = "![t](https://x/a.jpg)"
     sizes = {"https://x/a.jpg": (800, 1200)}
     out = store.rewrite_markdown(
         md, {"https://x/a.jpg": "/local.png"}, url_to_size=sizes
     )
-    assert out.startswith("<img")
-    assert f'height="{_MAX_DISPLAY_PX}"' in out
-    assert 'width="400"' in out
+    assert out == "![t](/local.png)"
+    assert "<img" not in out
 
 
 def test_rewrite_markdown_keeps_markdown_for_small_images(tmp_path):
@@ -186,6 +188,7 @@ def test_rewrite_markdown_keeps_markdown_for_small_images(tmp_path):
         md, {"https://x/a.jpg": "/local.png"}, url_to_size=sizes
     )
     assert out == "![t](/local.png)"
+    assert "<img" not in out
 
 
 def test_rewrite_markdown_unknown_size_keeps_markdown(tmp_path):
@@ -196,18 +199,25 @@ def test_rewrite_markdown_unknown_size_keeps_markdown(tmp_path):
         md, {"https://x/a.jpg": "/local.png"}, url_to_size={}
     )
     assert out == "![t](/local.png)"
+    assert "<img" not in out
 
 
 def test_rewrite_markdown_uses_stashed_size_from_persist(tmp_path):
-    """Without explicit url_to_size, rewrite falls back to instance stash."""
+    """Without explicit url_to_size, rewrite falls back to instance stash.
+
+    Even when persist() measured the size and stashed it (the long
+    side is > 600px here), rewrite_markdown emits pure markdown — no
+    `<img>` HTML. The display-size cap is now applied at render time
+    by WebUI CSS, not in the markdown itself.
+    """
     store = ImageStore("rid", MagicMock(), base_dir=tmp_path)
     with patch.object(store, "_download") as dl:
         dl.return_value = (_png_bytes(1500, 1000), "image/png")
         store.persist(["https://x/big.jpg"])
     md = "![t](https://x/big.jpg)"
     out = store.rewrite_markdown(md, {"https://x/big.jpg": "/local.png"})
-    assert out.startswith("<img")
-    assert f'width="{_MAX_DISPLAY_PX}"' in out
+    assert out == "![t](/local.png)"
+    assert "<img" not in out
 
 
 def test_download_sets_referer_from_source_url_origin(tmp_path):

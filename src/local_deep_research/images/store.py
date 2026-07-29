@@ -365,15 +365,18 @@ class ImageStore:
         url_to_route: Dict[str, str],
         url_to_size: Optional[Dict[str, Tuple[int, int]]] = None,
     ) -> str:
-        """Replace remote image URLs with local routes; cap display size.
+        """Replace remote image URLs with local routes.
 
-        If url_to_size is given (or stashed from persist()), any image
-        whose max(width, height) exceeds _MAX_DISPLAY_PX gets a width or
-        height attribute injected into the <img> tag so the renderer
-        shrinks it proportionally (preserving aspect ratio).
+        Every persisted image becomes a standard markdown
+        ``![alt](route)`` link — no ``<img>`` HTML is emitted, even for
+        oversized images that exceed ``_MAX_DISPLAY_PX`` on their long
+        side. Markdown has no syntax for explicit display-size, and
+        callers want the report body to stay pure markdown, so the
+        long-side cap is no longer enforced here. WebUI renderers can
+        apply a CSS ``max-width`` rule on ``img`` inside the markdown
+        container if a display-size cap is still needed downstream.
 
-        Below the threshold → no attribute injected, original size shown.
-        Unknown size (PIL probe failed) → no attribute injected.
+        Unknown size (PIL probe failed) → native ``![alt](route)``.
         """
         sizes = url_to_size if url_to_size is not None else getattr(
             self, "_last_url_to_size", {}
@@ -402,18 +405,19 @@ class ImageStore:
                 under += 1
                 return f"![{alt}]({route})"
             resized += 1
-            # Cap the LONG side (width for landscape, height for portrait)
-            # and emit an <img> with explicit width/height so the renderer
-            # keeps the aspect ratio. html.escape defends against XSS in alt.
-            if w >= h:
-                width, height = _MAX_DISPLAY_PX, round(_MAX_DISPLAY_PX * h / w)
-            else:
-                width, height = round(_MAX_DISPLAY_PX * w / h), _MAX_DISPLAY_PX
+            # Oversized image. Markdown has no syntax for explicit
+            # display-size, so the previous implementation emitted
+            # `<img src=… width=… height=… loading=lazy />` HTML to
+            # enforce a 600px long-side cap. That made the report body
+            # contain raw HTML in the middle of otherwise pure markdown
+            # — readers (and humans reading the .md file) saw it as
+            # stray HTML pollution. We accept the loss of the size cap:
+            # oversized images now render at native size, and the
+            # markdown stays clean. WebUI CSS can apply a global
+            # `max-width:600px` rule to `img` inside `.ldr-markdown-content`
+            # if display-size control is needed downstream.
             safe_alt = html.escape(alt, quote=True)
-            return (
-                f'<img src="{route}" alt="{safe_alt}" width="{width}" '
-                f'height="{height}" loading="lazy" />'
-            )
+            return f"![{safe_alt}]({route})"
 
         result = _IMG_RE.sub(repl, markdown)
         logger.info(

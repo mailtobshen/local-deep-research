@@ -10,6 +10,7 @@ from local_deep_research.images.enhancer import (
     _invoke_with_retry,
     _is_retryable,
     _preflight,
+    _response_is_polluted,
 )
 
 
@@ -339,3 +340,78 @@ def test_http_status_from_exc_handles_response_object():
     exc = Exception("bad gateway")
     exc.response = resp
     assert _http_status_from_exc(exc) == 502
+
+
+# ---------------------------------------------------------------------------
+# Pollution guard: prompt-leak / oversized-response detection in _run_enhance
+# ---------------------------------------------------------------------------
+
+
+def test_response_is_polluted_detects_strict_rules_leak():
+    """When the LLM echoes the prompt's STRICT RULES paragraph verbatim,
+    the response is treated as pollution and the original chunk wins."""
+    chunk = "## Section\n\nbody text"
+    polluted = (
+        "Since the Available images list is completely empty, there are no "
+        "qualifying images to insert into this report. According to the "
+        "STRICT RULES: \"If the list is empty, that means this section has "
+        "no qualifying image — NOT a bug. Insert nothing in that case.\" "
+        "The enhanced report remains unchanged:"
+    )
+    assert _response_is_polluted(polluted, chunk) is True
+
+
+def test_response_is_polluted_detects_same_source_rule_leak():
+    """STRICT SAME-SOURCE RULE phrase alone is enough to flag pollution."""
+    chunk = "## Section\n\nbody text"
+    polluted = (
+        "STRICT SAME-SOURCE RULE means no image fits. I will not insert "
+        "anything because no source page matches."
+    )
+    assert _response_is_polluted(polluted, chunk) is True
+
+
+def test_response_is_polluted_detects_oversized_response():
+    """A response that's much larger than the chunk and barely overlaps
+    the original lines is treated as prose-polution, not an edit."""
+    chunk = "## Section\n\nshort body"
+    # Response is 10x the chunk size and contains <50% of original lines.
+    polluted = (
+        "Here is my analysis of why this section needs no images. "
+        "The STRICT RULES paragraph is well-considered. "
+        "Lorem ipsum dolor sit amet, consectetur adipiscing elit, "
+        "sed do eiusmod tempor incididunt ut labore et dolore magna "
+        "aliqua. Ut enim ad minim veniam, quis nostrud exercitation "
+        "ullamco laboris nisi ut aliquip ex ea commodo consequat. "
+        "Duis aute irure dolor in reprehenderit in voluptate velit "
+        "esse cillum dolore eu fugiat nulla pariatur."
+    )
+    assert _response_is_polluted(polluted, chunk) is True
+
+
+def test_response_is_polluted_accepts_clean_image_insertion():
+    """A response that adds one image line to the chunk is NOT pollution."""
+    chunk = "## Section\n\nbody text"
+    clean = "## Section\n\nbody text\n\n![alt](https://x/a.jpg)"
+    assert _response_is_polluted(clean, chunk) is False
+
+
+def test_enhance_returns_chunk_when_llm_returns_pollution():
+    """End-to-end: when the LLM echoes the STRICT RULES paragraph the
+    enhancer returns the original chunk, NOT the polluted response."""
+    bank = ImageBank()
+    bank.add([_img("https://real/a.jpg", "x")])
+    llm = MagicMock()
+    llm.invoke.return_value = MagicMock(
+        content=(
+            "Since the Available images list is completely empty, there are "
+            "no qualifying images to insert into this report."
+        )
+    )
+    vision = MagicMock()
+    vision.enabled = False
+    original = "## Section\n\nbody text"
+    out = ImageEnhancer(llm, vision).enhance(original, bank)
+    assert out == original
+    assert "STRICT RULES" not in out
+    assert "Since the Available" not in out

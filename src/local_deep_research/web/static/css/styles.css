@@ -1358,6 +1358,17 @@ textarea:focus, input[type="text"]:focus {
   color: var(--error-color, #fa5c7c);
 }
 
+/* Image display-size cap. The backend emits pure markdown
+   `![alt](route)` for every persisted image (no <img> HTML, no inline
+   width/height). Enforce the 600px long-side cap here at render time
+   so the markdown body stays clean while still bounding oversized
+   images. `height: auto` preserves aspect ratio. */
+.ldr-markdown-content img {
+  max-width: 600px;
+  height: auto;
+  display: block;
+}
+
 .ldr-results-content table {
   width: 100%;
   border-collapse: collapse;
