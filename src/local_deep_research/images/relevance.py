@@ -385,8 +385,18 @@ def extract_segment_sources(
     _MIN_SCORE = 1
     _MIN_RATIO = 0.30
     for heading, body in sections:
-        section_text = re.sub(r"^##\s+", "", heading) + "\n" + body
-        section_terms = _match_terms(section_text)
+        # Heading tokens carry tighter topical signal than body tokens
+        # (the section heading is the most reliable statement of what
+        # the section is about). Weight heading matches × 2 so a
+        # candidate whose own title literally names the heading can
+        # pass the score/ratio gate even when its body overlap is
+        # weak. The ratio denominator is the candidate's own token
+        # count, so heading weight does not save diluted candidates.
+        heading_terms = _match_terms(
+            re.sub(r"^##\s+", "", heading)
+        )
+        body_terms = _match_terms(body)
+        section_terms = heading_terms | body_terms
         if not section_terms:
             out.append((heading, body, list(inherited)))
             continue
@@ -397,7 +407,9 @@ def extract_segment_sources(
             )
             if not cand_terms:
                 continue
-            score = _score_match(section_terms, cand_terms)
+            heading_overlap = heading_terms & cand_terms
+            body_overlap = body_terms & cand_terms
+            score = 2 * len(heading_overlap) + len(body_overlap)
             ratio = score / len(cand_terms)
             scored.append((score, ratio, c["url"]))
         scored.sort(key=lambda x: (x[0], x[1]), reverse=True)
