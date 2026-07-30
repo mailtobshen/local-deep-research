@@ -48,7 +48,7 @@ from .relevance import (
 # ---------------------------------------------------------------------------
 
 DEFAULT_MODEL = "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
-DEFAULT_THRESHOLD = 0.65
+DEFAULT_THRESHOLD = 0.6
 DEFAULT_MIN_MARGIN = 0.05
 DEFAULT_DEVICE = "cpu"
 DEFAULT_BATCH_SIZE = 1
@@ -301,7 +301,7 @@ def semantic_match_filter(
     """Return ``[(candidate, score, best_section_idx, decision_str), ...]``.
 
     A candidate is kept when:
-      * its best cosine similarity ≥ ``threshold`` (default 0.65)
+      * its best cosine similarity ≥ ``threshold`` (default 0.6)
       * the margin between best and second-best ≥ ``min_margin`` (default 0.05)
         — an image that's equally close to two sections is ambiguous
       * its source_url shares an eTLD+1 with at least one cited URL in

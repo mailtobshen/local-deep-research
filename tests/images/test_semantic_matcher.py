@@ -248,7 +248,7 @@ def _cand(url, alt, src):
 
 def test_semantic_match_passes_obvious_match(monkeypatch):
     """alt "Canton Tower Hall" matches a section whose pool is
-    ["Canton Tower"]; threshold 0.65 is hit."""
+    ["Canton Tower"]; threshold 0.6 is hit."""
     from local_deep_research.images import semantic_matcher as sm
     fake = _fake_model({
         "Canton Tower Hall": [1.0, 0.0, 0.0, 0.0],
@@ -345,11 +345,11 @@ def test_semantic_match_respects_min_margin(monkeypatch):
 
 
 def test_semantic_match_threshold_configurable(monkeypatch):
-    """A score below the default 0.65 threshold is dropped; the
+    """A score below the default 0.6 threshold is dropped; the
     same score above a lower 0.5 threshold is kept."""
     from local_deep_research.images import semantic_matcher as sm
     fake = _fake_model({
-        "alt text": [0.6, 0.0, 0.0, 0.0],
+        "alt text": [0.55, 0.0, 0.0, 0.0],
         "section phrase": [1.0, 0.0, 0.0, 0.0],
     })
     monkeypatch.setattr(sm, "get_model", lambda *a, **k: fake)
@@ -360,7 +360,7 @@ def test_semantic_match_threshold_configurable(monkeypatch):
     out_default = semantic_match_filter(
         [cand], section_vectors, section_cited_urls,
     )
-    assert out_default[0][3] == "low_similarity"  # 0.6 < 0.65
+    assert out_default[0][3] == "low_similarity"  # 0.55 < 0.6
 
     out_lower = semantic_match_filter(
         [cand], section_vectors, section_cited_urls,
@@ -428,9 +428,9 @@ def test_semantic_match_drops_when_no_section_vectors(monkeypatch):
 
 
 def test_semantic_match_threshold_default_is_strict():
-    """The default threshold is 0.65 (per the user's calibration
+    """The default threshold is 0.6 (per the user's calibration
     decision: strict, fewer false matches)."""
-    assert DEFAULT_THRESHOLD == 0.65
+    assert DEFAULT_THRESHOLD == 0.6
 
 
 def test_semantic_match_min_margin_default_is_small():
