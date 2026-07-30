@@ -38,9 +38,24 @@ CITE_INLINE_GROUP_RE = re.compile(
 #   [N] Title
 #      URL: https://...
 # Group 1 = citation number (or comma-separated list), group 2 = title,
-# group 3 = URL (optional).
+# group 3 = URL.
+#
+# The URL line is REQUIRED and must be non-empty. If it is missing
+# or blank, the row is intentionally not matched — callers
+# (extract_segment_sources, _scan_sources_markdown_urls) treat an
+# unmatched row as "URL unknown" and drop it. This is the fix
+# for a real production bug where the previous optional-URL
+# pattern `(?:\n\s*URL:\s*(.+?))?$` swallowed the *next* row's
+# title into group 3 when a row's URL: line was blank
+# (e.g. ``[6] Beijing opera\n   URL:\n[7] Hutong\n   URL: ...``
+# matched with group(3) = "[7] Hutong", poisoning the citation
+# map).
+# Group 3 = URL. The leading `[` is explicitly excluded so an
+# empty-URL row (``URL:\n[7] Hutong``) does not match the *next*
+# row's title as the URL. Anchored at end-of-line so the match
+# stays within a single record.
 CITE_LIST_ROW_RE = re.compile(
-    r"^\[(\d+(?:,\s*\d+)*)\]\s*(.+?)(?:\n\s*URL:\s*(.+?))?$",
+    r"^\[(\d+(?:,\s*\d+)*)\]\s*(.+?)\n\s*URL:\s*(?!\[)(\S.*?)$",
     re.MULTILINE,
 )
 
