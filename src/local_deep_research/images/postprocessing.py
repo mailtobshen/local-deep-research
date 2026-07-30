@@ -12,25 +12,19 @@ from .bank import ImageBank
 from .enhancer import DEFAULT_VISION_CAP, DEFAULT_VISION_MIN_ALT_TRIGGER, ImageEnhancer
 from .extractor import ExtractedImage
 from .relevance import (
-    ImageRelevanceDecision,
     _split_sections,
-    build_report_entity_context,
-    evaluate_candidate,
     extract_segment_sources,
     filter_candidates_by_section_citations,
     is_skipped_section_heading,
 )
-
-ENTITY_REASON_KEYS: tuple[str, ...] = (
-    "keep_context_match",
-    "drop_missing_alt",
-    "drop_no_named_entity",
-    "drop_entity_extraction_failed",
-    "drop_foreign_entity_conflict",
-    "drop_unrelated_named_entity",
-    "drop_unresolved_entity_relation",
-    "drop_source_url_not_cited",
-    "drop_context_build_failed",
+from .semantic_matcher import (
+    DEFAULT_MIN_MARGIN as _DEFAULT_MIN_MARGIN,
+    DEFAULT_THRESHOLD as _DEFAULT_THRESHOLD,
+    _canonical_section_phrase,
+    _embed_sections,
+    _encode_phrase_cached,
+    build_report_entity_pool,
+    semantic_match_filter,
 )
 from .serialize import loads_images
 from .store import ImageStore, _IMG_RE
@@ -92,6 +86,8 @@ def enhance_report_with_images(
     vision_min_alt_count: Optional[int] = None,
     vision_cap: Optional[int] = None,
     firecrawl_client=None,
+    alt_similarity_threshold: float = _DEFAULT_THRESHOLD,
+    alt_similarity_min_margin: float = _DEFAULT_MIN_MARGIN,
 ) -> str:
     """Return markdown with real images inserted + mirrored locally.
 
@@ -167,82 +163,146 @@ def enhance_report_with_images(
         # against the current-run report context; only kept URLs flow
         # downstream to the LLM enhancer and the persistence path.
         # Vision is intentionally NOT invoked from the report path —
-        # candidates whose alt was rejected by the gate are not re-
-        # described behind the gate's back.
-        query = ""
-        if isinstance(results, dict):
-            query = results.get("research_query") or ""
-        try:
-            context = build_report_entity_context(
-                clean_markdown, results, query=query
+        # ─── semantic-match gate (replaces the old entity gate) ───
+        #
+        # 1. Extract per-section named-entity pools with a noise
+        #    filter (length floor 3, Roman numerals, CJK proper-noun
+        #    allowlist, dedup, per-section cap).
+        # 2. Embed each section's pool + heading (the "canonical
+        #    phrase") with paraphrase-multilingual-mpnet-base-v2.
+        # 3. For every candidate, embed the alt and find the best
+        #    cosine-similarity section. Apply threshold + margin +
+        #    same-source URL check.
+
+        raw_candidates = bank.candidates_with_alt()
+        sections_list = list(
+            extract_segment_sources(clean_markdown, results)
+        )
+        for idx, (heading, _body, urls) in enumerate(sections_list):
+            heading_text = heading.strip() if heading else f"<no-heading-{idx}>"
+            url_list = ", ".join(urls) if urls else "<none>"
+            logger.info(
+                f"[IMG-TRACE] SECTION_SOURCES research={research_id} "
+                f"section={idx} heading={heading_text!r} urls={url_list}"
             )
-        except Exception as exc:  # ContextBuildFailed or unexpected
+        _matched = sum(1 for _, _, urls in sections_list if urls)
+        _orphans = len(sections_list) - _matched
+        logger.info(
+            f"[IMG-TRACE] SECTION_SOURCES_SUMMARY research={research_id} "
+            f"sections={len(sections_list)} matched={_matched} "
+            f"orphans={_orphans}"
+        )
+
+        # Build per-section entity pools (with noise filter).
+        # Skipped-headings (References / Sources / 参考文献) are
+        # excluded — they have no body entity pool to score against.
+        _skipped_sections = {
+            idx
+            for idx, (heading, _body, _urls) in enumerate(sections_list)
+            if is_skipped_section_heading(heading)
+        }
+        if _skipped_sections:
+            logger.info(
+                f"[IMG-TRACE] SECTION_HEADING_SKIP "
+                f"research={research_id} sections={sorted(_skipped_sections)}"
+            )
+        try:
+            entity_pool = build_report_entity_pool(clean_markdown)
+        except Exception as exc:
             logger.warning(
-                f"[IMG-TRACE] ENTITY_GATE_BUILD_FAILED research={research_id} "
+                f"[IMG-TRACE] SEMANTIC_MATCH_BUILD_FAILED research={research_id} "
                 f"reason={type(exc).__name__}: {exc}"
             )
-            context = None
-        else:
-            sections_list = list(
-                extract_segment_sources(clean_markdown, results)
+            entity_pool = {}
+
+        # Per-section embeddings: only non-skipped sections whose
+        # entity pool is non-empty get an embedding vector.
+        section_vectors: Dict[int, list[float]] = {}
+        for sidx, entities in entity_pool.items():
+            if sidx in _skipped_sections:
+                continue
+            if not entities:
+                continue
+            if sidx >= len(sections_list):
+                continue
+            heading = sections_list[sidx][0] or ""
+            # Reuse the same embed path the function uses for
+            # candidates — section and alt both go through
+            # ``_encode_phrase_cached`` so the embedding space is
+            # identical. We call the private helper directly here
+            # because we need the dict; the public filter only
+            # takes a list of (idx, vec) pairs internally.
+            phrase = _canonical_section_phrase(heading, entities)
+            if not phrase:
+                continue
+            section_vectors[sidx] = list(_encode_phrase_cached(phrase))
+        logger.info(
+            f"[IMG-TRACE] SEMANTIC_SECTIONS_EMBEDDED research={research_id} "
+            f"sections_embedded={len(section_vectors)}"
+        )
+
+        # Per-section cited URLs (for same-source check inside the filter).
+        section_cited_urls = [urls for _, _, urls in sections_list]
+        # Drop URLs in skipped sections — the filter would otherwise
+        # try to match a candidate's source URL against them and the
+        # best-section pick could land on a skipped section.
+        for sidx in _skipped_sections:
+            if sidx < len(section_cited_urls):
+                section_cited_urls[sidx] = []
+
+        try:
+            decisions = semantic_match_filter(
+                raw_candidates,
+                section_vectors,
+                section_cited_urls,
+                threshold=alt_similarity_threshold,
+                min_margin=alt_similarity_min_margin,
             )
-            for idx, (heading, _body, urls) in enumerate(sections_list):
-                heading_text = heading.strip() if heading else f"<no-heading-{idx}>"
-                url_list = ", ".join(urls) if urls else "<none>"
-                logger.info(
-                    f"[IMG-TRACE] SECTION_SOURCES research={research_id} "
-                    f"section={idx} heading={heading_text!r} urls={url_list}"
-                )
-            _matched = sum(1 for _, _, urls in sections_list if urls)
-            _orphans = len(sections_list) - _matched
-            logger.info(
-                f"[IMG-TRACE] SECTION_SOURCES_SUMMARY research={research_id} "
-                f"sections={len(sections_list)} matched={_matched} "
-                f"orphans={_orphans}"
+        except Exception as exc:
+            # Model load / OOM / download failure → every candidate
+            # is dropped with a single reason. Caller can flip
+            # ``enable_images=False`` upstream to skip the step
+            # entirely.
+            logger.warning(
+                f"[IMG-TRACE] SEMANTIC_MATCH_FAILED research={research_id} "
+                f"reason={type(exc).__name__}: {exc}"
             )
-        raw_candidates = bank.candidates_with_alt()
-        if context is None:
             decisions = [
-                ImageRelevanceDecision(
-                    url=c.url,
-                    status="drop",
-                    reason="drop_context_build_failed",
-                    entities=frozenset(),
-                    matched_sections=frozenset(),
-                    source_signal="none",
-                    evidence_refs=(),
-                )
+                (c, 0.0, None, "matcher_unavailable")
                 for c in raw_candidates
             ]
-        else:
-            decisions = [evaluate_candidate(c, context) for c in raw_candidates]
-        reason_counts: Dict[str, int] = {k: 0 for k in ENTITY_REASON_KEYS}
-        for d in decisions:
-            if d.status == "keep":
-                bucket = "keep_context_match" if d.reason == "context_match" else "keep_context_rescue"
-            else:
-                bucket = d.reason if d.reason in reason_counts else "drop_unrelated_named_entity"
-            reason_counts[bucket] += 1
-        kept_urls = [d.url for d in decisions if d.status == "keep"]
-        ordered_reasons = ", ".join(
-            f"{name}={reason_counts[name]}" for name in ENTITY_REASON_KEYS
+
+        # Log decision summary.
+        reason_counts: Dict[str, int] = {}
+        for _c, _s, _i, _r in decisions:
+            reason_counts[_r] = reason_counts.get(_r, 0) + 1
+        kept_count = sum(1 for _c, _s, _i, _r in decisions if _r == "kept")
+        ordered = ", ".join(
+            f"{k}={v}" for k, v in sorted(reason_counts.items())
         )
         logger.info(
-            f"[IMG-TRACE] ENTITY_GATE research={research_id} "
-            f"raw={len(raw_candidates)} kept={len(kept_urls)} "
-            f"{ordered_reasons}"
+            f"[IMG-TRACE] SEMANTIC_MATCH research={research_id} "
+            f"raw={len(raw_candidates)} kept={kept_count} {ordered}"
         )
+
+        kept_urls = [c.url for c, _s, _i, r in decisions if r == "kept"]
         eligible_bank = bank.subset(kept_urls)
         logger.info(
             f"[IMG-TRACE] ELIGIBLE_BANK research={research_id} "
             f"total={len(eligible_bank.all_urls())}"
         )
+
+        # Reconstruct _keep_per_section from the new (candidate,
+        # score, best_section_idx, reason) tuples. The old
+        # ``ImageRelevanceDecision.matched_sections`` field is gone
+        # (evaluate_candidate is gone); the new gate's
+        # ``best_section_idx`` is the single section an image is
+        # routed to.
         _keep_per_section: Dict[int, list[str]] = {}
-        for _d in decisions:
-            if _d.status != "keep":
+        for c, _s, sidx, r in decisions:
+            if r != "kept" or sidx is None:
                 continue
-            for _sidx in _d.matched_sections:
-                _keep_per_section.setdefault(_sidx, []).append(_d.url)
+            _keep_per_section.setdefault(sidx, []).append(c.url)
         for _sidx in sorted(_keep_per_section):
             _urls_for_section = _keep_per_section[_sidx]
             _preview = ",".join(_urls_for_section[:5]) + (
