@@ -927,6 +927,9 @@ class LangGraphAgentStrategy(BaseSearchStrategy):
                 fetch_content_with_images,
             )
 
+            titles_attr = getattr(self, "titles", None)
+            titles = titles_attr if isinstance(titles_attr, dict) else {}
+
             data = fetch_content_with_images(
                 urls_to_fetch,
                 titles={u: titles.get(u, "") for u in urls_to_fetch},

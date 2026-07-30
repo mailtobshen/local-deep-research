@@ -207,3 +207,187 @@ def test_select_urls_to_fetch_empty_allowed_set_short_circuits_via_caller():
         allowed_urls=set(),
     )
     assert out == []
+
+
+# ---- _ensure_images_for_results integration ----
+
+def test_ensure_images_for_results_calls_fetch_with_titles_dict(monkeypatch):
+    """Regression test for the d55a0550 follow-up bug.
+
+    The previous version dropped the local ``titles`` binding while
+    refactoring the URL-collection loop, so
+    ``fetch_content_with_images(..., titles={u: titles.get(u, "") ...})``
+    raised ``NameError: name 'titles' is not defined`` at call time.
+    The unit tests for ``_select_urls_to_fetch`` did not exercise
+    the fetch call itself, so the bug shipped and broke 5/5 research
+    runs before anyone noticed. This test mocks the fetch and asserts
+    the call goes through.
+
+    The mock is patched on the **source module** because
+    ``_ensure_images_for_results`` does the import inside the
+    function body, so module-level monkeypatching on the strategy
+    module would not catch it.
+    """
+    from local_deep_research.advanced_search_system.strategies import (
+        langgraph_agent_strategy as mod,
+    )
+
+    # Patch on the actual source path the production code imports from.
+    import local_deep_research.research_library.downloaders.extraction.pipeline as pipeline_mod
+
+    captured: dict = {}
+
+    def fake_fetch(urls, titles=None, settings_snapshot=None):
+        captured["urls"] = list(urls)
+        captured["titles"] = dict(titles or {})
+        captured["snapshot"] = settings_snapshot
+        return {u: {"images": []} for u in urls}
+
+    monkeypatch.setattr(pipeline_mod, "fetch_content_with_images", fake_fetch)
+
+    monkeypatch.setattr(
+        mod,
+        "get_bool_setting_from_snapshot",
+        lambda *a, **k: True,
+    )
+
+    class _FakeCollector:
+        def attach_html_content(self, url, payload):
+            return False
+
+    strategy = mod.LangGraphAgentStrategy.__new__(mod.LangGraphAgentStrategy)
+    strategy.titles = {"https://a.com": "A title"}
+    strategy.collector = _FakeCollector()
+    strategy.settings_snapshot = {"report.enable_images": True}
+
+    strategy._ensure_images_for_results(
+        all_search_results=[],
+        allowed_urls={"https://a.com", "https://b.com"},
+    )
+
+    assert set(captured.get("urls", [])) == {"https://a.com", "https://b.com"}
+    titles_passed = captured.get("titles", {})
+    assert isinstance(titles_passed, dict)
+    assert "https://a.com" in titles_passed
+    assert "https://b.com" in titles_passed
+
+
+def test_ensure_images_for_results_returns_silently_when_images_enabled_off(
+    monkeypatch,
+):
+    """A research without ``report.enable_images`` is a no-op. The
+    function must not raise even when the rest of the pipeline is
+    empty / unconfigured."""
+    from local_deep_research.advanced_search_system.strategies import (
+        langgraph_agent_strategy as mod,
+    )
+    import local_deep_research.research_library.downloaders.extraction.pipeline as pipeline_mod
+
+    monkeypatch.setattr(
+        mod,
+        "get_bool_setting_from_snapshot",
+        lambda *a, **k: False,
+    )
+
+    called = {"fetch": 0}
+
+    def fake_fetch(*a, **k):
+        called["fetch"] += 1
+        return {}
+
+    monkeypatch.setattr(pipeline_mod, "fetch_content_with_images", fake_fetch)
+
+    class _FakeCollector:
+        def attach_html_content(self, url, payload):
+            return False
+
+    strategy = mod.LangGraphAgentStrategy.__new__(mod.LangGraphAgentStrategy)
+    strategy.titles = {}
+    strategy.collector = _FakeCollector()
+    strategy.settings_snapshot = {}
+
+    strategy._ensure_images_for_results(
+        all_search_results=[],
+        allowed_urls={"https://a.com"},
+    )
+    assert called["fetch"] == 0
+
+
+def test_ensure_images_for_results_empty_allowed_set_no_fetch(monkeypatch):
+    """An empty allowed set is the caller's signal to skip. No fetch
+    call, no exception."""
+    from local_deep_research.advanced_search_system.strategies import (
+        langgraph_agent_strategy as mod,
+    )
+    import local_deep_research.research_library.downloaders.extraction.pipeline as pipeline_mod
+
+    monkeypatch.setattr(
+        mod,
+        "get_bool_setting_from_snapshot",
+        lambda *a, **k: True,
+    )
+
+    called = {"fetch": 0}
+
+    def fake_fetch(*a, **k):
+        called["fetch"] += 1
+        return {}
+
+    monkeypatch.setattr(pipeline_mod, "fetch_content_with_images", fake_fetch)
+
+    class _FakeCollector:
+        def attach_html_content(self, url, payload):
+            return False
+
+    strategy = mod.LangGraphAgentStrategy.__new__(mod.LangGraphAgentStrategy)
+    strategy.titles = {}
+    strategy.collector = _FakeCollector()
+    strategy.settings_snapshot = {}
+
+    strategy._ensure_images_for_results(
+        all_search_results=[],
+        allowed_urls=set(),
+    )
+    assert called["fetch"] == 0
+
+
+def test_ensure_images_for_results_html_content_already_present_skips(
+    monkeypatch,
+):
+    """A cited URL whose html_content is already in search_results
+    is not re-fetched. The agent's earlier fetch is reused."""
+    from local_deep_research.advanced_search_system.strategies import (
+        langgraph_agent_strategy as mod,
+    )
+    import local_deep_research.research_library.downloaders.extraction.pipeline as pipeline_mod
+
+    monkeypatch.setattr(
+        mod,
+        "get_bool_setting_from_snapshot",
+        lambda *a, **k: True,
+    )
+
+    called = {"fetch": 0}
+
+    def fake_fetch(*a, **k):
+        called["fetch"] += 1
+        return {}
+
+    monkeypatch.setattr(pipeline_mod, "fetch_content_with_images", fake_fetch)
+
+    class _FakeCollector:
+        def attach_html_content(self, url, payload):
+            return False
+
+    strategy = mod.LangGraphAgentStrategy.__new__(mod.LangGraphAgentStrategy)
+    strategy.titles = {}
+    strategy.collector = _FakeCollector()
+    strategy.settings_snapshot = {}
+
+    strategy._ensure_images_for_results(
+        all_search_results=[
+            {"url": "https://a.com", "html_content": "<html/>"},
+        ],
+        allowed_urls={"https://a.com"},
+    )
+    assert called["fetch"] == 0
