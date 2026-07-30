@@ -394,35 +394,36 @@ def test_beijing_scenario_full_pipeline(monkeypatch):
         f"References section not in skip set: {skip_line!r}"
     )
 
-    # 4. The entity gate + per-section filter is the bottleneck. The
-    # entity gate currently drops every candidate whose alt is in
-    # English (alt="Beijing skyline") but the report body is in
-    # Chinese (正文 contains "北京", "故宫", etc.) — the names_match
-    # gate does not bridge CJK ↔ Latin. Only candidates whose alt
-    # literally matches a Chinese string in the body survive.
-    #
-    # The 5 survivors are all from the "Olympic venues" / "Beijing" /
-    # "Beijing Subway" articles, where alt strings like "Beijing
-    # National Stadium" happen to share the Latin token "Beijing"
-    # with the body. They all land in section 14 (the References
-    # section, which collects every URL in the trailing block).
-    # Downstream that section is filtered out by
-    # is_skipped_section_heading, so the LLM is never asked.
-    #
-    # This test asserts the BUG so a future cross-language fix
-    # turns it green. If you fix the entity gate, the assertions
-    # below should be relaxed (or removed) to match the new
-    # behaviour.
+    # 4. Cross-language entity gate (Wikipedia article title aliasing):
+    # the gate accepts English alts (alt="Canton Tower") for Chinese
+    # report bodies (body="广州塔") because both refer to the same
+    # cited Wikipedia article. The per-section domain filter is what
+    # actually decides which of the survivors flow to which section.
     gate_line = next(
         l for l in trace_lines
         if "ENTITY_GATE" in l and "test-beijing-86132889" in l
     )
-    # raw=18, kept=5 is the current reality.
     import re as _re
     raw = int(_re.search(r"raw=(\d+)", gate_line).group(1))
     kept_by_gate = int(_re.search(r"kept=(\d+)", gate_line).group(1))
     assert raw == 18, f"raw={raw} != 18"
-    assert kept_by_gate == 5, f"kept={kept_by_gate} != 5"
+    # Before the cross-language fix, kept was 5 (only candidates whose
+    # alt happened to share a Latin token with the body). After the
+    # fix, kept is much higher because every candidate whose
+    # source_url is a Wikipedia article cited in the report survives.
+    # The 5 discarded ones are Beijing opera (no source_url in
+    # results) and the merge of several short-alts.
+    assert kept_by_gate >= 10, f"kept={kept_by_gate} is too low"
+    # The drop_unrelated_named_entity count should be near zero —
+    # any drops now come from the residual generic-vocabulary filter,
+    # not the cross-language mismatch.
+    drop_unrelated = int(
+        _re.search(r"drop_unrelated_named_entity=(\d+)", gate_line).group(1)
+    )
+    assert drop_unrelated <= 3, (
+        f"drop_unrelated_named_entity={drop_unrelated} — cross-language "
+        f"gate should not be the main reason for drops any more"
+    )
 
     # 5. ENHANCE chosen=0 reflects the cross-language entity gate
     # bottleneck.
