@@ -55,27 +55,8 @@ DEFAULT_BATCH_SIZE = 1
 DEFAULT_ENABLED = True
 DEFAULT_FP16 = True  # cgroup cap is 1.155 GB; fp16 model fits.
 
-_MIN_ENTITY_LEN = 3
+_MIN_ENTITY_LEN = 2  # 2-char CJK proper nouns (故宫, 颐和园) are common
 _PER_SECTION_CAP = 50
-
-
-# Short CJK proper nouns that must survive the length-3 floor. Hand-
-# maintained, intentionally small. Add to this list as new domains
-# are encountered; do NOT let it grow to cover all 2-char CJK strings
-# (would defeat the floor).
-_SHORT_CJK_PROPER: frozenset[str] = frozenset({
-    # Cities
-    "北京", "上海", "广州", "深圳", "武汉", "西安", "成都", "杭州",
-    "南京", "重庆", "天津", "苏州", "长沙", "青岛", "济南",
-    "厦门", "福州", "郑州", "昆明", "哈尔滨", "沈阳", "大连",
-    "太原", "石家庄", "南昌", "南宁", "合肥", "宁波", "佛山",
-    "东莞", "中山", "珠海", "泉州",
-    # Provinces
-    "广东", "广西", "江苏", "浙江", "山东", "河南", "河北", "湖南",
-    "湖北", "四川", "福建", "安徽", "江西", "陕西", "辽宁", "吉林",
-    "云南", "贵州", "海南", "台湾", "内蒙", "宁夏", "新疆", "西藏",
-    "香港", "澳门",
-})
 
 
 # ---------------------------------------------------------------------------
@@ -108,14 +89,19 @@ def _filter_entity_pool(entities: Iterable[str]) -> list[str]:
       * Pure digit / decimal / punctuation runs: ``1``, ``12``,
         ``3.1.4``, ``1.``, ``：``
       * Roman numerals: ``I``, ``II``, ``III``, ``IV``, ``V`` …
-      * Spans shorter than ``_MIN_ENTITY_LEN`` (3), **except**
-        known short CJK proper nouns in ``_SHORT_CJK_PROPER``.
-      * Single Latin letters (``A``, ``B``, ``C``) — covered by
-        the length floor.
+      * Single-character spans — too short to be a real entity in
+        any language (1 CJK char is a particle, 1 Latin letter is
+        a Roman numeral or initialism noise).
+      * Single-character length floor. Per-language floors
+        (e.g. 2-char CJK proper nouns allowed) were tried and
+        removed because they cannot scale to research topics
+        the table's author has not anticipated; the embedding
+        model handles short-token noise gracefully.
     Keeps:
       * ``DNA`` (3-letter acronym)
-      * ``北京`` (2-char CJK, in allowlist)
-      * ``Canton_Tower``, ``Forbidden City`` (≥ 3 chars)
+      * ``Canton_Tower``, ``Forbidden City`` (≥ 2 chars)
+      * Short Chinese proper nouns (``故宫``, ``颐和园``, ``北京``)
+      * Multi-word English phrases (``New York City``)
     """
     out: list[str] = []
     for s in entities:
@@ -127,7 +113,7 @@ def _filter_entity_pool(entities: Iterable[str]) -> list[str]:
             continue
         if _ROMAN_RE.match(s):
             continue
-        if len(s) < _MIN_ENTITY_LEN and s not in _SHORT_CJK_PROPER:
+        if len(s) < _MIN_ENTITY_LEN:
             continue
         out.append(s)
     # Dedupe preserving first-seen order.

@@ -51,18 +51,32 @@ def test_filter_rejects_single_latin_letter():
 
 
 def test_filter_rejects_single_cjk_not_in_allowlist():
-    """Single CJK characters not in the allowlist are rejected
-    (the length floor of 3 fires for them)."""
+    """Single CJK characters are rejected by the length-3 floor
+    (no allowlist override)."""
     assert _filter_entity_pool({"京"}) == []  # in 北京, but alone
     assert _filter_entity_pool({"广"}) == []  # in 广州
     assert _filter_entity_pool({"故"}) == []  # in 故宫
 
 
-def test_filter_accepts_short_cjk_proper_nouns_in_allowlist():
-    """2-char CJK proper nouns in ``_SHORT_CJK_PROPER`` are accepted
-    (the allowlist override beats the length-3 floor)."""
-    for name in ["北京", "上海", "广州", "武汉", "深圳", "香港", "澳门", "广东", "江苏"]:
-        assert _filter_entity_pool({name}) == [name], f"allowlist {name!r}"
+def test_filter_rejects_single_char_no_allowlist():
+    """The static CJK allowlist was removed. The filter uses a
+    simple length-2 floor (anything 1 char or less is rejected).
+    2-char CJK proper nouns (``故宫``, ``北京``) are accepted —
+    the embedding model handles short-token noise gracefully.
+
+    1-char entities (single Latin letter, single CJK particle)
+    are rejected by the length floor.
+    """
+    # 1-char: rejected.
+    for s in ["A", "I", "京", "广", "上", "州"]:
+        assert _filter_entity_pool({s}) == [], (
+            f"1-char {s!r} should be rejected by length floor"
+        )
+    # 2+ char: accepted (whether 2-char CJK or 3-char Latin).
+    for s in ["故宫", "北京", "颐和园", "DNA", "Canton_Tower", "Forbidden City"]:
+        assert _filter_entity_pool({s}) == [s], (
+            f"{s!r} should be accepted (≥ 2 chars)"
+        )
 
 
 def test_filter_accepts_three_char_acronyms():
@@ -141,16 +155,22 @@ def test_build_report_entity_pool_caps_at_50():
 
 
 def test_build_report_entity_pool_handles_chinese_only():
-    """Pure Chinese report: no Latin entities, the CJK allowlist
-    is the only path for short nouns."""
+    """Pure Chinese report: the length-2 floor accepts 2-char
+    CJK proper nouns. The extractor emits larger spans (e.g.
+    故宫又称紫禁城), but the floor also lets ``北京`` and
+    ``故宫`` through on their own."""
     md = """# 北京旅游
 
 ## 1. 故宫
 故宫又称紫禁城。
 """
     pool = build_report_entity_pool(md)
-    # 北京 (in allowlist) is kept.
-    assert "北京" in pool[0]
+    # 2-char CJK is now accepted (no allowlist needed; length-2
+    # floor applies uniformly).
+    for s in pool[0]:
+        assert len(s) >= 2
+    # The 1-char CJK particle is dropped.
+    assert "京" not in pool[0]
 
 
 def test_build_report_entity_pool_handles_mixed_languages():
@@ -162,8 +182,8 @@ def test_build_report_entity_pool_handles_mixed_languages():
 故宫是北京的核心景点。Forbidden City is the famous palace.
 """
     pool = build_report_entity_pool(md)
-    # Either 北京 (allowlist) or the larger phrases survive — the
-    # exact set depends on the extractor's span rules, but
+    # 2-char CJK is dropped; 3+ char CJK and Latin survive.
+    # The exact set depends on the extractor's span rules, but
     # neither single-letter Latin nor pure digits leak through.
     all_ents = set()
     for ents in pool.values():
