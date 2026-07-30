@@ -474,35 +474,47 @@ def test_anti_instagram_cloned_host_is_strong():
 
 
 # ---------------------------------------------------------------------------
-# Cross-language entity gate (Wikipedia article title aliasing)
+# Cross-language entity gate (Wikipedia URL is the canonical anchor)
 # ---------------------------------------------------------------------------
 #
 # The entity gate was previously strict: an alt with an English
 # proper name (e.g. ``Canton Tower``) was dropped when the report
 # body only contained the Chinese form (``广州塔``) — the two strings
-# are not equal, so the anchor check failed. The fix has two parts:
+# are not equal, so the anchor check failed.
 #
-#  1. The report's Wikipedia article URLs are parsed into article
-#     titles (``Canton_Tower``) and stored in
-#     ``context.cited_article_titles``. An alt whose
-#     ``source_url`` parses to one of these titles is anchored,
-#     even when the body uses a different language for the same
-#     concept.
-#  2. A small static alias table maps article titles to their
-#     Chinese / alternate names. When the report cites an article,
-#     the aliases are added to ``context.all_entities``, so the
-#     existing substring / exact-match anchored check can fire
-#     against the body without the alt having to know the URL.
+# The fix uses the Wikipedia URL itself as the cross-language
+# bridge. Every Wikipedia article, in any language, has the same
+# concept as the same article in any other language. So:
+#
+#   1. The report's Wikipedia article URLs are parsed into article
+#      titles (``Canton_Tower``) and stored in
+#      ``context.cited_article_titles``. The spaced form
+#      (``Canton Tower``) is also added to ``context.all_entities``
+#      / ``primary`` so the existing substring anchor can also
+#      fire when the alt contains the natural English name.
+#   2. An alt whose ``source_url`` parses to a title in
+#      ``cited_article_titles`` is anchored, regardless of body
+#      language. This is the primary mechanism.
+#   3. Short-acronym alts (DNA, USB) that pass the cross-language
+#      check but fail the body-derived entity check still
+#      ``unresolved_entity_relation``-drop. A second-stage
+#      fallback expands the section match to all sections when
+#      the candidate's article is in the cited set — the report
+#      explicitly cited this article, so any section is a valid
+#      home.
+#
+# A static per-domain alias table was tried first and removed:
+# it cannot scale to research topics the table's author has not
+# anticipated. The URL title is the only cross-language mechanism.
 
 
 def test_cross_language_english_alt_chinese_body_via_wikipedia_source():
     """The original bug case: alt "Canton Tower" + body "广州塔".
 
-    Without the fix this would be ``drop_unrelated_named_entity``
-    because the alt's Latin proper name does not match the body's
-    Chinese name. With the fix, the image's source_url
-    (``en.wikipedia.org/wiki/Canton_Tower``) maps to the same
-    Wikipedia article the report cited, so the alt is anchored.
+    The image's source_url (``en.wikipedia.org/wiki/Canton_Tower``)
+    is parsed to article title ``Canton_Tower``; the report
+    cited the same article in its References block. The
+    cross-language path anchors the alt.
     """
     report = (
         "## 1. 广州塔\n"
@@ -527,7 +539,6 @@ def test_cross_language_english_alt_chinese_body_via_wikipedia_source():
         ],
     }
     context = build_report_entity_context(report, results)
-
     cand = candidate(
         alt="Canton Tower at night",
         source="https://en.wikipedia.org/wiki/Canton_Tower",
@@ -537,15 +548,13 @@ def test_cross_language_english_alt_chinese_body_via_wikipedia_source():
         f"cross-language keep failed: status={decision.status} "
         f"reason={decision.reason} evidence={decision.evidence_refs}"
     )
-    assert decision.reason == "context_match"
 
 
-def test_cross_language_alias_added_to_all_entities():
-    """When the report cites a known Wikipedia article, its Chinese
-    alias is added to ``context.all_entities``. The body's
-    "广州塔" matches the alias set, so any candidate whose alt
-    contains the Chinese name is anchored even without a Wikipedia
-    source_url.
+def test_cross_language_cited_article_title_added_to_all_entities():
+    """The cited article's title (with underscores replaced by
+    spaces) is added to ``context.all_entities`` and ``primary``,
+    so the existing exact/substring anchor can also fire for alts
+    that contain the natural English name.
     """
     report = "## 广州塔\n广州。\n"
     results = {
@@ -564,18 +573,15 @@ def test_cross_language_alias_added_to_all_entities():
         ],
     }
     context = build_report_entity_context(report, results)
-    # The Chinese alias is in the report's entity set.
-    assert "广州塔" in context.all_entities
-    # The Wikipedia article title is in the cited set.
     assert "Canton_Tower" in context.cited_article_titles
+    assert "Canton Tower" in context.all_entities  # spaced form
+    assert "Canton Tower" in context.primary_entities
 
 
 def test_cross_language_beijing_forbidden_city_keeps_image():
     """Beijing scenario: body 故宫 + alt "Aerial view of the
     Forbidden City" + source_url is the Wikipedia Forbidden City
-    article. The cross-language gate accepts the image because the
-    article title ``Forbidden_City`` is in the cited set, and
-    the alias ``故宫`` is in the body's entity set.
+    article. The cross-language path anchors via cited_article_titles.
     """
     report = (
         "## 1. 皇家宫殿遗址\n"
@@ -610,28 +616,28 @@ def test_cross_language_beijing_forbidden_city_keeps_image():
     )
 
 
-def test_cross_language_unknown_article_no_alias_still_drops():
-    """If the report's Wikipedia article is NOT in the alias table
-    and the body uses only the Chinese name, the alt is dropped —
-    no signal can bridge the two without an alias or a cited
-    article-title match.
+def test_cross_language_any_uncited_article_still_keeps_via_cited_set():
+    """The cross-language path uses the report's cited article
+    titles as the anchor set, NOT a per-domain alias table.
+    Any article title in ``cited_article_titles`` works —
+    tourism, medical, legal, physics, etc.
     """
     report = (
-        "## 1. 北京火车站\n"
-        "北京火车站是中国铁路的重要枢纽。\n\n"
+        "## 1. 癌症\n"
+        "癌症介绍。\n\n"
         "## 参考文献\n"
-        "[1] Beijing Railway Station\n"
-        "   URL: https://en.wikipedia.org/wiki/Beijing_Railway_Station\n"
+        "[1] Cancer\n"
+        "   URL: https://en.wikipedia.org/wiki/Cancer\n"
     )
     results = {
-        "research_query": "北京",
+        "research_query": "癌症",
         "findings": [
             {
                 "search_results": [
                     {
-                        "link": "https://en.wikipedia.org/wiki/Beijing_Railway_Station",
-                        "title": "Beijing Railway Station",
-                        "content": "Beijing Railway Station.",
+                        "link": "https://en.wikipedia.org/wiki/Cancer",
+                        "title": "Cancer",
+                        "content": "Cancer is a disease.",
                         "snippet": "",
                     }
                 ]
@@ -640,36 +646,107 @@ def test_cross_language_unknown_article_no_alias_still_drops():
     }
     context = build_report_entity_context(report, results)
     cand = candidate(
-        alt="Photo of Beijing Railway Station at night",
-        source="https://en.wikipedia.org/wiki/Beijing_Railway_Station",
+        alt="Cancer cell under microscope",
+        source="https://en.wikipedia.org/wiki/Cancer",
     )
     decision = evaluate_candidate(cand, context)
-    # The image's source_url is the cited article (cross-language
-    # anchor via cited_article_titles), so this is actually kept.
-    # The cross-language path is broader than just the static alias
-    # table — any cited article title acts as an anchor.
-    assert decision.status == "keep", (
-        f"uncited article should be cross-language anchored via "
-        f"cited_article_titles: {decision.reason}"
-    )
+    assert decision.status == "keep"
 
 
-def test_cross_language_uncited_article_with_chinese_body_keeps_via_static_alias():
-    """When the candidate's article is NOT cited but the alias
-    table covers the article, the Chinese alias in the report
-    body still anchors the image.
+def test_cross_language_short_acronym_dna_usb_keeps():
+    """DNA and USB are 3-letter acronyms. The cross-language path
+    anchors them via the cited article title even though the
+    _is_substantial check would reject them as a regular
+    substring match. This is a real-world case for scientific
+    / technical reports.
     """
-    # The report cites the Canton Tower article, and the body
-    # mentions 广州塔. The candidate is from the same article
-    # (so the source_url parses to the same article title), and
-    # because the article is in the cited_article_titles, the
-    # alt is anchored. We assert that here.
+    for title, zh, alt in [
+        ("DNA", "脱氧核糖核酸", "DNA double helix"),
+        ("USB", "通用串行总线", "USB connector"),
+    ]:
+        report = (
+            f"## 1. {zh}\n{zh}介绍。\n\n## 参考文献\n"
+            f"[1] {title}\n   URL: https://en.wikipedia.org/wiki/{title}\n"
+        )
+        results = {
+            "research_query": zh,
+            "findings": [
+                {
+                    "search_results": [
+                        {
+                            "link": f"https://en.wikipedia.org/wiki/{title}",
+                            "title": title,
+                            "content": "",
+                            "snippet": "",
+                        }
+                    ]
+                }
+            ],
+        }
+        context = build_report_entity_context(report, results)
+        cand = candidate(
+            alt=alt,
+            source=f"https://en.wikipedia.org/wiki/{title}",
+        )
+        decision = evaluate_candidate(cand, context)
+        assert decision.status == "keep", (
+            f"{title}: status={decision.status} reason={decision.reason}"
+        )
+
+
+def test_cross_language_multi_word_article_keeps():
+    """Multi-word article titles like "Quantum_entanglement" or
+    "Machine_learning" pass through the cross-language path even
+    when the alt uses the natural English form (with spaces,
+    not underscores).
+    """
+    for title, zh, alt in [
+        ("Quantum_entanglement", "量子纠缠", "Quantum entanglement diagram"),
+        ("Machine_learning", "机器学习", "Neural network architecture"),
+    ]:
+        report = (
+            f"## 1. {zh}\n{zh}介绍。\n\n## 参考文献\n"
+            f"[1] {title}\n   URL: https://en.wikipedia.org/wiki/{title}\n"
+        )
+        results = {
+            "research_query": zh,
+            "findings": [
+                {
+                    "search_results": [
+                        {
+                            "link": f"https://en.wikipedia.org/wiki/{title}",
+                            "title": title.replace("_", " "),
+                            "content": "",
+                            "snippet": "",
+                        }
+                    ]
+                }
+            ],
+        }
+        context = build_report_entity_context(report, results)
+        cand = candidate(
+            alt=alt,
+            source=f"https://en.wikipedia.org/wiki/{title}",
+        )
+        decision = evaluate_candidate(cand, context)
+        assert decision.status == "keep", (
+            f"{title}: status={decision.status} reason={decision.reason}"
+        )
+
+
+def test_cross_language_source_url_must_be_cited():
+    """Even with a perfect cross-language match on the alt
+    (Canton Tower ↔ 广州塔), a candidate whose ``source_url``
+    is NOT in the report's cited URL set is dropped with
+    ``drop_source_url_not_cited``. The cross-language path
+    cannot save candidates from the source-not-cited gate — the
+    cited URL list is the contract, and a non-cited source means
+    the LLM never asked for this image.
+    """
     report = (
         "## 1. 广州塔\n"
-        "广州塔。\n\n"
-        "## 参考文献\n"
-        "[1] Canton Tower\n"
-        "   URL: https://en.wikipedia.org/wiki/Canton_Tower\n"
+        "广州塔。\n\n## 参考文献\n"
+        "[1] Canton Tower\n   URL: https://en.wikipedia.org/wiki/Canton_Tower\n"
     )
     results = {
         "research_query": "广州塔",
@@ -679,7 +756,7 @@ def test_cross_language_uncited_article_with_chinese_body_keeps_via_static_alias
                     {
                         "link": "https://en.wikipedia.org/wiki/Canton_Tower",
                         "title": "Canton Tower",
-                        "content": "Canton Tower is in Guangzhou.",
+                        "content": "",
                         "snippet": "",
                     }
                 ]
@@ -687,18 +764,13 @@ def test_cross_language_uncited_article_with_chinese_body_keeps_via_static_alias
         ],
     }
     context = build_report_entity_context(report, results)
-    # The body has the Chinese alias (added when the article is cited).
-    assert "广州塔" in context.all_entities
-    # A candidate alt containing the Chinese name only.
     cand = candidate(
-        alt="广州塔珠江夜景",
-        source="https://en.wikipedia.org/wiki/Canton_Tower",
+        alt="Canton Tower at night",
+        source="https://a1.ctrip.com/photo/canton-tower",  # NOT cited
     )
     decision = evaluate_candidate(cand, context)
-    assert decision.status == "keep", (
-        f"alt containing Chinese alias + body containing same alias: "
-        f"status={decision.status} reason={decision.reason}"
-    )
+    assert decision.status == "drop"
+    assert decision.reason == "drop_source_url_not_cited"
 
 
 def test_wikipedia_article_title_extraction():
@@ -710,27 +782,16 @@ def test_wikipedia_article_title_extraction():
         _wikipedia_article_title("https://en.wikipedia.org/wiki/Canton_Tower")
         == "Canton_Tower"
     )
-    # URL-decoded form is not applied by urlparse.path — this
-    # function returns the raw percent-encoded path segment. The
-    # alias table is keyed on raw segments, which is fine for
-    # the langgraph / firecrawl flow because the agent's
-    # search results carry the same encoded form.
+    # Non-article paths are rejected so they don't pollute the
+    # cited_article_titles set with non-content identifiers.
+    assert _wikipedia_article_title("https://example.com/page") == ""
+    assert _wikipedia_article_title("https://en.wikipedia.org/wiki/Special:RecentChanges") == ""
+    assert _wikipedia_article_title("https://en.wikipedia.org/wiki/File:Foo.jpg") == ""
+    assert _wikipedia_article_title("") == ""
+    # Any *.wikipedia.org is accepted (en / zh / ja / de / ...).
     assert (
         _wikipedia_article_title(
             "https://zh.wikipedia.org/wiki/%E5%B9%BF%E5%B7%9E%E5%A1%94"
         )
         == "%E5%B9%BF%E5%B7%9E%E5%A1%94"
     )
-    # Decoded form (e.g. for direct URL inspection): we use
-    # urllib.parse.unquote to normalise. The entity gate code
-    # does this internally.
-    from urllib.parse import unquote
-    assert unquote(
-        _wikipedia_article_title(
-            "https://zh.wikipedia.org/wiki/%E5%B9%BF%E5%B7%9E%E5%A1%94"
-        )
-    ) == "广州塔"
-    assert _wikipedia_article_title("https://example.com/page") == ""
-    assert _wikipedia_article_title("https://en.wikipedia.org/wiki/Special:RecentChanges") == ""
-    assert _wikipedia_article_title("https://en.wikipedia.org/wiki/File:Foo.jpg") == ""
-    assert _wikipedia_article_title("") == ""

@@ -251,17 +251,19 @@ def _extract_registered_domain(url: str) -> str:
 
 
 def _wikipedia_article_title(url: str) -> str:
-    """Extract the Wikipedia article title from a ``en.wikipedia.org/wiki/<Title>`` URL.
+    """Extract the Wikipedia article title from a ``*.wikipedia.org/wiki/<Title>`` URL.
 
-    Returns the underscore-joined title (e.g. ``Canton_Tower``) or
-    ``""`` for non-Wikipedia URLs, non-English Wikipedias, or
-    unparseable input. The title is the canonical English label for
-    the concept the image was scraped from; using it as an
-    extra-anchor lets an alt of ``Canton Tower at night`` match a
-    report body that only mentions the Chinese name (the report's
-    References block carries the same ``Canton_Tower`` URL, so
-    ``context.cited_article_titles`` carries the title and the
-    anchor match fires).
+    Returns the percent-encoded path segment (e.g. ``Canton_Tower``
+    or ``%E5%B9%BF%E5%B7%9E%E5%A1%94`` for the Chinese Wikipedia's
+    "广州塔") or ``""`` for non-Wikipedia URLs, non-article paths
+    (``Special:``, ``File:``, ``Help:``), or unparseable input.
+
+    The title is the canonical concept identifier behind the
+    image — every Wikipedia article, in any language, has the same
+    concept as the same article in any other language. Using it as
+    the cross-language anchor means the entity gate does not need a
+    static per-domain alias table to bridge CJK ↔ Latin: the URL
+    IS the bridge.
     """
     if not url:
         return ""
@@ -269,67 +271,32 @@ def _wikipedia_article_title(url: str) -> str:
         host = (urlparse(url).hostname or "").lower()
     except Exception:
         return ""
-    # Accept en.wikipedia.org and any subdomain variant
-    # (zh.wikipedia.org / en.m.wikipedia.org / ...).
+    # Any *.wikipedia.org (en / zh / ja / de / ...).
     if "wikipedia.org" not in host:
         return ""
     try:
         path = urlparse(url).path
     except Exception:
         return ""
-    # /wiki/<Title> — strip the leading /wiki/.
     if not path.startswith("/wiki/"):
         return ""
     title = path[len("/wiki/") :]
-    # /wiki/Special: /wiki/Help: /wiki/File: etc. are not article
-    # names; skip them so they don't pollute the alias map.
+    # /wiki/Special:RecentChanges, /wiki/File:Foo.jpg etc. are not
+    # article names — they would pollute the cited_article_titles
+    # set with non-content identifiers.
     if ":" in title:
         return ""
     return title
 
 
-# ---------------------------------------------------------------------------
-# Cross-language alias table
-# ---------------------------------------------------------------------------
-#
-# A small static map from a Wikipedia article title to its Chinese /
-# alternate-language display name. Used only when the report body
-# does not contain the Latin form (the most common LLM report shape
-# for Chinese reports). The map is intentionally narrow — it covers
-# the most common Beijing / Chinese cultural attractions, which are
-# the cases observed in production. Out-of-coverage names fall back
-# to the canonical article title alone, which still anchors the alt
-# when the LLM has included the article in the References block
-# (most LLMs do, for traceability).
-_CROSS_LANG_ALIASES: dict[str, tuple[str, ...]] = {
-    "Forbidden_City": ("故宫", "紫禁城"),
-    "Summer_Palace": ("颐和园",),
-    "Temple_of_Heaven": ("天坛",),
-    "Great_Wall_of_China": ("长城", "万里长城"),
-    "Hutong": ("胡同",),
-    "Beijing": ("北京",),
-    "Yonghe_Temple": ("雍和宫",),
-    "Beijing_National_Stadium": ("鸟巢", "国家体育场"),
-    "Beijing_National_Aquatics_Center": ("水立方", "国家游泳中心"),
-    "798_Art_Zone": ("798艺术区", "798"),
-    "Beijing_Subway": ("北京地铁",),
-    "Beijing_Capital_International_Airport": (
-        "首都国际机场",
-        "北京首都国际机场",
-    ),
-    "Canton_Tower": ("广州塔", "小蛮腰"),
-    "Shamian": ("沙面", "沙面岛"),
-    "Chen_Clan_Ancestral_Hall": ("陈家祠", "陈氏书院"),
-    "Yuexiu_Park": ("越秀公园",),
-    "Chimelong_Paradise": ("长隆欢乐世界",),
-    "Eight_Sights_of_Guangzhou": ("羊城八景",),
-}
-
-
-def _alias_for_article(article_title: str) -> tuple[str, ...]:
-    """Return the cross-language aliases for a Wikipedia article
-    title. Returns ``()`` for unknown articles."""
-    return _CROSS_LANG_ALIASES.get(article_title, ())
+# (A previous version of this module also kept a static
+# _CROSS_LANG_ALIASES table mapping Wikipedia article titles to
+# their Chinese display names. That table was deleted: the
+# cross-language bridge is the Wikipedia URL itself, so a static
+# map covering one domain is both unnecessary (Wikipedia covers
+# every topic) and harmful (it cannot scale to research topics
+# the table's author has not anticipated). The URL-title path is
+# the only cross-language mechanism in the entity gate.)
 
 
 def domains_match(url_a: str, url_b: str) -> bool:
@@ -1029,20 +996,27 @@ def build_report_entity_context(
                 if title and url:
                     section_sources.append((title, url, (title,)))
                 # The URL may also be a Wikipedia article — the
-                # article title is a cross-language alias key (the
+                # article title is a cross-language anchor: the
                 # report's "I cited Canton_Tower" is the same fact
-                # as "the alt is from Canton_Tower"). Use it as an
-                # extra anchor.
+                # as "the alt is from Canton_Tower". A candidate
+                # whose source_url parses to a title in this set
+                # is anchored regardless of the body / alt
+                # language mismatch.
                 article = _wikipedia_article_title(url)
                 if article:
                     cited_article_titles.add(article)
-                    # Also surface the Chinese alias as a real
-                    # entity in the report's entity set, so the
-                    # downstream anchored-substring check can fire
-                    # without the alt having to know about the URL.
-                    for alias in _alias_for_article(article):
-                        primary.add(alias)
-                        all_entities.add(alias)
+                    # Also surface the article title (with
+                    # underscores replaced by spaces — the alt
+                    # text uses spaces, the URL uses underscores)
+                    # as a primary entity. This lets the
+                    # existing substring-anchor check fire when
+                    # the alt contains the article's natural
+                    # English name, e.g. alt "Quantum entanglement
+                    # diagram" against the cited article
+                    # "Quantum_entanglement".
+                    spaced = article.replace("_", " ")
+                    primary.add(spaced)
+                    all_entities.add(spaced)
 
     return ReportEntityContext(
         primary_entities=frozenset(primary),
@@ -1151,6 +1125,17 @@ def evaluate_candidate(
                 return len(span) >= 3
             return len(span) >= 5
 
+        # Cross-language anchor (Wikipedia URL is canonical across
+        # languages): a candidate whose source_url article title
+        # is in the report's cited set is anchored, regardless of
+        # the alt's language. Checked FIRST so short-acronym alts
+        # (DNA, USB) that survive the substantiality check on the
+        # report side (where the spaced article title is a primary
+        # entity) can still anchor.
+        article_title = _wikipedia_article_title(candidate.source_url)
+        if article_title and article_title in context.cited_article_titles:
+            return True
+
         if ent in context.all_entities:
             return _is_substantial(ent)
 
@@ -1159,27 +1144,6 @@ def evaluate_candidate(
                 continue
             if ce in ent or ent in ce:
                 return True
-
-        # Cross-language anchor: the candidate's image was scraped
-        # from a Wikipedia article whose title is in the report's
-        # cited set. Both names refer to the same concept even when
-        # the alt text is in a different language than the report
-        # body (alt "Canton Tower" + body "广州塔" → both map to the
-        # article title "Canton_Tower", so the alt is anchored).
-        article_title = _wikipedia_article_title(candidate.source_url)
-        if article_title and article_title in context.cited_article_titles:
-            return True
-        # Also: the alt's source_url article title is itself a known
-        # alias for a context entity (the alt is "Canton Tower",
-        # the article title is "Canton_Tower" which is a substring
-        # of the alt — already handled above when the report body
-        # contains the Latin form. But if the report body has
-        # neither form and only the article title was cited, this
-        # also fires via cited_article_titles.)
-        if article_title:
-            for alias in _alias_for_article(article_title):
-                if alias in context.all_entities and _is_substantial(alias):
-                    return True
         return False
 
     def _is_real_proper_name(ent: str) -> bool:
@@ -1239,6 +1203,19 @@ def evaluate_candidate(
     for idx, sect_ents in enumerate(context.section_entities):
         if sect_ents & entities:
             matched.add(idx)
+
+    # Cross-language fallback: if the candidate is anchored via a
+    # cited Wikipedia article (article title in cited_article_titles),
+    # and that article title is not matched to any section by the
+    # body-derived entity set (because the body is in Chinese and
+    # the alt/article is in English), match against ALL sections.
+    # The report explicitly cited this article, so any section is a
+    # valid home for the image — the LLM is responsible for the
+    # final placement.
+    if not matched and context.cited_article_titles:
+        article_title = _wikipedia_article_title(candidate.source_url)
+        if article_title and article_title in context.cited_article_titles:
+            matched = set(range(len(context.section_entities)))
 
     # Step 4: explicit report-level relation (e.g. `X位于Y` found in text).
     explicit_report_relation = any(
