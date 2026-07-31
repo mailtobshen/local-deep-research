@@ -72,6 +72,14 @@ services:
       # 本地服务 (Ollama/SearXNG on 私有网段) 自动豁免, 不走代理。
       - LDR_APP_NETWORK_PROXY_ENABLED=${LDR_APP_NETWORK_PROXY_ENABLED:-true}
       - LDR_APP_NETWORK_PROXY_URL=${LDR_APP_NETWORK_PROXY_URL:-http://172.25.128.1:10888}
+      # --- 标准 HTTPS_PROXY/HTTP_PROXY 转发, 让 huggingface_hub /
+      # sentence_transformers 也能走 LDR 的代理下载模型 (LDR 自己的
+      # env 名称不通用, huggingface_hub 只认标准 env)。如果模型已预
+      # 载到 bind-mount 路径 (见 volumes 段), 容器不发起任何外网请
+      # 求, 这两个 env 实际上是 no-op。
+      - HTTPS_PROXY=${LDR_APP_NETWORK_PROXY_URL:-http://172.25.128.1:10888}
+      - HTTP_PROXY=${LDR_APP_NETWORK_PROXY_URL:-http://172.25.128.1:10888}
+      - HF_HUB_OFFLINE=0
 
       # --- IMG-TRACE 候选明细: 默认开启，可由宿主显式设为 0 关闭 ---
       - LDR_IMG_TRACE_CANDIDATES=${LDR_IMG_TRACE_CANDIDATES:-1}
@@ -98,6 +106,11 @@ services:
       # dist/ (vite 构建产物) 已与镜像同步, 挂载不会丢失; 若改动涉及构建,
       # 在宿主跑 `npm run build` 重新生成 dist 即可。
       - ./src/local_deep_research:/install/.venv/lib/python3.14/site-packages/local_deep_research:ro
+      # --- HuggingFace model cache (read-only). The semantic-matcher
+      # gate (paraphrase-multilingual-mpnet-base-v2) reads from
+      # this path; pre-download the model on the host so the
+      # container does not need egress to huggingface.co at runtime.
+      - /home/administrator/.cache/huggingface:/home/ldruser/.cache/huggingface:ro
       # --- Git 元数据只读挂载, 让 provenance.collect_provenance 解析 source_sha / working_tree_dirty ---
       # 把宿主仓库的 .git 目录以只读方式挂在容器内, 同时用 /src 作为容器
       # 视角下的伪工作树, 让 `git -C /src` 能读取 .git 下的 refs。
