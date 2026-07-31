@@ -79,6 +79,34 @@ services:
       # 求, 这两个 env 实际上是 no-op。
       - HTTPS_PROXY=${LDR_APP_NETWORK_PROXY_URL:-http://172.25.128.1:10888}
       - HTTP_PROXY=${LDR_APP_NETWORK_PROXY_URL:-http://172.25.128.1:10888}
+      # --- NO_PROXY: 私网/loopback 直连, 绕过 Privoxy ---
+      # 容器镜像内置 healthcheck 用 urllib.request.urlopen('http://localhost:5000/...'),
+      # urllib 默认读 HTTP_PROXY/HTTPS_PROXY/NO_PROXY; 没有 NO_PROXY 时连
+      # localhost 都被发去 Privoxy → 500 → 容器 flip 到 unhealthy (应用本身
+      # 仍然健康, 但 docker ps 报 unhealthy)。
+      #
+      # 重要: Python urllib.request.proxy_bypass 不识别 CIDR (`x.x.x.x/n`)
+      # 写法 — 会把 CIDR 当字面 hostname 处理, 永远不匹配实际 IP, 等同
+      # 无效条目。同类坑见 memory [[ollama-privoxy-500-fix]] (httpx 也
+      # 不认 CIDR)。必须列具体的 hostname 或明文 IP。
+      #
+      # 覆盖范围 (每个条目都是明文, 无 CIDR):
+      #   localhost, 127.0.0.1, ::1 — healthcheck + 容器内回环
+      #   searxng-ldr — SearXNG 容器 (DNS 在 ldr-network 172.21.0.0/16)
+      #   ldr-tor     — Tor sidecar (同理)
+      #   host.docker.internal — 备用 (本环境不用, 其它 compose 可能引用)
+      #   172.25.128.1 — WSL 网关 → 宿主 Ollama
+      #   172.21.0.2, 172.21.0.3 — ldr-tor / searxng-ldr 实 IP 兜底
+      #   172.17.0.1  — docker0 网关, 宿主 Firecrawl API 监听端点
+      #
+      # 注: 172.25.128.1 身份双重 — 既是宿主本地服务入口 (Ollama:11434,
+      # 应直连), 又是 Privoxy 代理本身 (:10888, 走互联网的通道)。实测
+      # urllib proxy_bypass 只看 host 不看 port, 裸 IP 命中后所有端口
+      # 都判为直连; 但 HTTPS_PROXY env 经 getproxies() 注入 ProxyHandler
+      # 的路径不经过 proxy_bypass, 故 Privoxy 仍可用 (经代理访问
+      # GitHub/Google 实测 200/204)。把 172.25.128.1 列入 NO_PROXY 仅为
+      # 让 Ollama:11434 等本地宿主服务绕过代理, 不影响代理本身。
+      - NO_PROXY=localhost,127.0.0.1,::1,searxng-ldr,ldr-tor,host.docker.internal,172.25.128.1,172.21.0.2,172.21.0.3,172.17.0.1
       - HF_HUB_OFFLINE=0
 
       # --- IMG-TRACE 候选明细: 默认开启，可由宿主显式设为 0 关闭 ---
