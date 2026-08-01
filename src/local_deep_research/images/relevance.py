@@ -535,11 +535,12 @@ def extract_segment_sources(
     References list with a URL is a citation; the URL flows into the
     section's allow-list.
 
-    Sections without any ``[N]`` marker inherit the previous section's
-    URL list, so an orphan section between two cited sections still
-    carries the prior section's authoritative source. Returns the
-    same per-section tuples as before, preserving the drift-guard
-    contract with ``_split_sections`` in postprocessing.
+    Sections without any resolvable ``[N]`` marker get an empty URL
+    list — there is no inheritance from prior sections. A section
+    without its own citation has no authoritative source and should
+    not receive images. Returns the same per-section tuples as before,
+    preserving the drift-guard contract with ``_split_sections`` in
+    postprocessing.
 
     The ``results`` parameter is retained for API compatibility but is
     not consulted — every strategy in this repo writes
@@ -555,7 +556,6 @@ def extract_segment_sources(
     sections = _split_sections(markdown)
     offsets = _section_offsets(markdown)
     out: list[tuple[str, str, list[str]]] = []
-    inherited: list[str] = []
 
     for idx, (heading, body) in enumerate(sections):
         body_start = offsets[idx]
@@ -579,10 +579,11 @@ def extract_segment_sources(
             if u and u not in seen:
                 urls.append(u)
                 seen.add(u)
-        if not urls:
-            urls = list(inherited)
+        # No inheritance: an orphan section with no inline citation keeps
+        # an empty URL list. It has no authoritative source, so it should
+        # not receive images. (Previously inherited the prior section's
+        # URLs, which let fabricated sources leak into image placement.)
         out.append((heading, body, urls[:top_n]))
-        inherited = urls
     return out
 
 

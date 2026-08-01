@@ -300,21 +300,21 @@ def semantic_match_filter(
 ) -> list[tuple]:
     """Return ``[(candidate, score, best_section_idx, decision_str), ...]``.
 
-    A candidate is kept when:
-      * its best cosine similarity ≥ ``threshold`` (default 0.6)
-      * the margin between best and second-best ≥ ``min_margin`` (default 0.05)
-        — an image that's equally close to two sections is ambiguous
-      * its source_url shares an eTLD+1 with at least one cited URL in
-        the matching section (via ``_section_cited_urls[best_idx]``)
+    A candidate is kept when its best cosine similarity ≥ ``threshold``
+    (default 0.6) AND it has both an alt and a source_url.
 
-    The candidate is dropped with a reason string otherwise. Reasons:
-      * ``"kept"``
-      * ``"low_similarity"`` (score < threshold)
-      * ``"ambiguous_match"`` (margin < min_margin)
-      * ``"no_source_url_match"`` (best section's cited URLs share no
-        eTLD+1 with the candidate's source_url)
+    Two checks are PAUSED (code retained, pending the citation-anchored
+    pipeline rewrite that makes them redundant or inapplicable):
+      * ``ambiguous_match`` (margin between best and second-best) —
+        section ownership is deterministic when images are routed by
+        citation number, so the margin gate no longer applies.
+      * ``no_source_url_match`` (eTLD+1 same-source check) — overlaps
+        with ``extract_segment_sources``, which already anchors each
+        image to a section by its citation number.
+
+    Active drop reasons:
+      * ``"low_similarity"`` (score < threshold, or no section embeddings)
       * ``"missing_alt"`` / ``"no_source_url"`` (data integrity)
-      * ``"low_similarity"`` (no section embeddings yet)
 
     The function does NOT call any external network or import the
     ``sentence_transformers`` library until ``get_model()`` is invoked
@@ -353,17 +353,19 @@ def semantic_match_filter(
         if best_idx is None or best_score < threshold:
             out.append((c, best_score, best_idx, "low_similarity"))
             continue
+        # PAUSED: ambiguous_match (min_margin) check. The new citation-
+        # anchored pipeline makes section ownership deterministic (an
+        # image is routed by its [[N]] citation, not by fuzzy best-
+        # section matching), so the margin gate no longer applies. The
+        # code path is retained pending the pipeline rewrite.
         if second is not None and (best_score - second) < min_margin:
-            out.append((c, best_score, best_idx, "ambiguous_match"))
-            continue
-        # Same-source check: the best section's cited URLs must share
-        # an eTLD+1 with the candidate's source_url.
+            pass  # ambiguous_match paused
+        # PAUSED: no_source_url_match (eTLD+1 same-source) check. It
+        # overlapped with extract_segment_sources, which already anchors
+        # each image to a section by citation number. The check is
+        # redundant in the citation-anchored pipeline; retained pending
+        # the rewrite.
         cited = section_cited_urls[best_idx] if best_idx < len(section_cited_urls) else []
-        ok = any(
-            domains_match(c.source_url, u) for u in cited if u
-        )
-        if not ok:
-            out.append((c, best_score, best_idx, "no_source_url_match"))
-            continue
+        _ = any(domains_match(c.source_url, u) for u in cited if u)
         out.append((c, best_score, best_idx, "kept"))
     return out

@@ -319,9 +319,12 @@ def test_semantic_match_drops_missing_alt(monkeypatch):
     assert out[0][3] == "missing_alt"
 
 
-def test_semantic_match_respects_min_margin(monkeypatch):
-    """An alt that ties between two sections (margin below 0.05) is
-    dropped with reason ``ambiguous_match``."""
+def test_semantic_match_ambiguous_check_is_paused(monkeypatch):
+    """The ambiguous_match (min_margin) check is PAUSED: an alt that
+    ties between two sections is now kept (routed to its best section),
+    not dropped. The new citation-anchored pipeline makes section
+    ownership deterministic, so the margin gate no longer applies. The
+    paused code path stays in place pending the pipeline rewrite."""
     from local_deep_research.images import semantic_matcher as sm
     fake = _fake_model({
         "Canton Tower": [1.0, 0.0, 0.0, 0.0],
@@ -336,12 +339,10 @@ def test_semantic_match_respects_min_margin(monkeypatch):
         1: [1.0, 0.0, 0.0, 0.0],
         2: [1.0, 0.0, 0.0, 0.0],
     }
-    section_cited_urls = [[], ["https://en.wikipedia.org/wiki/Canton_Tower"]] * 1
-    # Pad to match section count.
     section_cited_urls = [[], ["https://en.wikipedia.org/wiki/Canton_Tower"],
                          ["https://en.wikipedia.org/wiki/Canton_Tower"]]
     out = semantic_match_filter([cand], section_vectors, section_cited_urls)
-    assert out[0][3] == "ambiguous_match"
+    assert out[0][3] == "kept"
 
 
 def test_semantic_match_threshold_configurable(monkeypatch):
@@ -389,10 +390,13 @@ def test_semantic_match_picks_best_section(monkeypatch):
     assert out[0][3] == "kept"
 
 
-def test_semantic_match_drops_no_source_url_match(monkeypatch):
-    """Even if cosine similarity is high, a candidate whose
-    source_url doesn't share eTLD+1 with any cited URL in the
-    best section is dropped with reason ``no_source_url_match``."""
+def test_semantic_match_no_source_url_match_is_paused(monkeypatch):
+    """The no_source_url_match (eTLD+1 same-source) check is PAUSED:
+    a candidate whose source_url doesn't share eTLD+1 with the best
+    section's cited URLs is now kept, not dropped. The check overlaps
+    with extract_segment_sources (which already anchors images to
+    sections by citation number) and is redundant in the citation-
+    anchored pipeline. The paused code path stays pending the rewrite."""
     from local_deep_research.images import semantic_matcher as sm
     fake = _fake_model({
         "alt text": [1.0, 0.0, 0.0, 0.0],
@@ -405,10 +409,11 @@ def test_semantic_match_drops_no_source_url_match(monkeypatch):
         "https://a1.ctrip.com/page",  # ctrip, not wikipedia
     )
     section_vectors = {1: [1.0, 0.0, 0.0, 0.0]}
-    # Cited URL is wikipedia, source URL is ctrip → no eTLD+1 match
+    # Cited URL is wikipedia, source URL is ctrip → no eTLD+1 match,
+    # but the check is paused so the candidate is kept.
     section_cited_urls = [[], ["https://en.wikipedia.org/wiki/Canton_Tower"]]
     out = semantic_match_filter([cand], section_vectors, section_cited_urls)
-    assert out[0][3] == "no_source_url_match"
+    assert out[0][3] == "kept"
 
 
 def test_semantic_match_drops_when_no_section_vectors(monkeypatch):

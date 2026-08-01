@@ -39,8 +39,13 @@ def test_extract_segment_sources_from_markdown_references():
     assert out[2][2] == ["https://en.wikipedia.org/wiki/Canton_Tower"]
 
 
-def test_extract_segment_sources_inherits_when_no_inline_citation():
-    """Orphan sections inherit the previous section's URL list."""
+def test_extract_segment_sources_orphan_section_has_no_urls():
+    """An orphan section with no inline citation gets an empty URL list.
+
+    It does NOT inherit the previous section's URLs — a section without
+    its own citation has no authoritative source and should not receive
+    images. (Inheritance was removed: it let fabricated sources leak
+    into image placement.)"""
     md = (
         "## A\n\n引用 [1] 见下。\n\n"
         "## B\n\n本节无引用。\n\n"
@@ -53,7 +58,7 @@ def test_extract_segment_sources_inherits_when_no_inline_citation():
     )
     out = extract_segment_sources(md, results={})
     assert out[0][2] == ["https://example.com/a"]
-    assert out[1][2] == ["https://example.com/a"]  # inherited
+    assert out[1][2] == []  # orphan — no inheritance
     assert out[2][2] == ["https://example.com/c"]
 
 
@@ -351,10 +356,10 @@ def test_references_real_format_links_to_markdown_output():
 
 def test_extract_segment_sources_full_markdown_with_empty_url_row():
     """End-to-end: a full Beijing-like markdown where one row's
-    URL: line is blank. The section that cited that number must
-    fall back to inheritance (since the empty-URL row contributes
-    nothing to the num_to_url map), not pollute itself with a
-    '[N] Title' literal from the next row.
+    URL: line is blank. The section that cited that unresolvable
+    number gets an empty URL list (no inheritance), and crucially
+    does not pollute itself with a '[N] Title' literal from the
+    next row.
     """
     md = (
         "## 1. Section A\n"
@@ -374,10 +379,10 @@ def test_extract_segment_sources_full_markdown_with_empty_url_row():
     sections = extract_segment_sources(md, results={})
     # Section 1 (A) → [a.com]
     assert sections[0][2] == ["https://a.com"]
-    # Section 2 (B) cites [2] which has no URL; falls back to
-    # inheritance from section 1 → [a.com].
-    assert sections[1][2] == ["https://a.com"], (
-        f"section 2 should inherit from section 1, got {sections[1][2]}"
+    # Section 2 (B) cites [2] which has no URL → empty list, no
+    # inheritance from section 1.
+    assert sections[1][2] == [], (
+        f"section 2 has no resolvable source, got {sections[1][2]}"
     )
     # Section 3 (C) → [c.com]. Importantly NOT '[2] B with no URL'
     # (the previous bug would have polluted this).
