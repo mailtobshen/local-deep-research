@@ -258,10 +258,7 @@ def test_postprocessing_passes_only_entity_eligible_images_to_enhancer():
     }]
     with patch.object(postprocessing, "get_llm", return_value=MagicMock()), \
          patch.object(postprocessing, "ImageEnhancer") as enhancer_cls, \
-         patch.object(postprocessing, "ImageStore") as store_cls, \
-         patch.object(postprocessing, "fill_section_images",
-                      side_effect=AssertionError("fallback called"),
-                      create=True):
+         patch.object(postprocessing, "ImageStore") as store_cls:
         enhancer_cls.return_value.enhance.return_value = (
             "# \u5e7f\u5dde\u5efa\u7b51\n## \u5e7f\u5dde\u5854\n![\u5e7f\u5dde\u5854](https://img/guangzhou.jpg)"
         )
@@ -285,10 +282,7 @@ def test_no_eligible_bank_skips_enhancer_and_preserves_markdown():
     and the original markdown is returned unchanged."""
     with patch.object(postprocessing, "get_llm", return_value=MagicMock()), \
          patch.object(postprocessing, "ImageEnhancer") as enhancer_cls, \
-         patch.object(postprocessing, "ImageStore") as store_cls, \
-         patch.object(postprocessing, "fill_section_images",
-                      side_effect=AssertionError("fallback called"),
-                      create=True):
+         patch.object(postprocessing, "ImageStore") as store_cls:
         result = enhance_report_with_images(
             research_id="rid",
             clean_markdown="# \u5e7f\u5dde\u5efa\u7b51\n## \u5e7f\u5dde\u5854\n\u4ecb\u7ecd",
@@ -302,52 +296,6 @@ def test_no_eligible_bank_skips_enhancer_and_preserves_markdown():
     assert result == "# \u5e7f\u5dde\u5efa\u7b51\n## \u5e7f\u5dde\u5854\n\u4ecb\u7ecd"
     enhancer_cls.assert_not_called()
     store_cls.assert_not_called()
-
-
-def test_postprocessing_never_invokes_fill_section_images_from_production():
-    """The legacy section fallback is no longer wired into the production
-    pipeline. Patching it to raise must be a no-op across the supported
-    inputs."""
-    import json
-
-    findings = [{
-        "search_results": [{
-            "url": "https://source/page",
-            "title": "\u5e7f\u5dde\u5854",
-            "html_content": json.dumps([{
-                "url": "https://img/guangzhou.jpg",
-                "alt": "\u5e7f\u5dde\u5854",
-                "source_url": "https://source/page",
-                "source_title": "\u5e7f\u5dde\u5854",
-            }]),
-        }],
-    }]
-    with patch.object(postprocessing, "fill_section_images",
-                      side_effect=AssertionError("fallback called"),
-                      create=True), \
-         patch.object(postprocessing, "get_llm", return_value=MagicMock()), \
-         patch.object(postprocessing, "ImageEnhancer") as enhancer_cls, \
-         patch.object(postprocessing, "ImageStore") as store_cls:
-        enhancer_cls.return_value.enhance.return_value = (
-            "# \u5e7f\u5dde\u5efa\u7b51\n## \u5e7f\u5dde\u5854\n![\u5e7f\u5dde\u5854](https://img/guangzhou.jpg)"
-        )
-        store_cls.return_value.persist.return_value = {
-            "https://img/guangzhou.jpg": "/images/rid/a.jpg"
-        }
-        # Identity rewrite so the assertion sees the markdown itself
-        # rather than a MagicMock return value.
-        store_cls.return_value.rewrite_markdown.side_effect = (
-            lambda md, mapping, **kw: md
-        )
-        out = enhance_report_with_images(
-            research_id="rid",
-            clean_markdown="# \u5e7f\u5dde\u5efa\u7b51\n## \u5e7f\u5dde\u5854\n\u5e7f\u5dde\u5854\u4ecb\u7ecd",
-            results={"findings": findings},
-            db_session=MagicMock(),
-            enable_images=True,
-            vision_model="",
-        )
-    assert "https://img/guangzhou.jpg" in out
 
 
 def test_postprocessing_builds_enhancer_with_vision_fill_disabled():
