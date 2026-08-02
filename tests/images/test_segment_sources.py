@@ -12,8 +12,6 @@ candidate path was removed because every strategy in this repo writes
 
 from __future__ import annotations
 
-from local_deep_research.images.postprocessing import extract_segment_sources
-
 
 def test_extract_segment_sources_from_markdown_references():
     """Happy path: ``[1]`` in section body resolves to URL in trailing list."""

@@ -51,8 +51,7 @@ def test_cited_image_passes_gate_and_is_inserted(monkeypatch):
         lambda heading, entities: "Canton Tower",
     )
 
-    with patch.object(postprocessing, "ImageEnhancer") as enh_mock, \
-         patch.object(postprocessing, "ImageStore") as store_mock:
+    with patch.object(postprocessing, "ImageStore") as store_mock:
         store_mock.return_value.persist.return_value = (
             {"https://img/tower.jpg": "/images/r/t.jpg"}
         )
@@ -69,8 +68,6 @@ def test_cited_image_passes_gate_and_is_inserted(monkeypatch):
         )
     # The cited image is inserted into the Canton Tower section.
     assert "![Canton Tower](https://img/tower.jpg)" in out
-    # ImageEnhancer must NOT have been called (it is paused).
-    enh_mock.assert_not_called()
 
 
 def test_uncited_source_image_not_extracted(monkeypatch):
@@ -96,8 +93,7 @@ def test_uncited_source_image_not_extracted(monkeypatch):
         postprocessing.semantic_matcher, "_canonical_section_phrase",
         lambda heading, entities: "Canton Tower",
     )
-    with patch.object(postprocessing, "ImageEnhancer"), \
-         patch.object(postprocessing, "ImageStore") as store_mock:
+    with patch.object(postprocessing, "ImageStore") as store_mock:
         store_mock.return_value.persist.return_value = {}
         store_mock.return_value.rewrite_markdown.side_effect = lambda md, m, **k: md
         out = postprocessing.enhance_report_with_images(
@@ -129,8 +125,7 @@ def test_low_similarity_image_dropped(monkeypatch):
         postprocessing.semantic_matcher, "_canonical_section_phrase",
         lambda heading, entities: "section phrase orthogonal",
     )
-    with patch.object(postprocessing, "ImageEnhancer"), \
-         patch.object(postprocessing, "ImageStore") as store_mock:
+    with patch.object(postprocessing, "ImageStore") as store_mock:
         store_mock.return_value.persist.return_value = {}
         store_mock.return_value.rewrite_markdown.side_effect = lambda md, m, **k: md
         out = postprocessing.enhance_report_with_images(

@@ -73,6 +73,18 @@ def test_html_mapping_omits_search_results_without_html_content():
     assert url_to_html == {}  # missing html_content -> not indexed
 
 
+def test_html_mapping_reads_production_link_key():
+    """Production search_results are SearXNG items keyed "link" (see
+    web_search_engines/engines/full_search.py); url_to_html must
+    still resolve them."""
+    md = "## A\n\n[[1]].\n\n## 参考文献\n\n[1] S\n   URL: https://x/a\n"
+    results = {"findings": [{"search_results": [
+        {"link": "https://x/a", "html_content": "[]"},
+    ]}]}
+    _, _, url_to_html = build_citation_index(md, results)
+    assert url_to_html["https://x/a"] == "[]"
+
+
 def test_empty_results_yields_empty_html_map():
     md = "## A\n\n[[1]].\n\n## 参考文献\n\n[1] S\n   URL: https://x/a\n"
     num_to_url, section_to_nums, url_to_html = build_citation_index(md, {"findings": []})
