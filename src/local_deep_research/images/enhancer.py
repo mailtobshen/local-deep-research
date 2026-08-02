@@ -1,3 +1,9 @@
+# PAUSED (2026-08-02): ImageEnhancer is no longer invoked by the
+# citation-anchored image pipeline (enhance_report_with_images). Image
+# placement is now deterministic — driven by the citation number's
+# section — so the LLM position-guesser is bypassed. The class and its
+# imports are retained pending confirmation that the new pipeline is
+# stable; removal is a separate change. Do not add new callers.
 """Post-processing: insert real images into a report (single-shot)."""
 from __future__ import annotations
 
