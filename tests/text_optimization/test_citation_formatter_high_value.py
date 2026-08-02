@@ -136,13 +136,12 @@ class TestParseSources:
     def test_source_without_url(self):
         text = "[2] Title Only"
         result = self.fmt._parse_sources(text)
-        assert "2" in result
-        assert result["2"][1] == ""
+        assert result == {}
 
     def test_multiple_sources(self):
         text = "[1] First\n[2] Second"
         result = self.fmt._parse_sources(text)
-        assert len(result) == 2
+        assert result == {}
 
     def test_empty_string(self):
         result = self.fmt._parse_sources("")

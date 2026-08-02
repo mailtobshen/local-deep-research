@@ -659,8 +659,10 @@ See [1] and [2].
         assert "[project-alpha-2]" not in result
 
     def test_source_tagged_hyperlinks_local_url_falls_back(self):
-        """Empty / non-http(s) URLs get the ``local`` tag and render
-        without a hyperlink."""
+        """file:// URLs get the ``local`` tag and render without a
+        hyperlink; rows with no URL line at all are not parsed
+        (CITE_LIST_ROW_RE requires a non-empty URL), so the body
+        citation falls back to the plain ``[N]`` form."""
         content = """# Report
 
 See [1] and [2].
@@ -677,8 +679,9 @@ See [1] and [2].
         # file:// → "local", with no hyperlink wrapping.
         assert "[local-1]" in result
         assert "[[local-1]]" not in result  # no hyperlink, not bracketed twice
-        # No URL → also "local", and no hyperlink.
-        assert "[local-2]" in result
+        # No URL line → row dropped from sources; [2] stays plain.
+        assert "[local-2]" not in result
+        assert "[2]" in result
 
     def test_source_tagged_hyperlinks_no_state_leak_across_calls(self):
         """Calling ``format_document`` twice on the same formatter

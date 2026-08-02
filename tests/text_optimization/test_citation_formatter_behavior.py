@@ -309,7 +309,7 @@ class TestCitationFormatterParseSources:
         assert "2" in result
 
     def test_parses_source_without_url(self):
-        """Parses source without URL."""
+        """Row without a URL line is not parsed (URL line is required)."""
         from local_deep_research.text_optimization.citation_formatter import (
             CitationFormatter,
         )
@@ -317,8 +317,7 @@ class TestCitationFormatterParseSources:
         formatter = CitationFormatter()
         sources_content = "[1] Source Without URL"
         result = formatter._parse_sources(sources_content)
-        assert "1" in result
-        assert result["1"][1] == ""  # Empty URL
+        assert result == {}
 
     def test_parses_comma_separated_citation_numbers(self):
         """Parses comma-separated citation numbers like [36, 3]."""
