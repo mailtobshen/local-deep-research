@@ -93,6 +93,62 @@ def _safe_alt(alt: str, max_len: int = 120) -> str:
     return out
 
 
+def insert_images_by_section(
+    markdown: str,
+    placements: list[tuple[int, str, str]],
+) -> str:
+    """Insert each image after its bound section's heading line.
+
+    ``placements`` is a list of ``(section_idx, url, alt)`` tuples,
+    sorted by ``section_idx``. An empty/whitespace alt skips the image
+    (no useful description). Out-of-range section indices are skipped.
+    The alt is cleaned via ``_safe_alt`` before rendering.
+    """
+    if not markdown or not placements:
+        return markdown
+    from .relevance import _section_offsets, _split_sections
+
+    sections = _split_sections(markdown)
+    offsets = _section_offsets(markdown)
+    # Group placements by section_idx, preserving order within a section.
+    by_section: dict[int, list[tuple[str, str]]] = {}
+    for sidx, url, alt in placements:
+        if sidx < 0 or sidx >= len(sections):
+            continue
+        clean_alt = _safe_alt(alt or "")
+        if not clean_alt:
+            continue
+        by_section.setdefault(sidx, []).append((url, clean_alt))
+
+    if not by_section:
+        return markdown
+
+    # Rebuild markdown by walking sections in order, inserting each
+    # section's images right after its heading line.
+    out_chunks: list[str] = []
+    cursor = 0
+    # offsets[i] is the absolute offset where section i's heading begins.
+    for sidx in range(len(sections)):
+        if sidx >= len(offsets):
+            break
+        sec_start = offsets[sidx]
+        # Copy everything from cursor up to this section's heading.
+        out_chunks.append(markdown[cursor:sec_start])
+        # Find end of the heading line to insert images right after it.
+        line_end = markdown.find("\n", sec_start)
+        if line_end == -1:
+            line_end = len(markdown)
+        out_chunks.append(markdown[sec_start:line_end])
+        if sidx in by_section:
+            img_lines = "".join(
+                f"\n\n![{alt}]({url})" for url, alt in by_section[sidx]
+            )
+            out_chunks.append(img_lines)
+        cursor = line_end
+    out_chunks.append(markdown[cursor:])
+    return "".join(out_chunks)
+
+
 def enhance_report_with_images(
     *,
     research_id: str,
