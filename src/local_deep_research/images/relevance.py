@@ -587,6 +587,63 @@ def extract_segment_sources(
     return out
 
 
+def build_citation_index(
+    markdown: str,
+    results: dict,
+) -> tuple[dict[str, str], dict[int, list[str]], dict[str, str]]:
+    """Build the three lookup tables the citation-anchored pipeline uses.
+
+    Returns ``(num_to_url, section_to_nums, url_to_html)``:
+
+    * ``num_to_url``: ``{citation_number_str: source_url}`` from the
+      References block (via ``_scan_references_block``).
+    * ``section_to_nums``: ``{section_idx: [num_str, ...]}`` — the
+      ``[[N]]`` markers each section's body actually cites. Sections
+      with no marker map to ``[]`` (orphans get no images).
+    * ``url_to_html``: ``{source_url: html_content}`` from
+      ``results["findings"][].search_results[]`` — the real fetched
+      content images are extracted from. Search results without an
+      ``html_content`` value are omitted.
+
+    Stage 0 only assembles mappings; it makes no keep/drop decisions.
+    """
+    num_to_url: dict[str, str] = dict(_scan_references_block(markdown))
+
+    sections = _split_sections(markdown)
+    offsets = _section_offsets(markdown)
+    section_to_nums: dict[int, list[str]] = {}
+    for idx in range(len(sections)):
+        body_start = offsets[idx] if idx < len(offsets) else 0
+        body_end = (
+            offsets[idx + 1] if idx + 1 < len(offsets) else len(markdown)
+        )
+        body_slice = markdown[body_start:body_end]
+        nums: list[str] = []
+        seen: set[str] = set()
+        for m in CITE_INLINE_RE.finditer(body_slice):
+            n = m.group(1)
+            if n not in seen:
+                seen.add(n)
+                nums.append(n)
+        for m in CITE_INLINE_GROUP_RE.finditer(body_slice):
+            for n in m.group(1).split(","):
+                n = n.strip()
+                if n and n not in seen:
+                    seen.add(n)
+                    nums.append(n)
+        section_to_nums[idx] = nums
+
+    url_to_html: dict[str, str] = {}
+    for finding in results.get("findings", []) or []:
+        for sr in finding.get("search_results", []) or []:
+            url = sr.get("url")
+            html = sr.get("html_content")
+            if url and html and url not in url_to_html:
+                url_to_html[url] = html
+
+    return num_to_url, section_to_nums, url_to_html
+
+
 # ---------------------------------------------------------------------------
 # Named-entity extraction
 # ---------------------------------------------------------------------------
