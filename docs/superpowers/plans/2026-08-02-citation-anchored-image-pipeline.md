@@ -1013,3 +1013,26 @@ This task verifies; it does not change code. Report the numbers in the session.
 **Type consistency:** `build_citation_index` returns `(dict[str,str], dict[int,list[str]], dict[str,str])` in Task 2 and is consumed with that exact shape in Task 5. `insert_images_by_section` takes `list[tuple[int,str,str]]` in Task 3 and Task 5 builds exactly that. `binding` is `dict[str, tuple[str,int]]` (url→(num,section_idx)) consistent across Task 5. `placements` tuple order `(section_idx, url, alt)` matches Task 3's signature.
 
 One correction applied during review: the spec located `build_report_entity_pool`/`_canonical_section_phrase` in relevance.py, but they are in `semantic_matcher.py` — Task 5's import note reflects the correct module.
+
+---
+
+## Post-Execution Review (2026-08-02)
+
+Overall review (review agent + regression batch + real-data probes + manual
+verification) found **4 fixable defects + 1 documented decision**:
+
+| # | Finding | Verdict | Fix |
+|---|---------|---------|-----|
+| F-1 | Rewritten pipeline accepted-but-ignored `firecrawl_client` — anti-hotlink fallback lost | Fix | `ImageStore(..., firecrawl_client=firecrawl_client)` at construction |
+| F-2 | `binding` last-write-wins: same source cited in 2+ sections overwrote the first binding | Fix | First-bound-section-wins (`if img.url not in binding` inside the gate) |
+| F-3 | `_used_nums_in_body` missed full-width `【N】` citations (CITE_INLINE_RE accepts them) | Fix | Regex extended to `【([\d,\s]+)】` |
+| F-4 | Sanitizer kept rows via digits later in the head line (years, usernames, day counts) — real B3 report: 190/230 rows kept solely by title digits | Fix | Only the leading `[N...]` bracket digits count as row numbers |
+| F-5 | Comma-group rows `[1, 1224]` keep the whole row when one member is cited; dangling members (311 on real data) survive | **Not fixed** — documented decision; renumbering is a formatter-level concern (CITE_LIST_ROW_RE contract), out of scope for the sanitizer |
+
+Informationals (all clean): row-boundary agreement bidirectional, placement
+ordering correct, dedupe determinism + no dupes, MagicMock session parity OK,
+no new lint debt.
+
+**Verification:** 566 passed, 1 skipped (affected surface); ruff clean on all 4
+changed files; real B3 report (research 4b97170e…): sanitizer 1831 → 40 rows
+(was 230), output 320351 → 50963 bytes (−84%). Fix commit: (see git log).

@@ -38,8 +38,12 @@ def _used_nums_in_body(markdown: str, refs_start: int) -> set[str]:
     """
     body = markdown[:refs_start]
     nums: set[str] = set()
-    for m in re.finditer(r"\[\[?([\d,\s]+)\]\]?", body):
-        for n in m.group(1).split(","):
+    # ASCII [[N]](url) / [N] / [2, 3] plus the full-width 【N】 form
+    # (CITE_INLINE_RE accepts it, so the citation index's section scan
+    # treats it as a citation — the sanitizer must agree).
+    for m in re.finditer(r"\[\[?([\d,\s]+)\]\]?|【([\d,\s]+)】", body):
+        g = m.group(1) if m.group(1) is not None else m.group(2)
+        for n in g.split(","):
             n = n.strip()
             if n.isdigit():
                 nums.add(n)
@@ -78,10 +82,19 @@ def sanitize_references(markdown: str) -> str:
     for i, rs in enumerate(row_starts):
         re_end = row_starts[i + 1] if i + 1 < len(row_starts) else len(refs_block)
         chunk = refs_block[rs:re_end]
-        # The leading line carries the citation number(s) for this row.
+        # The leading bracket carries the citation number(s) for this
+        # row. Digits later in the line (years, day counts, usernames)
+        # are title text, not citations — e.g. "[138, ...] GitHub -
+        # 0xk1h0/ChatGPT_DAN" contains "1" but 1 is not cited by this
+        # row. Only the leading bracket digits count.
         nl = chunk.find("\n")
         head = chunk[:nl] if nl != -1 else chunk
-        row_nums = set(re.findall(r"\d+", head))
+        head_match = re.match(r"^\[\[?([\d,\s]+)\]", head)
+        row_nums = (
+            {n.strip() for n in head_match.group(1).split(",")}
+            if head_match
+            else set()
+        )
         if row_nums & used:
             kept_chunks.append(chunk)
 

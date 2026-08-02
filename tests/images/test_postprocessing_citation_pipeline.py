@@ -142,3 +142,72 @@ def test_enable_images_false_returns_markdown_unchanged():
         db_session=MagicMock(), enable_images=False, vision_model="",
     )
     assert out == "# hi"
+
+
+def test_firecrawl_client_forwarded_to_image_store(monkeypatch):
+    """The anti-hotlink Firecrawl fallback must survive the pipeline
+    rewrite: firecrawl_client is forwarded to ImageStore at construction
+    (regression: the rewritten pipeline accepted-but-ignored it)."""
+    md = (
+        "## Canton Tower\n\n[[1]].\n\n"
+        "## 参考文献\n\n[1] S\n   URL: https://src/p\n"
+    )
+    results = {"findings": [{"search_results": [
+        {"url": "https://src/p", "html_content": (
+            '[{"url": "https://img/x.jpg", "alt": "Canton Tower", '
+            '"source_url": "https://src/p", "source_title": "", '
+            '"width": null, "height": null}]'
+        )},
+    ]}]}
+    fake = _fake_model({"Canton Tower": [1.0, 0.0, 0.0, 0.0]})
+    monkeypatch.setattr(postprocessing.semantic_matcher, "get_model", lambda *a, **k: fake)
+    monkeypatch.setattr(
+        postprocessing.semantic_matcher, "_canonical_section_phrase",
+        lambda heading, entities: "Canton Tower",
+    )
+    with patch.object(postprocessing, "ImageStore") as store_mock:
+        store_mock.return_value.persist.return_value = (
+            {"https://img/x.jpg": "/images/r/x.jpg"}
+        )
+        store_mock.return_value.rewrite_markdown.side_effect = lambda md, m, **k: md
+        postprocessing.enhance_report_with_images(
+            research_id="r", clean_markdown=md, results=results,
+            db_session=MagicMock(), enable_images=True, vision_model="",
+            firecrawl_client="FIRE",
+        )
+    assert store_mock.call_args.kwargs.get("firecrawl_client") == "FIRE"
+
+
+def test_same_url_cited_in_two_sections_lands_in_first(monkeypatch):
+    """Same source cited in two sections: the image binds to the FIRST
+    section (no last-write-wins overwrite)."""
+    md = (
+        "## Section A\n\n[[7]]\n\n"
+        "## Section B\n\n[[7]]\n\n"
+        "## 参考文献\n\n[7] S\n   URL: https://src/p\n"
+    )
+    results = {"findings": [{"search_results": [
+        {"url": "https://src/p", "html_content": (
+            '[{"url": "https://img/a.jpg", "alt": "Canton Tower", '
+            '"source_url": "https://src/p", "source_title": "", '
+            '"width": null, "height": null}]'
+        )},
+    ]}]}
+    fake = _fake_model({"Canton Tower": [1.0, 0.0, 0.0, 0.0]})
+    monkeypatch.setattr(postprocessing.semantic_matcher, "get_model", lambda *a, **k: fake)
+    monkeypatch.setattr(
+        postprocessing.semantic_matcher, "_canonical_section_phrase",
+        lambda heading, entities: "Canton Tower",
+    )
+    with patch.object(postprocessing, "ImageStore") as store_mock:
+        store_mock.return_value.persist.return_value = (
+            {"https://img/a.jpg": "/images/r/a.jpg"}
+        )
+        store_mock.return_value.rewrite_markdown.side_effect = lambda md, m, **k: md
+        out = postprocessing.enhance_report_with_images(
+            research_id="r", clean_markdown=md, results=results,
+            db_session=MagicMock(), enable_images=True, vision_model="",
+        )
+    # Image lands in Section A (first binding), not Section B.
+    before_b, _after_b = out.split("## Section B")
+    assert "img/a.jpg" in before_b

@@ -105,3 +105,38 @@ def test_single_bracket_body_citations_are_counted():
     assert "[1] A" in out
     assert "[3] C" in out
     assert "[2] B" not in out
+
+
+def test_title_digits_do_not_keep_rows():
+    """Digits later in the head line (years, day counts, usernames) are
+    title text and must not count as citation numbers — only the leading
+    [N] bracket does. Regression: the old whole-head extraction kept 190
+    of 230 rows on the real B3 report solely via title digits."""
+    md = (
+        "## Section\n\n"
+        "Text cites [[2024]](https://example.com/2024).\n\n"
+        "## Sources\n"
+        "[7] Beijing 2024 Olympics (source nr: 7)\n"
+        "   URL: https://example.com/7\n"
+        "[2024] 2024 Travel Guide (source nr: 2024)\n"
+        "   URL: https://example.com/2024\n"
+    )
+    out = sanitize_references(md)
+    # Bracket {2024} ∩ used -> kept.
+    assert "Travel Guide" in out
+    # Title digit 2024 must NOT keep the uncited [7] row.
+    assert "Beijing 2024 Olympics" not in out
+
+
+def test_fullwidth_body_citations_are_counted():
+    """Full-width 【N】 citations (accepted by CITE_INLINE_RE and the
+    citation index's section scan) count as used in the body."""
+    md = (
+        "## Section\n\nText cites 【7】 here.\n\n"
+        "## 参考文献\n"
+        "[7] A\n   URL: https://a.com\n"
+        "[8] B\n   URL: https://b.com\n"
+    )
+    out = sanitize_references(md)
+    assert "[7] A" in out
+    assert "[8] B" not in out

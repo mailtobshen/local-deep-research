@@ -245,7 +245,12 @@ def enhance_report_with_images(
                     score = _cosine(alt_vec, sec_vec)
                     if score >= threshold:
                         bank.add([img])
-                        binding[img.url] = (num, sidx)
+                        # First bound section wins: when the same source
+                        # URL is cited in several sections, the image
+                        # lands in the earliest section (matches
+                        # _dedupe_images' keep-first semantics).
+                        if img.url not in binding:
+                            binding[img.url] = (num, sidx)
                         kept += 1
                     else:
                         dropped_low += 1
@@ -305,7 +310,11 @@ def enhance_report_with_images(
             for img in bank.candidates_with_alt()
             if img.url in chosen
         }
-        store = ImageStore(research_id=research_id, db_session=db_session)
+        store = ImageStore(
+            research_id=research_id,
+            db_session=db_session,
+            firecrawl_client=firecrawl_client,
+        )
         mapping = store.persist(chosen, url_to_alt, url_to_source)
         enhanced = store.rewrite_markdown(enhanced, mapping)
         logger.info(
