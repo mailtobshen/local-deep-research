@@ -124,9 +124,9 @@ def test_low_similarity_image_dropped(monkeypatch):
         "Banana": [1.0, 0.0, 0.0, 0.0],          # alt direction
         # section phrase default -> [0,0,0,0], cosine 0 < threshold.
     })
-    monkeypatch.setattr(postprocessing, "get_model", lambda *a, **k: fake)
+    monkeypatch.setattr(postprocessing.semantic_matcher, "get_model", lambda *a, **k: fake)
     monkeypatch.setattr(
-        postprocessing, "_canonical_section_phrase",
+        postprocessing.semantic_matcher, "_canonical_section_phrase",
         lambda heading, entities: "section phrase orthogonal",
     )
     with patch.object(postprocessing, "ImageEnhancer"), \

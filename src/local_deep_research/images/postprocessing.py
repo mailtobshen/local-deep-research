@@ -24,13 +24,11 @@ from .semantic_matcher import (
     DEFAULT_THRESHOLD as _DEFAULT_THRESHOLD,
     _canonical_section_phrase,
     _cosine,
-    _embed_sections,
     _encode_phrase_cached,
     build_report_entity_pool,
-    get_model,
     semantic_match_filter,
 )
-# Import the module for direct function access
+# Import the module for direct function access (needed for monkeypatching in tests)
 from . import semantic_matcher
 # Keep the original reference for monkeypatching tests
 # We'll use the imported _canonical_section_phrase in the code
