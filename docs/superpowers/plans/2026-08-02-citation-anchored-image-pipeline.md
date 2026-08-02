@@ -973,6 +973,13 @@ model rejects every one — this is junk-alt rejection, not merely the
 cross-language threshold. The 0/97 adoption is the pipeline doing its
 job, not a regression.
 
+Final-code re-run (2026-08-02, post-F-1..F-5): same 0/97 —
+`REFERENCES_CLEANED before=1831 after=40`, `CITATION_INDEX nums=59
+sections=184 html_covered=16`. The `nums=2902` figure above predates
+the F-4 leading-bracket fix; final code indexes only the 40 kept rows.
+F-5 rewrites kept rows' brackets but changes no gate or keep logic, so
+the adoption number is unchanged.
+
 Downstream-chain run (permissive constant-vector gate, same real
 320K-char markdown — proves insert/dedupe/persist/rewrite on real
 data):
