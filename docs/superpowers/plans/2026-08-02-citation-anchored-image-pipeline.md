@@ -51,7 +51,7 @@
 - Consumes: `_scan_references_block` from `images.relevance` (it internally locates the References block via `find_sources_section` + a CJK-heading fallback — reuse this exact same location logic rather than re-deriving it). Also `find_sources_section` from `text_optimization.citation_formatter` and `_HEADING_RE` / `_SKIPPED_SECTION_HEADINGS` from `images.relevance`.
 - Produces: `sanitize_references(markdown: str) -> str`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/images/test_reference_sanitizer.py`:
 
@@ -103,12 +103,12 @@ def test_body_num_without_reference_row_is_silently_dropped():
     assert "99" not in out.split("参考文献")[-1]
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `.venv/bin/pytest tests/images/test_reference_sanitizer.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'local_deep_research.images.reference_sanitizer'`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Create `src/local_deep_research/images/reference_sanitizer.py`:
 
@@ -189,14 +189,14 @@ def sanitize_references(markdown: str) -> str:
     return markdown[:start] + "".join(kept_chunks)
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `.venv/bin/pytest tests/images/test_reference_sanitizer.py -v`
 Expected: PASS (all 4 tests).
 
 The four tests are the contract. If a symbol import fails, confirm it with `grep -n "_HEADING_RE\|_SKIPPED_SECTION_HEADINGS" src/local_deep_research/images/relevance.py` and `grep -n "def find_sources_section" src/local_deep_research/text_optimization/citation_formatter.py` — all three are verified present at the modules named above.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit** — Actual: `987adb38` (+ edge-case fixes `3798ddcf`)
 
 ```bash
 git rev-parse --abbrev-ref HEAD   # must print main
@@ -219,7 +219,7 @@ git log --oneline -3
 - Consumes: `_scan_references_block(markdown)`, `_split_sections(markdown)`, `_section_offsets(markdown)`, `CITE_INLINE_RE`/`CITE_INLINE_GROUP_RE` (already imported in relevance.py from `text_optimization.citation_formatter`).
 - Produces: `build_citation_index(markdown: str, results: dict) -> tuple[dict[str,str], dict[int,list[str]], dict[str,str]]` returning `(num_to_url, section_to_nums, url_to_html)`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/images/test_citation_index.py`:
 
@@ -269,12 +269,12 @@ def test_empty_results_yields_empty_html_map():
     assert section_to_nums[0] == ["1"]
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `.venv/bin/pytest tests/images/test_citation_index.py -v`
 Expected: FAIL with `ImportError: cannot import name 'build_citation_index'`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Add to `src/local_deep_research/images/relevance.py` (after `extract_segment_sources`):
 
@@ -336,12 +336,12 @@ def build_citation_index(
     return num_to_url, section_to_nums, url_to_html
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `.venv/bin/pytest tests/images/test_citation_index.py -v`
 Expected: PASS (all 3 tests).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit** — Actual: `dfde7308` (+ production `link`-key + `[[N]]` citation fix `323851cb`)
 
 ```bash
 git rev-parse --abbrev-ref HEAD   # must print main
@@ -364,7 +364,7 @@ git log --oneline -3
 - Consumes: `_split_sections`/`_section_offsets` from `images.relevance`; `_safe_alt` (same module).
 - Produces: `insert_images_by_section(markdown: str, placements: list[tuple[int, str, str]]) -> str`. Each placement is `(section_idx, url, alt)`; the list is sorted by `section_idx` by the caller.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/images/test_insert_images.py`:
 
@@ -420,12 +420,12 @@ def test_sanitizes_alt_via_safe_alt():
     assert "[" not in out  # brackets stripped from the alt
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `.venv/bin/pytest tests/images/test_insert_images.py -v`
 Expected: FAIL with `ImportError: cannot import name 'insert_images_by_section'`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Add to `src/local_deep_research/images/postprocessing.py` (after `_safe_alt`):
 
@@ -486,14 +486,14 @@ def insert_images_by_section(
     return "".join(out_chunks)
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `.venv/bin/pytest tests/images/test_insert_images.py -v`
 Expected: PASS (all 5 tests).
 
 `_safe_alt("hello [world]\nfoo")` returns `"hello world foo"` (verified: strips `[`/`]`, collapses whitespace). The assertions above match that output.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit** — Actual: `50279797` (+ test fix `0d628c69`)
 
 ```bash
 git rev-parse --abbrev-ref HEAD   # must print main
@@ -516,12 +516,12 @@ git log --oneline -3
 - Consumes: nothing.
 - Produces: a visible marker so the pause is discoverable.
 
-- [ ] **Step 1: Read the top of enhancer.py**
+- [x] **Step 1: Read the top of enhancer.py**
 
 Run: `.venv/bin/python -c "print(open('src/local_deep_research/images/enhancer.py').read()[:400])"`
 Note the current module docstring (if any) so the marker is inserted cleanly above `ImageEnhancer`.
 
-- [ ] **Step 2: Add the paused marker**
+- [x] **Step 2: Add the paused marker**
 
 Insert at the very top of `src/local_deep_research/images/enhancer.py` (before any existing docstring is fine — above the first class/import line as a module-level comment block):
 
@@ -534,12 +534,12 @@ Insert at the very top of `src/local_deep_research/images/enhancer.py` (before a
 # stable; removal is a separate change. Do not add new callers.
 ```
 
-- [ ] **Step 3: Verify the module still imports cleanly**
+- [x] **Step 3: Verify the module still imports cleanly**
 
 Run: `.venv/bin/python -c "from local_deep_research.images.enhancer import ImageEnhancer; print('ok')"`
 Expected: prints `ok` (no SyntaxError from the comment).
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit** — Actual: `d020307a`
 
 ```bash
 git rev-parse --abbrev-ref HEAD   # must print main
@@ -564,7 +564,7 @@ git log --oneline -3
 
 This is the largest task. It is one task because the four stages only make sense wired together — a reviewer gate on the integrated flow is the meaningful unit.
 
-- [ ] **Step 1: Write the failing end-to-end test**
+- [x] **Step 1: Write the failing end-to-end test**
 
 Create `tests/images/test_postprocessing_citation_pipeline.py`:
 
@@ -718,12 +718,12 @@ def test_enable_images_false_returns_markdown_unchanged():
     assert out == "# hi"
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `.venv/bin/pytest tests/images/test_postprocessing_citation_pipeline.py -v`
 Expected: FAIL (the current implementation calls ImageEnhancer / uses the old gate; `enh_mock.assert_not_called()` fails, or assertions about stray.jpg fail).
 
-- [ ] **Step 3: Rewrite enhance_report_with_images**
+- [x] **Step 3: Rewrite enhance_report_with_images**
 
 In `src/local_deep_research/images/postprocessing.py`, replace the **body** of `enhance_report_with_images` (keep the signature `def enhance_report_with_images(*, research_id, clean_markdown, results, db_session, enable_images, vision_model, vision_url=None, vision_api_key=None, vision_min_alt_count=None, vision_cap=None, firecrawl_client=None, alt_similarity_threshold=_DEFAULT_THRESHOLD, alt_similarity_min_margin=_DEFAULT_MIN_MARGIN) -> str` and the outer `try/except Exception` that returns `clean_markdown` on failure). The new body:
 
@@ -897,12 +897,12 @@ Notes for the implementer:
 - `ImageStore(research_id, db_session, base_dir=..., firecrawl_client=None)` and `persist(urls, url_to_alt=None, url_to_source=None)` — the call above uses the verified signatures. `rewrite_markdown(enhanced, mapping)` is unchanged.
 - Keep `alt_similarity_min_margin` in the signature (callers may pass it) but it is unused in the new body — that is intentional (ambiguous_match is paused).
 
-- [ ] **Step 4: Run the new test to verify it passes**
+- [x] **Step 4: Run the new test to verify it passes**
 
 Run: `.venv/bin/pytest tests/images/test_postprocessing_citation_pipeline.py -v`
 Expected: PASS (all 4 tests).
 
-- [ ] **Step 5: Run the full image test suite to check for regressions**
+- [x] **Step 5: Run the full image test suite to check for regressions**
 
 Run: `.venv/bin/pytest tests/images/ -q --no-header -p no:cacheprovider`
 Expected: The new tests pass. Some pre-existing tests that asserted the old gate behavior (e.g. in `test_postprocessing.py`) may now fail because the pipeline changed — for each failure, decide:
@@ -910,7 +910,7 @@ Expected: The new tests pass. Some pre-existing tests that asserted the old gate
   - If the test asserted the old LLM-enhancer / two-gate flow → update it to the new contract, or delete it if it is fully superseded by `test_postprocessing_citation_pipeline.py`.
 Do NOT delete tests that still encode valid contracts. Ruff must stay clean on changed files: `.venv/bin/ruff check src/local_deep_research/images/postprocessing.py`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit** — Actual: `500c9e2d` (+ import cleanup `1596b96f`; + fallback removal & link-key fix `f9b60e29`; tests `0c7dab73`)
 
 ```bash
 git rev-parse --abbrev-ref HEAD   # must print main
@@ -939,26 +939,57 @@ git log --oneline -3
 
 This is a verification task, not a code task. It produces no commit; it produces a measured adoption number to compare against the baseline (0/97 original; ~19/97 after the three pauses).
 
-- [ ] **Step 1: Confirm the container has the rewritten code**
+- [x] **Step 1: Confirm the container has the rewritten code**
 
 Run: `docker exec ldr-local sh -c 'grep -c "mode=citation_anchored" /install/.venv/lib/python3.14/site-packages/local_deep_research/images/postprocessing.py'`
 Expected: prints `1` (the source is bind-mounted; the new code is live). If it prints `0`, the host edit was not synced — re-check the bind mount and re-copy if needed.
 
-- [ ] **Step 2: Run the B3 replay**
+- [x] **Step 2: Run the B3 replay**
 
 Run: `docker exec -u ldruser -e PYTHONUNBUFFERED=1 -e HF_HUB_OFFLINE=1 ldr-local python3 /tmp/b3_replay.py 2>/dev/null | grep -E "\[result\]|CITATION_MATCH|ELIGIBLE_BANK|INSERT|END "`
 Expected: `[result] adoption rate:` is non-zero, and `INSERT placements=` > 0. The LLM `status=error` seen before MUST NOT recur (the new pipeline has no LLM call).
 
-- [ ] **Step 3: Record the result**
+- [x] **Step 3: Record the result** (run 2026-08-02, after the "link"-key fix + fallback removal)
 
-Note the adoption rate (X/97) and the per-citation `CITATION_MATCH kept=` totals. Compare to baselines:
-  - Original (before pauses): 0/97.
-  - After three pauses: ~19 passed the gate, 0 inserted (LLM error).
-  - New pipeline: gate-kept images are now also INSERTED (no LLM bottleneck).
+Real-model run (current code, threshold 0.6):
 
-If adoption is still 0, inspect the `CITATION_MATCH` lines: if every cited source reports `kept=0 low_similarity=N`, the cross-language threshold (0.6) is too strict for this case — that is expected signal for the follow-up tuning task (not a failure of this plan, which deliberately leaves the threshold at 0.6 to be set by data).
+    CITATION_INDEX nums=2902 sections=184 html_covered=16
+    CITATION_MATCH num=7  imgs=2 kept=0 low_similarity=2   (x2 sections)
+    CITATION_MATCH num=10 imgs=1 kept=0 low_similarity=1
+    CITATION_MATCH num=2406 imgs=4 kept=0 low_similarity=4
+    ELIGIBLE_BANK total=0
+    END status=empty
+    [result] adoption rate: 0/97
 
-- [ ] **Step 4: No commit**
+Pipeline verdict on real data: correct. The index resolves all 2902
+reference rows across 184 sections and covers all 16 search_results
+via the production `"link"` key. Only 3 of the 16 candidate-bearing
+sources are cited in BODY sections (the other 13 — porn sites,
+telegram, MSI-laptop pages, Vietnamese AI blogs, ChatGPT jailbreak
+repos — are cited only in the trailing References block and are
+correctly never extracted). All 9 evaluated images carry degenerate
+alts ("1", "3", "watch now", "longwriter") and the real semantic
+model rejects every one — this is junk-alt rejection, not merely the
+cross-language threshold. The 0/97 adoption is the pipeline doing its
+job, not a regression.
+
+Downstream-chain run (permissive constant-vector gate, same real
+320K-char markdown — proves insert/dedupe/persist/rewrite on real
+data):
+
+    ELIGIBLE_BANK total=7
+    INSERT placements=7
+    PERSIST chosen=7
+    END status=ok
+    [result] adoption rate: 3/97  (3 = remote downloads that survived
+    ImageStore.persist; rewrite_markdown drops URLs whose download
+    failed — pre-existing network-dependent contract, not part of
+    this plan)
+
+The LLM `status=error` from the pre-pause baseline did NOT recur
+(no LLM call exists in the new pipeline).
+
+- [x] **Step 4: No commit**
 
 This task verifies; it does not change code. Report the numbers in the session.
 
