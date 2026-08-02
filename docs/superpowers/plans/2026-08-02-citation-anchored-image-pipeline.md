@@ -1027,7 +1027,7 @@ verification) found **4 fixable defects + 1 documented decision**:
 | F-2 | `binding` last-write-wins: same source cited in 2+ sections overwrote the first binding | Fix | First-bound-section-wins (`if img.url not in binding` inside the gate) |
 | F-3 | `_used_nums_in_body` missed full-width `【N】` citations (CITE_INLINE_RE accepts them) | Fix | Regex extended to `【([\d,\s]+)】` |
 | F-4 | Sanitizer kept rows via digits later in the head line (years, usernames, day counts) — real B3 report: 190/230 rows kept solely by title digits | Fix | Only the leading `[N...]` bracket digits count as row numbers |
-| F-5 | Comma-group rows `[1, 1224]` keep the whole row when one member is cited; dangling members (311 on real data) survive | **Not fixed** — documented decision; renumbering is a formatter-level concern (CITE_LIST_ROW_RE contract), out of scope for the sanitizer |
+| F-5 | Comma-group rows `[1, 1224]` keep the whole row when one member is cited; dangling members survive (311 under the pre-F-4 keep logic; 17 on real B3 data in the F-4 output) | **Fixed (follow-up)** — kept rows' leading brackets are rewritten to the cited members only; all members of a production row share ONE URL (format_links_to_markdown groups by canonical URL), so no URL mapping breaks. The `(source nr: ...)` suffix is a verbatim bracket echo — synced only on exact match, otherwise title left untouched. Real B3: 8 comma-group rows / 17 dangling members cleaned, 40 rows kept, output 50963 → 50781 bytes |
 
 Informationals (all clean): row-boundary agreement bidirectional, placement
 ordering correct, dedupe determinism + no dupes, MagicMock session parity OK,
@@ -1035,4 +1035,10 @@ no new lint debt.
 
 **Verification:** 566 passed, 1 skipped (affected surface); ruff clean on all 4
 changed files; real B3 report (research 4b97170e…): sanitizer 1831 → 40 rows
-(was 230), output 320351 → 50963 bytes (−84%). Fix commit: (see git log).
+(was 230), output 320351 → 50963 bytes (−84%). Fix commit: 9a8a550f.
+
+**F-5 follow-up (2026-08-02):** bracket rewrite landed — real B3 output
+50963 → 50781 bytes, 8 comma-group rows / 17 dangling members cleaned,
+40 rows kept; output-bracket invariant (every member of every kept row is
+cited in the body) confirmed at 0 dangling. Surface after F-5: 570 passed,
+1 skipped; ruff clean. Fix commit: (see git log).

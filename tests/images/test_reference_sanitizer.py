@@ -140,3 +140,69 @@ def test_fullwidth_body_citations_are_counted():
     out = sanitize_references(md)
     assert "[7] A" in out
     assert "[8] B" not in out
+
+
+def test_comma_group_row_rewritten_to_cited_members():
+    """A comma-group row keeps only its cited members: '[1, 1224]'
+    becomes '[1224]' when only [[1224]] is cited, and the
+    '(source nr: ...)' echo is synced. Every member of a production
+    row shares one URL (format_links_to_markdown groups by canonical
+    URL), so the rewrite breaks no URL mapping."""
+    md = (
+        "## Section\n\n"
+        "Text cites [[1224]](https://www.instagram.com/reel/DO3hsrEAXfr).\n\n"
+        "## Sources\n"
+        "[1, 1224] Beijing City Walk (source nr: 1, 1224)\n"
+        "   URL: https://www.instagram.com/reel/DO3hsrEAXfr\n"
+        "[2] Uncited (source nr: 2)\n"
+        "   URL: https://example.com/2\n"
+    )
+    out = sanitize_references(md)
+    assert "[1224] Beijing City Walk (source nr: 1224)" in out
+    assert "[1, 1224]" not in out
+    assert "Uncited" not in out
+
+
+def test_comma_group_all_members_cited_kept_verbatim():
+    """Both members cited -> the row survives byte-for-byte."""
+    md = (
+        "## Section\n\n"
+        "Text cites [[1]](https://a.com/1) and [[1224]](https://a.com/1).\n\n"
+        "## Sources\n"
+        "[1, 1224] Shared source (source nr: 1, 1224)\n"
+        "   URL: https://a.com/1\n"
+    )
+    out = sanitize_references(md)
+    assert "[1, 1224] Shared source (source nr: 1, 1224)" in out
+
+
+def test_comma_group_first_member_only():
+    """Only the FIRST member cited -> '[1, 1224]' becomes '[1]'."""
+    md = (
+        "## Section\n\n"
+        "Text cites [[1]](https://a.com/1).\n\n"
+        "## Sources\n"
+        "[1, 1224] Shared source (source nr: 1, 1224)\n"
+        "   URL: https://a.com/1\n"
+        "[1224] Own row (source nr: 1224)\n"
+        "   URL: https://b.com/1224\n"
+    )
+    out = sanitize_references(md)
+    assert "[1] Shared source (source nr: 1)" in out
+    assert "[1, 1224]" not in out
+    assert "Own row" not in out
+
+
+def test_comma_group_non_echo_suffix_left_untouched():
+    """A '(source nr: ...)' suffix that does NOT mirror the bracket is
+    not rewritten (it may be title text in LLM-written rows) — only
+    the leading bracket is filtered."""
+    md = (
+        "## Section\n\n"
+        "Text cites [[1224]](https://a.com/1224).\n\n"
+        "## Sources\n"
+        "[1, 1224] Paper (source nr: 7)\n"
+        "   URL: https://a.com/1224\n"
+    )
+    out = sanitize_references(md)
+    assert "[1224] Paper (source nr: 7)" in out

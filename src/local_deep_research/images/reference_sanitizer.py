@@ -89,14 +89,38 @@ def sanitize_references(markdown: str) -> str:
         # row. Only the leading bracket digits count.
         nl = chunk.find("\n")
         head = chunk[:nl] if nl != -1 else chunk
-        head_match = re.match(r"^\[\[?([\d,\s]+)\]", head)
-        row_nums = (
-            {n.strip() for n in head_match.group(1).split(",")}
-            if head_match
-            else set()
-        )
-        if row_nums & used:
-            kept_chunks.append(chunk)
+        head_match = re.match(r"^(\[\[?)([\d,\s]+)(\]\]?)", head)
+        if not head_match:
+            continue
+        row_nums_list = [n.strip() for n in head_match.group(2).split(",")]
+        row_nums = set(row_nums_list)
+        if not (row_nums & used):
+            continue
+        if row_nums - used:
+            # Comma-group row with uncited members: every member of a
+            # production row shares ONE URL (format_links_to_markdown
+            # groups citations by canonical URL), so dropping the
+            # uncited members from the leading bracket breaks no URL
+            # mapping. The "(source nr: ...)" suffix is a verbatim
+            # echo of the bracket — sync it when it matches exactly,
+            # and leave the title untouched otherwise (LLM-written
+            # rows may contain similar-looking text that is not an
+            # echo).
+            kept_nums = [n for n in row_nums_list if n in used]
+            new_head = (
+                head_match.group(1)
+                + ", ".join(kept_nums)
+                + head_match.group(3)
+                + head[head_match.end():]
+            )
+            paren = re.search(r"\((source nr: )([\d,\s]+)\)$", new_head)
+            if paren and paren.group(2).strip() == ", ".join(row_nums_list):
+                new_head = (
+                    new_head[: paren.start()]
+                    + f"({paren.group(1)}{', '.join(kept_nums)})"
+                )
+            chunk = new_head + chunk[nl:] if nl != -1 else new_head
+        kept_chunks.append(chunk)
 
     # kept_chunks includes header + kept rows; subtract header to count only rows
     kept_rows_count = len(kept_chunks) - 1
