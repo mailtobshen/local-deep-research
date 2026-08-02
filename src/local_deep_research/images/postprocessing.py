@@ -11,8 +11,10 @@ from loguru import logger
 from .bank import ImageBank
 from .enhancer import DEFAULT_VISION_CAP, DEFAULT_VISION_MIN_ALT_TRIGGER, ImageEnhancer
 from .extractor import ExtractedImage
+from .reference_sanitizer import sanitize_references
 from .relevance import (
     _split_sections,
+    build_citation_index,
     extract_segment_sources,
     filter_candidates_by_section_citations,
     is_skipped_section_heading,
@@ -21,11 +23,18 @@ from .semantic_matcher import (
     DEFAULT_MIN_MARGIN as _DEFAULT_MIN_MARGIN,
     DEFAULT_THRESHOLD as _DEFAULT_THRESHOLD,
     _canonical_section_phrase,
+    _cosine,
     _embed_sections,
     _encode_phrase_cached,
     build_report_entity_pool,
+    get_model,
     semantic_match_filter,
 )
+# Import the module for direct function access
+from . import semantic_matcher
+# Keep the original reference for monkeypatching tests
+# We'll use the imported _canonical_section_phrase in the code
+# but tests can monkeypatch this module-level attribute
 from .serialize import loads_images
 from .store import ImageStore, _IMG_RE
 from .vision import VisionDescriber
@@ -171,8 +180,166 @@ def enhance_report_with_images(
     """
     if not enable_images:
         return clean_markdown
-    logger.info(f"[IMG-TRACE] BEGIN research={research_id} images_enabled=true")
+    logger.info(
+        f"[IMG-TRACE] BEGIN research={research_id} "
+        f"mode=citation_anchored images_enabled=true"
+    )
     try:
+        # Stage 1: drop References rows the body never cites.
+        clean_markdown = sanitize_references(clean_markdown)
+
+        # Stage 0: build citation index from the cleaned markdown + results.
+        num_to_url, section_to_nums, url_to_html = build_citation_index(
+            clean_markdown, results
+        )
+        logger.info(
+            f"[IMG-TRACE] CITATION_INDEX research={research_id} "
+            f"nums={len(num_to_url)} sections={len(section_to_nums)} "
+            f"html_covered={len(url_to_html)}"
+        )
+        if not num_to_url or not url_to_html:
+            logger.info(
+                f"[IMG-TRACE] BANK_EMPTY research={research_id} "
+                f"reason=no_citations_or_html"
+            )
+            logger.info(
+                f"[IMG-TRACE] END research={research_id} status=empty"
+            )
+            return clean_markdown
+
+        # Per-section entity pool + embeddings for the semantic gate.
+        sections = _split_sections(clean_markdown)
+        entity_pool = semantic_matcher.build_report_entity_pool(clean_markdown)
+        section_phrases: dict[int, str] = {}
+        for sidx, entities in entity_pool.items():
+            if sidx >= len(sections) or not entities:
+                continue
+            phrase = semantic_matcher._canonical_section_phrase(sections[sidx][0], entities)
+            if phrase:
+                section_phrases[sidx] = phrase
+        # Pre-embed section phrases (one vector per cited section).
+        try:
+            section_vecs: dict[int, list[float]] = {
+                sidx: list(_encode_phrase_cached(p))
+                for sidx, p in section_phrases.items()
+            }
+        except Exception as exc:
+            logger.warning(
+                f"[IMG-TRACE] SEMANTIC_MATCH_FAILED research={research_id} "
+                f"reason={type(exc).__name__}: {exc}"
+            )
+            logger.info(
+                f"[IMG-TRACE] END research={research_id} status=empty"
+            )
+            return clean_markdown
+
+        threshold = alt_similarity_threshold
+        bank = ImageBank()
+        binding: dict[str, tuple[str, int]] = {}  # url -> (num, section_idx)
+
+        # Stage 2: extract images from each cited source, single-section
+        # semantic gate against the citation's section.
+        for sidx, nums in section_to_nums.items():
+            if not nums or sidx not in section_vecs:
+                continue
+            sec_vec = section_vecs[sidx]
+            for num in nums:
+                url = num_to_url.get(num)
+                html = url_to_html.get(url) if url else None
+                if not html:
+                    continue
+                imgs = loads_images(html)
+                if not imgs:
+                    continue
+                kept = 0
+                dropped_low = 0
+                model = semantic_matcher.get_model()
+                for img in imgs:
+                    if not (img.alt and img.alt.strip()):
+                        continue
+                    raw = model.encode([img.alt], normalize_embeddings=True)[0]
+                    alt_vec = list(raw.tolist()) if hasattr(raw, "tolist") else list(raw)
+                    score = _cosine(alt_vec, sec_vec)
+                    if score >= threshold:
+                        bank.add([img])
+                        binding[img.url] = (num, sidx)
+                        kept += 1
+                    else:
+                        dropped_low += 1
+                logger.info(
+                    f"[IMG-TRACE] CITATION_MATCH research={research_id} "
+                    f"num={num} imgs={len(imgs)} kept={kept} "
+                    f"low_similarity={dropped_low}"
+                )
+
+        if not bank.all_urls():
+            logger.info(
+                f"[IMG-TRACE] ELIGIBLE_BANK research={research_id} total=0"
+            )
+            logger.info(
+                f"[IMG-TRACE] END research={research_id} status=empty"
+            )
+            return clean_markdown
+
+        logger.info(
+            f"[IMG-TRACE] ELIGIBLE_BANK research={research_id} "
+            f"total={len(bank.all_urls())}"
+        )
+
+        # Stage 3: deterministic insert at each image's bound section.
+        # ImageEnhancer is intentionally NOT called (paused).
+        # Build placements from binding (url -> (num, section_idx)) joined
+        # with the bank's images in one pass (avoid O(n^2) lookups).
+        bank_by_url = {img.url: img for img in bank.candidates_with_alt()}
+        placements = sorted(
+            (
+                (sidx, url, bank_by_url[url].alt)
+                for url, (num, sidx) in binding.items()
+                if url in bank_by_url
+            ),
+            key=lambda p: (p[0], p[1]),
+        )
+        enhanced = insert_images_by_section(clean_markdown, placements)
+        logger.info(
+            f"[IMG-TRACE] INSERT research={research_id} "
+            f"placements={len(placements)}"
+        )
+
+        # Stage 4: dedupe across the whole document.
+        enhanced, _orig, _uniq = _dedupe_images(enhanced)
+
+        # Persist real, mirrored image URLs (unchanged contract).
+        # ImageStore(research_id, db_session, base_dir=..., firecrawl_client=None)
+        # persist(urls, url_to_alt=None, url_to_source=None) -> {url: route}
+        chosen = [m.group(2) for m in _IMG_RE.finditer(enhanced)]
+        url_to_alt = {
+            img.url: img.alt
+            for img in bank.candidates_with_alt()
+            if img.url in chosen
+        }
+        url_to_source = {
+            img.url: (img.source_url, img.source_title)
+            for img in bank.candidates_with_alt()
+            if img.url in chosen
+        }
+        store = ImageStore(research_id=research_id, db_session=db_session)
+        mapping = store.persist(chosen, url_to_alt, url_to_source)
+        enhanced = store.rewrite_markdown(enhanced, mapping)
+        logger.info(
+            f"[IMG-TRACE] PERSIST research={research_id} chosen={len(chosen)}"
+        )
+        logger.info(
+            f"[IMG-TRACE] END research={research_id} status=ok"
+        )
+        return enhanced
+    except Exception:
+        logger.exception(
+            "Image post-processing failed; returning clean markdown"
+        )
+        logger.info(
+            f"[IMG-TRACE] END research={research_id} status=error"
+        )
+        return clean_markdown
         bank = ImageBank()
         serialized_before_dedup = 0
         findings_with_images = 0
