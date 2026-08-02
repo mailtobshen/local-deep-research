@@ -1,4 +1,5 @@
 # import logging - replaced with loguru
+import errno
 import os
 from pathlib import Path
 from importlib import resources as importlib_resources
@@ -322,11 +323,17 @@ def create_app():
         logger.debug(
             f"Generated themes.css with {len(theme_registry.themes)} themes"
         )
-    except PermissionError:
-        logger.warning(
-            f"Cannot write themes.css to {themes_css_path}. "
-            "Theme CSS will need to be pre-generated."
-        )
+    except OSError as exc:
+        # Read-only target (e.g. the :ro source hot-mount — EROFS) or a
+        # permission denial (EACCES) means the file must be pre-generated;
+        # any other OSError (e.g. a theme source failing to read) stays an error.
+        if exc.errno in (errno.EROFS, errno.EACCES):
+            logger.warning(
+                f"Cannot write themes.css to {themes_css_path}. "
+                "Theme CSS will need to be pre-generated."
+            )
+        else:
+            logger.exception("Error generating combined themes.css")
     except Exception:
         logger.exception("Error generating combined themes.css")
 
