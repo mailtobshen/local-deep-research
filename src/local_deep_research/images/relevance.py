@@ -369,6 +369,30 @@ def _is_compound_generic(alt: str) -> bool:
 
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*$", re.MULTILINE)
 
+# Inline [[N]] citation markers in body text. Production reports render
+# citations as markdown links "[[N]](url)", which CITE_INLINE_RE
+# deliberately skips (its negative lookbehind avoids already-formatted
+# links). This pattern anchors the same [[N]] the sanitizer relies on.
+_CITE_DOUBLE_BRACKET_RE = re.compile(r"\[\[(\d+)\]\]")
+
+
+def _find_references_block_start(markdown: str) -> int:
+    """Offset where the trailing References block begins, or -1.
+
+    Shared by ``_scan_references_block`` (parse rows) and
+    ``build_citation_index`` (exclude the block from body citation
+    scans). English headings via ``find_sources_section``; CJK
+    headings via ``_HEADING_RE`` + ``_SKIPPED_SECTION_HEADINGS``.
+    """
+    start = find_sources_section(markdown)
+    if start < 0:
+        for m in _HEADING_RE.finditer(markdown):
+            heading = m.group(2).strip()
+            if heading.lower() in _SKIPPED_SECTION_HEADINGS:
+                start = m.end()
+                break
+    return start
+
 
 def _split_sections(markdown: str) -> list[Tuple[str, str]]:
     """Split markdown into (heading, body) tuples, one per `^#{1,6}` line.
@@ -441,13 +465,7 @@ def _scan_references_block(markdown: str) -> Dict[str, str]:
     co-located with the only module that owns it (this file).
     """
     out: Dict[str, str] = {}
-    start = find_sources_section(markdown)
-    if start < 0:
-        for m in _HEADING_RE.finditer(markdown):
-            heading = m.group(2).strip()
-            if heading.lower() in _SKIPPED_SECTION_HEADINGS:
-                start = m.end()
-                break
+    start = _find_references_block_start(markdown)
     if start < 0:
         return out
     sources_content = markdown[start:]
@@ -611,15 +629,31 @@ def build_citation_index(
 
     sections = _split_sections(markdown)
     offsets = _section_offsets(markdown)
+    # The References block is the last section; its rows ("[1, 1224]
+    # Title\n   URL: ...") must NOT be scanned as body citations.
+    refs_start = _find_references_block_start(markdown)
     section_to_nums: dict[int, list[str]] = {}
     for idx in range(len(sections)):
         body_start = offsets[idx] if idx < len(offsets) else 0
         body_end = (
             offsets[idx + 1] if idx + 1 < len(offsets) else len(markdown)
         )
+        if refs_start >= 0:
+            body_end = min(body_end, refs_start)
+        if body_start >= body_end:
+            section_to_nums[idx] = []
+            continue
         body_slice = markdown[body_start:body_end]
         nums: list[str] = []
         seen: set[str] = set()
+        # [[N]] links first (production reports render citations as
+        # "[[N]](url)" links, which CITE_INLINE_RE skips), then the
+        # plain [N] / [1, 2] forms for pre-link markdown.
+        for m in _CITE_DOUBLE_BRACKET_RE.finditer(body_slice):
+            n = m.group(1)
+            if n not in seen:
+                seen.add(n)
+                nums.append(n)
         for m in CITE_INLINE_RE.finditer(body_slice):
             n = m.group(1)
             if n not in seen:
