@@ -43,3 +43,65 @@ def test_body_num_without_reference_row_is_silently_dropped():
     assert "[[1]] Title 1" in out
     # No crash; [99] simply has no row to keep or drop.
     assert "99" not in out.split("参考文献")[-1]
+
+
+def test_production_format_rows_are_trimmed():
+    """Production rows (format_links_to_markdown output) are single-bracket
+    comma groups — '[1, 1224] Title (source nr: 1, 1224)' + '   URL:'
+    — while body citations are '[[N]](url)' markdown links.
+
+    Before this fix the row matcher only recognized '[[N]]' rows, so
+    the sanitizer silently no-oped on real reports (verified against
+    the B3 report: 1831 rows kept, 0 trimmed, output byte-identical).
+    """
+    md = (
+        "## Section\n\n"
+        "Text cites [[7]](https://en.wikipedia.org/wiki/Beijing) and "
+        "[[10]](https://www.instagram.com/popular/x).\n\n"
+        "## Sources\n"
+        "[1, 1224] Beijing City Walk (source nr: 1, 1224)\n"
+        "   URL: https://www.instagram.com/reel/DO3hsrEAXfr\n"
+        "[7] Beijing — Wikipedia (source nr: 7)\n"
+        "   URL: https://en.wikipedia.org/wiki/Beijing\n"
+        "[10] 北京適合旅遊季節 - Instagram (source nr: 10)\n"
+        "   URL: https://www.instagram.com/popular/x\n"
+        "[42] Uncited row (source nr: 42)\n"
+        "   URL: https://example.com/42\n"
+    )
+    out = sanitize_references(md)
+    assert "[7] Beijing — Wikipedia" in out
+    assert "[10] 北京適合旅遊季節" in out
+    assert "Uncited row" not in out
+    # Comma-group row: neither 1 nor 1224 is cited -> dropped.
+    assert "Beijing City Walk" not in out
+
+
+def test_production_comma_group_row_kept_when_any_number_cited():
+    """'[1, 1224]' row is kept as soon as ONE of its numbers is cited."""
+    md = (
+        "## Section\n\n"
+        "Text cites [[1224]](https://www.instagram.com/reel/DO3hsrEAXfr).\n\n"
+        "## Sources\n"
+        "[1, 1224] Beijing City Walk (source nr: 1, 1224)\n"
+        "   URL: https://www.instagram.com/reel/DO3hsrEAXfr\n"
+        "[2] Uncited (source nr: 2)\n"
+        "   URL: https://example.com/2\n"
+    )
+    out = sanitize_references(md)
+    assert "Beijing City Walk" in out
+    assert "Uncited" not in out
+
+
+def test_single_bracket_body_citations_are_counted():
+    """Legacy body shape '[N]' (plain brackets, fixture style) counts as used."""
+    md = (
+        "## Section\n\nText cites [1] and [3].\n\n"
+        "## 参考文献\n"
+        "[1] A\n   URL: https://a.com\n"
+        "[2] B\n   URL: https://b.com\n"
+        "[3] C\n   URL: https://c.com\n"
+    )
+    out = sanitize_references(md)
+    assert "[1] A" in out
+    assert "[3] C" in out
+    assert "[2] B" not in out

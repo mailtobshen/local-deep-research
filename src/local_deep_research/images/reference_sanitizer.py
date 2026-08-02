@@ -31,9 +31,19 @@ def _find_references_start(markdown: str) -> int:
 
 
 def _used_nums_in_body(markdown: str, refs_start: int) -> set[str]:
-    """Return the set of [[N]] numbers appearing before the References block."""
+    """Return the set of citation numbers appearing before the References block.
+
+    Matches both production ``[[N]](url)`` markdown-link citations and
+    plain ``[N]`` / ``[2, 3]`` bracket citations (fixture/legacy shape).
+    """
     body = markdown[:refs_start]
-    return set(re.findall(r"\[\[(\d+)\]\]", body))
+    nums: set[str] = set()
+    for m in re.finditer(r"\[\[?([\d,\s]+)\]\]?", body):
+        for n in m.group(1).split(","):
+            n = n.strip()
+            if n.isdigit():
+                nums.add(n)
+    return nums
 
 
 def sanitize_references(markdown: str) -> str:
@@ -52,8 +62,12 @@ def sanitize_references(markdown: str) -> str:
     used = _used_nums_in_body(markdown, start)
     refs_block = markdown[start:]
 
-    # Each row begins with [[N...]] at line start. Split into row chunks.
-    row_starts = [m.start() for m in re.finditer(r"(?m)^\[\[", refs_block)]
+    # Each row begins with [N...] or [[N...]] at line start. Split into
+    # row chunks. Production rows are single-bracket comma groups
+    # ("[1, 1224] Title (source nr: 1, 1224)" — format_links_to_markdown
+    # output); the leading bracket must NOT match non-numeric lines
+    # like "[text](url)" links inside the block.
+    row_starts = [m.start() for m in re.finditer(r"(?m)^\[\[?[\d,\s]+\]", refs_block)]
     if not row_starts:
         return markdown
 
