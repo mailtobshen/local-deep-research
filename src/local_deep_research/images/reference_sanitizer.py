@@ -65,13 +65,16 @@ def sanitize_references(markdown: str) -> str:
         re_end = row_starts[i + 1] if i + 1 < len(row_starts) else len(refs_block)
         chunk = refs_block[rs:re_end]
         # The leading line carries the citation number(s) for this row.
-        head = chunk[: chunk.find("\n")]
+        nl = chunk.find("\n")
+        head = chunk[:nl] if nl != -1 else chunk
         row_nums = set(re.findall(r"\d+", head))
         if row_nums & used:
             kept_chunks.append(chunk)
 
+    # kept_chunks includes header + kept rows; subtract header to count only rows
+    kept_rows_count = len(kept_chunks) - 1
     logger.info(
-        f"[IMG-TRACE] REFERENCES_CLEANLED "
-        f"before={len(row_starts)} after={len(kept_chunks) - 1}"
+        f"[IMG-TRACE] REFERENCES_CLEANED "
+        f"before={len(row_starts)} after={kept_rows_count}"
     )
     return markdown[:start] + "".join(kept_chunks)
