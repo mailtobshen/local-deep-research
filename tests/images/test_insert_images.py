@@ -46,4 +46,4 @@ def test_sanitizes_alt_via_safe_alt():
         md, [(0, "https://x/a.jpg", "hello [world]\nfoo")]
     )
     assert "![hello world foo](https://x/a.jpg)" in out
-    assert "[" not in out  # brackets stripped from the alt
+    assert "[world]" not in out  # raw alt (with brackets) not present
