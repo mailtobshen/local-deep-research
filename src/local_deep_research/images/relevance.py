@@ -670,7 +670,9 @@ def build_citation_index(
     url_to_html: dict[str, str] = {}
     for finding in results.get("findings", []) or []:
         for sr in finding.get("search_results", []) or []:
-            url = sr.get("url")
+            # Production search_results are SearXNG items keyed "link";
+            # legacy fixtures/tests use "url".
+            url = sr.get("url") or sr.get("link")
             html = sr.get("html_content")
             if url and html and url not in url_to_html:
                 url_to_html[url] = html
