@@ -72,6 +72,143 @@ def find_sources_section(content: str) -> int:
     return -1
 
 
+# Regexes for the citation renumbering / hallucination-stripping helpers
+# below. They deliberately accept both plain `[N]` and the already-
+# hyperlinked `[[N]](url)` form so that the renumber pass is idempotent
+# and does not require an unformat-then-format round-trip.
+RENUMBER_HYPERLINK_RE = re.compile(r"\[\[(\d+)\]\]\(([^)]*)\)")
+RENUMBER_PLAIN_RE = re.compile(
+    r"(?<![\[【])\[(\d+)\](?![\]】\(])"
+)
+# Combined scanner used by build_first_cite_order — group 1 = plain [N],
+# group 2 = [[N]](url). Plain form's lookbehind/lookahead prevents
+# matching the inner `[N]` of `[[N]](url)` and the trailing `](`.
+RENUMBER_SCAN_RE = re.compile(
+    r"(?<!\[)\[(\d+)\](?!\]\()"
+    r"|"
+    r"\[\[(\d+)\]\]\([^)]*\)"
+)
+# Matches "Source N" / "source N" so hallucinated numbers there can be
+# stripped alongside the bracketed forms.
+SOURCE_WORD_NUMS_RE = re.compile(r"\b[Ss]ource\s+(\d+)\b")
+
+
+def build_first_cite_order(body: str, valid_indices) -> list:
+    """Return members of *valid_indices* in their first-occurrence order in
+    *body*.
+
+    Handles plain ``[N]``, comma groups ``[N, M, ...]``, and the
+    already-hyperlinked ``[[N]](url)`` form. Members of *valid_indices*
+    never referenced in the body are simply absent from the result.
+    """
+    seen: list = []
+    seen_set = set()
+
+    # Pass 1 — comma groups. Iterate inside the captured group so each
+    # member contributes independently.
+    for m in CITE_INLINE_GROUP_RE.finditer(body):
+        for raw in m.group(1).split(","):
+            n = int(raw.strip())
+            if n in valid_indices and n not in seen_set:
+                seen.append(n)
+                seen_set.add(n)
+
+    # Pass 2 — single numbers (plain `[N]` and `[[N]](url)`).
+    for m in RENUMBER_SCAN_RE.finditer(body):
+        raw = m.group(1) or m.group(2)
+        n = int(raw)
+        if n in valid_indices and n not in seen_set:
+            seen.append(n)
+            seen_set.add(n)
+
+    return seen
+
+
+def strip_hallucinated_citations(body: str, valid_indices) -> str:
+    """Remove citation tokens whose numbers are not in *valid_indices*.
+
+    Touches plain ``[N]``, comma groups ``[N, M, ...]``, hyperlinked
+    ``[[N]](url)``, and the ``Source N`` word pattern. Tokens are deleted
+    outright — no ``[?]`` placeholder is left behind. Comma groups that
+    lose all members collapse to empty; comma groups that retain at least
+    one member are rewritten to ``[kept1, kept2]``. Adjacent spaces are
+    collapsed (newlines are preserved).
+    """
+    def replace_hyperlink(match):
+        n = int(match.group(1))
+        return "" if n not in valid_indices else match.group(0)
+
+    def replace_comma(match):
+        members = [
+            (s.strip(), int(s.strip()))
+            for s in match.group(1).split(",")
+        ]
+        kept = [s for s, n in members if n in valid_indices]
+        if len(kept) == len(members):
+            return match.group(0)
+        if not kept:
+            return ""
+        return "[" + ", ".join(kept) + "]"
+
+    def replace_plain(match):
+        n = int(match.group(1))
+        return "" if n not in valid_indices else match.group(0)
+
+    def replace_source_word(match):
+        n = int(match.group(1))
+        return "" if n not in valid_indices else match.group(0)
+
+    # Order matters: hyperlink first so the inner `[N]` is not re-matched
+    # by the plain scan.
+    body = RENUMBER_HYPERLINK_RE.sub(replace_hyperlink, body)
+    body = CITE_INLINE_GROUP_RE.sub(replace_comma, body)
+    body = RENUMBER_PLAIN_RE.sub(replace_plain, body)
+    body = SOURCE_WORD_NUMS_RE.sub(replace_source_word, body)
+    # Collapse runs of two or more spaces produced by removals. Do not
+    # touch newlines so paragraph structure survives.
+    body = re.sub(r" {2,}", " ", body)
+    return body
+
+
+def renumber_citations(body: str, sources: dict, old_to_new: dict) -> str:
+    """Rewrite ``[N]`` and ``[[N]](url)`` per the *old_to_new* remap.
+
+    Already-hyperlinked tokens (``[[N]](url)``) keep their original URL —
+    only the index is rewritten to the new number. Plain ``[N]`` tokens
+    are rewritten using the URL from *sources* (a mapping of
+    ``new_index -> (title, url)``) when one is present, or fall back to
+    plain ``[new]``. Tokens whose old number is not in *old_to_new* are
+    left untouched — the caller is expected to have stripped hallucinated
+    numbers first.
+
+    Idempotent: re-running on already-renumbered text is a no-op because
+    ``RENUMBER_HYPERLINK_RE`` / ``RENUMBER_PLAIN_RE`` only match the
+    ``[N]`` / ``[[N]](url)`` shape, never the rewritten ``[new]``.
+    """
+    def replace_hyperlink(match):
+        old = int(match.group(1))
+        if old not in old_to_new:
+            return match.group(0)
+        new = old_to_new[old]
+        url = match.group(2)
+        return f"[[{new}]]({url})"
+
+    def replace_plain(match):
+        old = int(match.group(1))
+        if old not in old_to_new:
+            return match.group(0)
+        new = old_to_new[old]
+        entry = sources.get(new)
+        if entry and entry[1]:
+            return f"[[{new}]]({entry[1]})"
+        return f"[{new}]"
+
+    # Hyperlink first to avoid double-touching the inner `[N]`.
+    body = RENUMBER_HYPERLINK_RE.sub(replace_hyperlink, body)
+    body = RENUMBER_PLAIN_RE.sub(replace_plain, body)
+    return body
+
+
 class CitationMode(Enum):
     """Available citation formatting modes."""
 

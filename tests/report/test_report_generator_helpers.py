@@ -22,6 +22,11 @@ def generator():
     gen.search_system = mock_search
     gen.max_context_sections = 3
     gen.max_context_chars = 4000
+    # `_format_final_report` reads `searches_per_section` for metadata
+    # and `_section_documents_per_subsection` to decide whether to run
+    # the citation-alignment pass.
+    gen.searches_per_section = 2
+    gen._section_documents_per_subsection = []
     return gen
 
 
@@ -173,3 +178,121 @@ class TestBuildPreviousContext:
         assert "Finding 8" in result
         assert "Finding 9" in result
         assert "Finding 0" not in result
+
+
+# ── _format_final_report citation renumbering + alignment ──
+
+
+class TestFormatFinalReportCitationRenumbering:
+    """Tests for the citation-alignment pass added to
+    `_format_final_report`. The pass is enabled when
+    `_section_documents_per_subsection` is set on the generator; the
+    absence of that attribute preserves the legacy
+    `format_links_to_markdown(all_links_of_system)` path."""
+
+    @staticmethod
+    def _make_doc(idx, title, source):
+        from langchain_core.documents import Document
+
+        return Document(
+            page_content="content",
+            metadata={"index": idx, "title": title, "source": source},
+        )
+
+    def test_body_citation_matches_sources_block_url(self, generator):
+        """The user-reported bug: body [N] must point at the same URL as
+        the Sources-block row. With per-subsection documents supplied,
+        the alignment is guaranteed by construction."""
+        all_docs = [
+            self._make_doc(3, "Doc 3", "http://real-url-3"),
+            self._make_doc(7, "Doc 7", "http://real-url-7"),
+        ]
+        sections = {
+            "Section One": "Paragraph about real-url-3 [3]. "
+            "Paragraph about real-url-7 [7]."
+        }
+        structure = [{"name": "Section One", "subsections": []}]
+        generator._section_documents_per_subsection = [all_docs]
+        # Legacy list — must be ignored when per-subsection docs are
+        # present.
+        generator.search_system.all_links_of_system = []
+
+        result = generator._format_final_report(
+            sections, structure, query="q"
+        )
+        body, sources = result["content"].split("## Sources")
+
+        # Body uses sequential 1..N numbering.
+        assert "[1]" in body
+        assert "[2]" in body
+        # Old non-contiguous numbers are gone.
+        assert "[3]" not in body
+        assert "[7]" not in body
+        # Both real URLs are present in the Sources block.
+        assert "http://real-url-3" in sources
+        assert "http://real-url-7" in sources
+        # First-cite order: [3] appeared first in body → [1] is the
+        # Jinmao doc, [2] is the second one.
+        assert body.index("[1]") < body.index("[2]")
+
+    def test_hallucinated_marker_removed_from_body(self, generator):
+        all_docs = [self._make_doc(1, "Real", "http://real")]
+        sections = {"S": "Real content [1]. Ghost [768]."}
+        generator._section_documents_per_subsection = [all_docs]
+        generator.search_system.all_links_of_system = []
+
+        result = generator._format_final_report(
+            sections, [{"name": "S", "subsections": []}], query="q"
+        )
+        body = result["content"].split("## Sources")[0]
+        assert "[1]" in body
+        assert "[768]" not in body
+
+    def test_sequential_1_to_n_numbering_out_of_order_cites(
+        self, generator
+    ):
+        all_docs = [
+            self._make_doc(5, "D5", "http://x5"),
+            self._make_doc(2, "D2", "http://x2"),
+            self._make_doc(9, "D9", "http://x9"),
+        ]
+        # Body cites out of original order: [9] first, then [5], [2].
+        sections = {"S": "A [9] B [5] C [2]"}
+        generator._section_documents_per_subsection = [all_docs]
+        generator.search_system.all_links_of_system = []
+
+        result = generator._format_final_report(
+            sections, [{"name": "S", "subsections": []}], query="q"
+        )
+        body = result["content"].split("## Sources")[0]
+        # Sequential 1..N.
+        assert "[1]" in body
+        assert "[2]" in body
+        assert "[3]" in body
+        # First-cite order: [9] was first → becomes [1], whose URL is x9.
+        assert "http://x9" in result["content"]
+        # Sources block lists each unique URL once.
+        assert "http://x5" in result["content"]
+        assert "http://x2" in result["content"]
+
+    def test_no_documents_keeps_legacy_path(self, generator):
+        """When `_section_documents_per_subsection` is absent/empty,
+        fall through to the existing `format_links_to_markdown`
+        behaviour that reads `all_links_of_system`."""
+        sections = {"S": "Body [1]"}
+        generator.search_system.all_links_of_system = [
+            {
+                "url": "http://x",
+                "link": "http://x",
+                "title": "T",
+                "index": "1",
+                "journal_quality": None,
+                "metadata": {},
+            }
+        ]
+        result = generator._format_final_report(
+            sections, [{"name": "S", "subsections": []}], query="q"
+        )
+        assert "## Sources" in result["content"]
+        assert "http://x" in result["content"]
+

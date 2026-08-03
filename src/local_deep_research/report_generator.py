@@ -2,6 +2,7 @@ import importlib
 from typing import Any, Dict, List, Optional
 from datetime import datetime, UTC
 
+from langchain_core.documents import Document
 from langchain_core.language_models import BaseChatModel
 from loguru import logger
 
@@ -390,6 +391,15 @@ class IntegratedReportGenerator:
         """
         sections = {}
 
+        # Per-subsection `Document` lists returned by `analyze_topic()` —
+        # each entry is the documents the citation handler actually fed
+        # to the LLM during that subsection's synthesis. We collect them
+        # so `_format_final_report` can rebuild the Sources block from
+        # the exact set the LLM cited against, instead of from the
+        # post-hoc reshuffled `all_links_of_system`. This is what
+        # eliminates the `[N] → wrong URL` misalignment bug.
+        section_documents_per_subsection: List[List[Document]] = []
+
         # Accumulate content from previous sections to avoid repetition
         accumulated_findings: List[str] = []
 
@@ -573,6 +583,25 @@ class IntegratedReportGenerator:
 
                 completed_subsections += 1
 
+                # Capture the documents the citation handler actually
+                # emitted for this subsection. They live at
+                # `findings[-1]["documents"]` (see
+                # advanced_search_system/strategies/source_based_strategy.py:529-536
+                # and the inner synthesis loop at line 482). Walking
+                # `findings` defensively guards against strategies that
+                # return a different shape.
+                _findings = subsection_results.get("findings") or []
+                if _findings and isinstance(_findings, list):
+                    _last = _findings[-1]
+                    if isinstance(_last, dict):
+                        section_documents_per_subsection.append(
+                            list(_last.get("documents") or [])
+                        )
+                    else:
+                        section_documents_per_subsection.append([])
+                else:
+                    section_documents_per_subsection.append([])
+
                 # Add the researched content for this subsection
                 if subsection_results.get("current_knowledge"):
                     generated_content = subsection_results["current_knowledge"]
@@ -590,6 +619,14 @@ class IntegratedReportGenerator:
 
             # Combine all content for this section
             sections[section["name"]] = "\n".join(section_content)
+
+        # Stash the per-subsection documents on the instance so
+        # `_format_final_report` (called next by `generate_report`) can
+        # build the Sources block from the same set the LLM cited
+        # against. We use an instance attribute instead of threading a
+        # second return value through the public API to keep the
+        # contract unchanged for any external callers.
+        self._section_documents_per_subsection = section_documents_per_subsection
 
         return sections
 
@@ -642,14 +679,121 @@ class IntegratedReportGenerator:
                 report_parts.append(sections[section["name"]])
                 report_parts.append("")
 
-        # Format links from search system
-        # Get utilities module dynamically to avoid circular imports
-        utilities = importlib.import_module("local_deep_research.utilities")
-        formatted_all_links = (
-            utilities.search_utilities.format_links_to_markdown(
-                all_links=self.search_system.all_links_of_system
+        # Build the trailing Sources block. When per-subsection documents
+        # were captured by `_research_and_generate_sections`, run the
+        # citation-alignment + sequential 1..N renumbering pass against
+        # them; otherwise fall through to the legacy
+        # `format_links_to_markdown(all_links_of_system)` path.
+        per_subsection_docs: List[List[Document]] = getattr(
+            self, "_section_documents_per_subsection", []
+        ) or []
+        if per_subsection_docs:
+            from .text_optimization.citation_formatter import (
+                build_first_cite_order,
+                renumber_citations,
+                strip_hallucinated_citations,
             )
-        )
+            from .utilities.url_utils import canonical_url_key
+
+            # Flatten documents in subsection iteration order so the
+            # `first_cite_order` reflects the same body order.
+            all_docs: List[Document] = []
+            for sub_docs in per_subsection_docs:
+                all_docs.extend(sub_docs)
+
+            # 1) Global validity set from doc indices.
+            valid_indices = {
+                d.metadata["index"]
+                for d in all_docs
+                if isinstance(d.metadata.get("index"), int)
+            }
+
+            # 2) Strip hallucinated markers BEFORE building the order so
+            #    a hallucinated `[N]` in section 2 doesn't get counted.
+            for name in list(sections.keys()):
+                sections[name] = strip_hallucinated_citations(
+                    sections[name], valid_indices
+                )
+
+            # 3) First-cite order across all sections, in TOC order.
+            body_order: List[int] = []
+            seen: set = set()
+            for section in structure:
+                body = sections.get(section["name"], "")
+                for n in build_first_cite_order(body, valid_indices):
+                    if n not in seen:
+                        seen.add(n)
+                        body_order.append(n)
+
+            # 4) old -> new (1-based) remap.
+            old_to_new: Dict[int, int] = {
+                old: new + 1 for new, old in enumerate(body_order)
+            }
+
+            # 5) Build the new `sources` mapping keyed by NEW index, so
+            #    `renumber_citations` can supply URLs for plain `[N]`
+            #    tokens whose original URL was never hyperlinked.
+            new_sources: Dict[int, tuple] = {}
+            for old_idx in body_order:
+                doc = next(
+                    (
+                        d
+                        for d in all_docs
+                        if d.metadata.get("index") == old_idx
+                    ),
+                    None,
+                )
+                if doc is None:
+                    continue
+                new_sources[old_to_new[old_idx]] = (
+                    doc.metadata.get("title", ""),
+                    doc.metadata.get("source", ""),
+                )
+
+            # 6) Rewrite body markers per the remap.
+            for name in list(sections.keys()):
+                sections[name] = renumber_citations(
+                    sections[name], new_sources, old_to_new
+                )
+
+            # 7) Rebuild the report content from the rewritten sections
+            #    (the first two TOC/summary parts are unchanged).
+            body_parts: List[str] = []
+            for section in structure:
+                if section["name"] in sections:
+                    body_parts.append(sections[section["name"]])
+                    body_parts.append("")
+            report_parts = [report_parts[0], ""] + report_parts[1:1] + body_parts
+
+            # 8) Build the Sources block from `all_docs`, deduped by
+            #    canonical URL. First-seen (subsection order) wins.
+            canon_to_doc: Dict[str, Document] = {}
+            for d in all_docs:
+                idx = d.metadata.get("index")
+                if not isinstance(idx, int) or idx not in old_to_new:
+                    continue
+                url = d.metadata.get("source", "") or ""
+                canon = canonical_url_key(url) or url or f"local-{idx}"
+                if canon not in canon_to_doc:
+                    canon_to_doc[canon] = d
+
+            sources_lines: List[str] = []
+            for canon, d in canon_to_doc.items():
+                new_idx = old_to_new[d.metadata["index"]]
+                title = d.metadata.get("title", "Untitled")
+                sources_lines.append(
+                    f"[{new_idx}] {title} (source nr: {new_idx})\n"
+                    f"   URL: {canon}\n\n"
+                )
+            formatted_all_links = "".join(sources_lines)
+        else:
+            # Back-compat: original behaviour, no renumbering.
+            utilities = importlib.import_module("local_deep_research.utilities")
+            formatted_all_links = (
+                utilities.search_utilities.format_links_to_markdown(
+                    all_links=self.search_system.all_links_of_system
+                )
+            )
 
         # Create final report with all parts
         final_report_content = "\n\n".join(report_parts)

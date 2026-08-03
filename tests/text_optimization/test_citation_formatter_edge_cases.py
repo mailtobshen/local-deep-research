@@ -165,3 +165,117 @@ class TestSourceWordPattern:
         assert "[[1]]" in body
         assert "[[2]]" in body
         assert "[[3]]" in body
+
+
+class TestCitationRenumbering:
+    """Tests for the citation renumbering + hallucination-stripping
+    helpers added to `text_optimization/citation_formatter.py`. The
+    helpers back the citation-alignment fix in `report_generator.py`."""
+
+    def test_build_first_cite_order_first_occurrence_wins(self):
+        from local_deep_research.text_optimization.citation_formatter import (
+            build_first_cite_order,
+        )
+
+        order = build_first_cite_order("A [3] B [1] C [3] D [2]", {1, 2, 3})
+        assert order == [3, 1, 2]
+
+    def test_build_first_cite_order_handles_comma_groups(self):
+        from local_deep_research.text_optimization.citation_formatter import (
+            build_first_cite_order,
+        )
+
+        body = "Quote [5, 2, 9] then [5] then [2]."
+        order = build_first_cite_order(body, {2, 5, 9})
+        assert order == [5, 2, 9]
+
+    def test_build_first_cite_order_handles_hyperlink_form(self):
+        from local_deep_research.text_optimization.citation_formatter import (
+            build_first_cite_order,
+        )
+
+        # `[[7]](url)` is the same citation as `[7]`, just hyperlinked.
+        body = "See [[7]](http://x) and [3]."
+        order = build_first_cite_order(body, {3, 7})
+        assert order == [7, 3]
+
+    def test_strip_hallucinated_citations_removes_invalid_only(self):
+        from local_deep_research.text_optimization.citation_formatter import (
+            strip_hallucinated_citations,
+        )
+
+        body = "Real [1]. Hallucinated [768]. Comma [1, 999, 2]."
+        out = strip_hallucinated_citations(body, {1, 2})
+        assert "[1]" in out
+        assert "[1, 2]" in out
+        assert "[768]" not in out
+        assert "999" not in out
+
+    def test_strip_hallucinated_citations_strips_hyperlink_form(self):
+        from local_deep_research.text_optimization.citation_formatter import (
+            strip_hallucinated_citations,
+        )
+
+        body = "Real [[1]](http://x). Ghost [[768]](http://ghost)."
+        out = strip_hallucinated_citations(body, {1})
+        assert "[[1]](http://x)" in out
+        assert "[[768]]" not in out
+        assert "http://ghost" not in out
+
+    def test_strip_hallucinated_citations_strips_source_word(self):
+        from local_deep_research.text_optimization.citation_formatter import (
+            strip_hallucinated_citations,
+        )
+
+        body = "See Source 1 and Source 768 for details."
+        out = strip_hallucinated_citations(body, {1})
+        assert "Source 1" in out
+        assert "Source 768" not in out
+
+    def test_renumber_citations_preserves_hyperlink_url(self):
+        from local_deep_research.text_optimization.citation_formatter import (
+            renumber_citations,
+        )
+
+        # Hyperlinked citations keep their original URL — only the index
+        # is rewritten.
+        body = "See [[3]](http://x) and [1]."
+        out = renumber_citations(
+            body,
+            {1: ("T1", "http://y"), 2: ("T2", "http://z")},
+            {3: 1, 1: 2},
+        )
+        assert "[[1]](http://x)" in out
+        # Plain [1] gets the new index 2; sources[2] supplies the URL.
+        assert "[[2]](http://z)" in out
+
+    def test_renumber_citations_falls_back_to_plain_when_no_url(self):
+        from local_deep_research.text_optimization.citation_formatter import (
+            renumber_citations,
+        )
+
+        out = renumber_citations("See [3].", {1: ("T", "")}, {3: 1})
+        assert "[1]" in out
+        assert "[" + "[1]" + "]" not in out  # no double-bracket form
+
+    def test_renumber_then_format_document_idempotent(self):
+        """Renumbering must not break the existing `format_document`
+        idempotency invariant (compare against
+        `test_format_document_idempotent` elsewhere in this file)."""
+        from local_deep_research.text_optimization.citation_formatter import (
+            CitationFormatter,
+            CitationMode,
+            renumber_citations,
+        )
+
+        body = "See [3] and [1].\n\n## Sources\n[1] T1\n   URL: http://y\n[3] T3\n   URL: http://x\n"
+        renumbered = renumber_citations(
+            body,
+            {1: ("T1", "http://y"), 2: ("T3", "http://x")},
+            {3: 1, 1: 2},
+        )
+        formatter = CitationFormatter(CitationMode.NUMBER_HYPERLINKS)
+        first = formatter.format_document(renumbered)
+        second = formatter.format_document(first)
+        assert first == second
+
