@@ -16,6 +16,20 @@ _SOURCES_SECTION_PATTERNS = [
     ),
 ]
 
+# CJK variants of the sources / references heading. English headings
+# (above) miss these because they only accept ASCII tokens. The per-
+# section reports in the wild use ``## 参考文献`` / ``## 参考资料`` /
+# ``## 引用来源`` so we need our own patterns for them. Kept
+# deliberately narrow — must look like a markdown heading (1-3 '#'
+# + space + the heading token) so a sentence containing "参考文献" in
+# running prose is not matched.
+_SOURCES_SECTION_CJK_PATTERNS = [
+    re.compile(
+        r"^#{1,3}\s*(?:参考文献|参考资料|引用来源|参考来源|资料来源|引用文献)\s*$",
+        re.MULTILINE,
+    ),
+]
+
 # Inline [N] citation markers in body text. Negative lookbehind/lookahead
 # avoid matching already-formatted citations like "[[1]](url)" or "[1]]".
 # Also matches full-width lenticular brackets 【N】 that LLMs sometimes
@@ -63,13 +77,54 @@ CITE_LIST_ROW_RE = re.compile(
 def find_sources_section(content: str) -> int:
     """Find the start position of the sources/references section in *content*.
 
-    Returns -1 if no section is found.
+    Returns -1 if no section is found. Matches both English headings
+    (``## Sources`` / ``## References`` / …) and the CJK variants
+    (``## 参考文献`` / ``## 参考资料`` / ``## 引用来源`` / …) so a
+    single call covers reports in any language.
     """
-    for pattern in _SOURCES_SECTION_PATTERNS:
+    earliest = -1
+    for pattern in (
+        *_SOURCES_SECTION_PATTERNS,
+        *_SOURCES_SECTION_CJK_PATTERNS,
+    ):
         match = pattern.search(content)
-        if match:
-            return match.start()
-    return -1
+        if match and (earliest == -1 or match.start() < earliest):
+            earliest = match.start()
+    return earliest
+
+
+def strip_per_section_sources_block(body: str) -> str:
+    """Remove an LLM-written sources/references block from a single
+    section body.
+
+    Detailed-mode reports ask the LLM to write one subsection at a time.
+    Some models helpfully append a local ``## 参考文献`` (or
+    ``## References``) block to the section they just produced.  Those
+    blocks use a section-local citation numbering, conflict with the
+    unified ``## Sources`` block assembled at the end of the report, and
+    produce the "every chapter has its own references" artefact the
+    user reported.  The trailing block is the single source of truth,
+    so the per-section one is dropped here.
+
+    Only the *last* sources/references heading in the body is stripped,
+    because that is the one the LLM appends to its own output. A
+    section that legitimately discusses references in its opening
+    paragraphs (before any real content) is left intact — we only
+    truncate the trailing block, which by definition sits at the end
+    of the section. If no trailing block is present the body is
+    returned unchanged.
+    """
+    start = find_sources_section(body)
+    if start < 0:
+        return body
+    # Walk back to the start of the line that contains the heading so
+    # the truncated result ends with a clean newline.
+    line_start = body.rfind("\n", 0, start) + 1
+    if line_start > 0:
+        truncated = body[:line_start].rstrip() + "\n"
+    else:
+        truncated = body[:start].rstrip() + "\n"
+    return truncated
 
 
 # Regexes for the citation renumbering / hallucination-stripping helpers
