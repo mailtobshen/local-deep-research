@@ -251,11 +251,36 @@ def enhance_report_with_images(
                     alt_vec = list(raw.tolist()) if hasattr(raw, "tolist") else list(raw)
                     score = _cosine(alt_vec, sec_vec)
                     if score >= threshold:
+                        # Per-image trace on the mandatory path. We
+                        # carry the four fields the user asks for
+                        # verbatim so log parsers (and humans tailing
+                        # the stdout) can reconstruct a single
+                        # (alt, image_url, source_page, cite_number)
+                        # tuple from one grep hit:
+                        #   img_alt       — the <img alt="..."> text
+                        #   img_url       — the image's own absolute URL
+                        #   img_source_url — the page the image was
+                        #                   extracted from (== src_url
+                        #                   and == the cited reference
+                        #                   page, but spelled out for
+                        #                   grep-ability)
+                        #   cite_num      — the inline-citation number
+                        #                   (``[N]``) in the report
+                        #                   body that references this
+                        #                   image's source page
+                        #   ref_url       — the cited reference URL
+                        #                   (== img_source_url; emitted
+                        #                   under this name to make the
+                        #                   "参考文献 url" semantic
+                        #                   explicit)
                         logger.info(
                             f"[IMG-TRACE] CANDIDATE_KEPT research={research_id} "
-                            f"src_url={url} img_url={img.url} "
-                            f"alt={(img.alt or '')[:200]!r} "
-                            f"sec={sidx} num={num} score={score:.3f}"
+                            f"img_alt={(img.alt or '')[:200]!r} "
+                            f"img_url={img.url} "
+                            f"img_source_url={img.source_url} "
+                            f"cite_num={num} "
+                            f"ref_url={url} "
+                            f"sec={sidx} score={score:.3f}"
                         )
                         bank.add([img])
                         # First bound section wins: when the same source
@@ -317,11 +342,19 @@ def enhance_report_with_images(
         for sidx, p_url, p_alt in placements:
             p_num = binding.get(p_url, (None, None))[0]
             p_src = bank_by_url[p_url].source_url
+            # Same field names as CANDIDATE_KEPT so the trace schema
+            # is one consistent shape from "candidate kept" through
+            # "actually placed into the report". ``cite_num`` and
+            # ``ref_url`` carry the (citation number, reference URL)
+            # the user asked for on the mandatory path.
             logger.info(
                 f"[IMG-TRACE] PLACEMENT research={research_id} "
-                f"src_url={p_src} img_url={p_url} "
-                f"alt={(p_alt or '')[:200]!r} "
-                f"sec={sidx} num={p_num}"
+                f"img_alt={(p_alt or '')[:200]!r} "
+                f"img_url={p_url} "
+                f"img_source_url={p_src} "
+                f"cite_num={p_num} "
+                f"ref_url={p_src} "
+                f"sec={sidx}"
             )
         enhanced = insert_images_by_section(clean_markdown, placements)
         logger.info(
