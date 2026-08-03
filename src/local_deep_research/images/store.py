@@ -301,6 +301,12 @@ class ImageStore:
                 local_path.parent.mkdir(parents=True, exist_ok=True)
                 local_path.write_bytes(data)
                 route = f"/images/{rel}"
+                logger.info(
+                    f"[IMG-TRACE] PERSIST_OK research={self.research_id} "
+                    f"img_url={url} local_path={local_path} "
+                    f"sha1={digest} route={route} "
+                    f"ext={ext} bytes={len(data)}"
+                )
                 # Probe real dimensions for downstream display-size capping.
                 # PIL may fail (corrupt bytes, non-image MIME) → skip resize.
                 size = _probe_size(data, url=url)
@@ -394,17 +400,37 @@ class ImageStore:
                 # and expose the scrape). Returning "" removes the whole
                 # ![alt](url) match.
                 dropped += 1
+                logger.info(
+                    f"[IMG-TRACE] REWRITE_DROP research={self.research_id} "
+                    f"img_url={url} alt={(alt or '')[:200]!r} "
+                    f"reason=no_local_route"
+                )
                 return ""
             size = sizes.get(url)
             if size is None:
                 unknown += 1
+                logger.info(
+                    f"[IMG-TRACE] REWRITE_KEEP research={self.research_id} "
+                    f"img_url={url} alt={(alt or '')[:200]!r} "
+                    f"route={route} size=unknown"
+                )
                 return f"![{alt}]({route})"
             w, h = size
             long_side = max(w, h)
             if long_side <= _MAX_DISPLAY_PX:
                 under += 1
+                logger.info(
+                    f"[IMG-TRACE] REWRITE_KEEP research={self.research_id} "
+                    f"img_url={url} alt={(alt or '')[:200]!r} "
+                    f"route={route} size={w}x{h}"
+                )
                 return f"![{alt}]({route})"
             resized += 1
+            logger.info(
+                f"[IMG-TRACE] REWRITE_KEEP research={self.research_id} "
+                f"img_url={url} alt={(alt or '')[:200]!r} "
+                f"route={route} size={w}x{h} max_px={_MAX_DISPLAY_PX}"
+            )
             # Oversized image. Markdown has no syntax for explicit
             # display-size, so the previous implementation emitted
             # `<img src=… width=… height=… loading=lazy />` HTML to

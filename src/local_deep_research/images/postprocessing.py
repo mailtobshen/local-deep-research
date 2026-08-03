@@ -52,7 +52,10 @@ def _dedupe_images(markdown: str) -> tuple[str, int, int]:
             # Drop the duplicate match. Surrounding prose stays intact.
             # The trailing newlines may collapse and create runs of blank
             # lines, which we squeeze below.
-            pass
+            logger.info(
+                f"[IMG-TRACE] DEDUPE_DROP alt={(m.group(1) or '')[:200]!r} "
+                f"img_url={url}"
+            )
         else:
             seen.add(url)
             parts.append(m.group(0))
@@ -239,11 +242,21 @@ def enhance_report_with_images(
                 model = semantic_matcher.get_model()
                 for img in imgs:
                     if not (img.alt and img.alt.strip()):
+                        logger.debug(
+                            f"[IMG-TRACE] CANDIDATE_NO_ALT research={research_id} "
+                            f"src_url={url} img_url={img.url}"
+                        )
                         continue
                     raw = model.encode([img.alt], normalize_embeddings=True)[0]
                     alt_vec = list(raw.tolist()) if hasattr(raw, "tolist") else list(raw)
                     score = _cosine(alt_vec, sec_vec)
                     if score >= threshold:
+                        logger.info(
+                            f"[IMG-TRACE] CANDIDATE_KEPT research={research_id} "
+                            f"src_url={url} img_url={img.url} "
+                            f"alt={(img.alt or '')[:200]!r} "
+                            f"sec={sidx} num={num} score={score:.3f}"
+                        )
                         bank.add([img])
                         # First bound section wins: when the same source
                         # URL is cited in several sections, the image
@@ -253,6 +266,13 @@ def enhance_report_with_images(
                             binding[img.url] = (num, sidx)
                         kept += 1
                     else:
+                        logger.debug(
+                            f"[IMG-TRACE] CANDIDATE_DROPPED research={research_id} "
+                            f"src_url={url} img_url={img.url} "
+                            f"alt={(img.alt or '')[:200]!r} "
+                            f"sec={sidx} num={num} score={score:.3f} "
+                            f"reason=below_threshold"
+                        )
                         dropped_low += 1
                 logger.info(
                     f"[IMG-TRACE] CITATION_MATCH research={research_id} "
@@ -269,9 +289,16 @@ def enhance_report_with_images(
             )
             return clean_markdown
 
+        bank_with_alt = len(bank.candidates_with_alt())
+        bank_total = len(bank.all_urls())
+        logger.info(
+            f"[IMG-TRACE] BANK_FINALIZE research={research_id} "
+            f"total={bank_total} with_alt={bank_with_alt} "
+            f"without_alt={bank_total - bank_with_alt}"
+        )
         logger.info(
             f"[IMG-TRACE] ELIGIBLE_BANK research={research_id} "
-            f"total={len(bank.all_urls())}"
+            f"total={bank_total}"
         )
 
         # Stage 3: deterministic insert at each image's bound section.
@@ -287,6 +314,15 @@ def enhance_report_with_images(
             ),
             key=lambda p: (p[0], p[1]),
         )
+        for sidx, p_url, p_alt in placements:
+            p_num = binding.get(p_url, (None, None))[0]
+            p_src = bank_by_url[p_url].source_url
+            logger.info(
+                f"[IMG-TRACE] PLACEMENT research={research_id} "
+                f"src_url={p_src} img_url={p_url} "
+                f"alt={(p_alt or '')[:200]!r} "
+                f"sec={sidx} num={p_num}"
+            )
         enhanced = insert_images_by_section(clean_markdown, placements)
         logger.info(
             f"[IMG-TRACE] INSERT research={research_id} "

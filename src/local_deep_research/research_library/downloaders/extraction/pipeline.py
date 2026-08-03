@@ -13,6 +13,7 @@ Academic URLs (arXiv, PubMed, bioRxiv, etc.) are automatically routed to
 specialized downloaders first, with the generic HTML pipeline as fallback.
 """
 
+import time
 from typing import Any, Dict, List, Optional
 
 from bs4 import BeautifulSoup
@@ -621,6 +622,8 @@ def _fetch_content_dispatcher(
             # content root (e.g. <article>, <main>) vs. extracting the
             # full page. Surfaced in the IMG-TRACE line below.
             extract_scope = "page"
+            # Per-URL wall-clock; see [IMG-TRACE] url=… log below.
+            _t_url_start = time.monotonic()
             try:
                 text_bytes, raw_html = downloader.download_with_html(url)
                 if text_bytes:
@@ -696,12 +699,15 @@ def _fetch_content_dispatcher(
             # [IMG-TRACE] Per-URL fetch outcome: which fetcher won, text
             # status, image count, image-extraction status, and whether
             # extraction was narrowed to a semantic content root or ran
-            # on the full page.
+            # on the full page. ``elapsed_s`` is the wall-clock for this
+            # single URL — needed for after-the-fact per-URL timing
+            # analysis (which URLs dominated the fetch phase).
             logger.info(
                 f"[IMG-TRACE] url={url} via={via} "
                 f"text={text_status} images={len(images)} "
                 f"image_status={image_status} fc_triggered={fc_triggered} "
-                f"extract_scope={extract_scope}"
+                f"extract_scope={extract_scope} "
+                f"elapsed_s={time.monotonic() - _t_url_start:.3f}"
             )
             result[url] = {"text": text, "images": images}
     finally:

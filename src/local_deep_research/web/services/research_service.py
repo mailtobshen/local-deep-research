@@ -42,6 +42,33 @@ _ENV_SNAPSHOT_KEYS = {
 }
 
 
+@contextmanager
+def _perf_stage(research_id: str, stage: str):
+    """Emit ``[PERF]`` begin/end with ``elapsed_s`` for a research sub-stage.
+
+    Use as ``with _perf_stage(research_id, "analyze_topic"): ...`` so the
+    end event carries the wall-time spent in the block (even when an
+    exception is raised — the begin/end pair is balanced via the context
+    manager's finally path).
+
+    The ``[PERF]`` namespace is deliberately separate from ``[IMG-TRACE]``
+    so image-pipeline grep filters stay clean. See img-trace-observability.
+    """
+    start = time.monotonic()
+    logger.info(
+        f"[PERF] research={research_id} stage={stage} event=begin "
+        f"tid={threading.get_ident()}"
+    )
+    try:
+        yield
+    finally:
+        elapsed = time.monotonic() - start
+        logger.info(
+            f"[PERF] research={research_id} stage={stage} event=end "
+            f"elapsed_s={elapsed:.3f}"
+        )
+
+
 def _merge_env_into_snapshot(snapshot: dict) -> dict:
     """Return a shallow copy of ``snapshot`` with empty values filled from
     ``LDR_*`` env vars for keys that ``scripts/check_engines.py`` also
@@ -436,6 +463,11 @@ def run_research_process(research_id, query, mode, **kwargs):
         raise ValueError("Username is required for research process")
     # Extract user_password early so it's available for all cleanup paths
     user_password = kwargs.get("user_password")
+
+    # Wall-clock anchor for the [PERF] event=summary line emitted on
+    # every exit path (success / failure / suspension). Lets after-the-fact
+    # analysis see the total research cost independent of per-stage sums.
+    _t_overall_start = time.monotonic()
 
     # Establish thread context FIRST so every subsequent log line in this
     # thread can be attributed to the correct user/research and persisted
@@ -923,7 +955,8 @@ def run_research_process(research_id, query, mode, **kwargs):
         progress_callback("Starting research process", 5, {"phase": "init"})
 
         try:
-            results = system.analyze_topic(query)
+            with _perf_stage(research_id, "analyze_topic"):
+                results = system.analyze_topic(query)
             if mode == "quick":
                 progress_callback(
                     "Search complete, preparing to generate summary...",
@@ -1243,13 +1276,16 @@ def run_research_process(research_id, query, mode, **kwargs):
                                     92,
                                     {"phase": "image_enhancement"},
                                 )
-                                clean_markdown = enhance_report_with_images(
-                                    research_id=research_id,
-                                    clean_markdown=clean_markdown,
-                                    results=results,
-                                    db_session=img_db_session,
-                                    **img_args,
-                                )
+                                with _perf_stage(
+                                    research_id, f"image_enhancement:quick"
+                                ):
+                                    clean_markdown = enhance_report_with_images(
+                                        research_id=research_id,
+                                        clean_markdown=clean_markdown,
+                                        results=results,
+                                        db_session=img_db_session,
+                                        **img_args,
+                                    )
                     except Exception:
                         logger.exception(
                             "Image enhancement step failed; continuing with text-only report"
@@ -1271,9 +1307,10 @@ def run_research_process(research_id, query, mode, **kwargs):
 
                     # Format citations in the markdown content
                     formatter = get_citation_formatter()
-                    formatted_content = formatter.format_document(
-                        clean_markdown
-                    )
+                    with _perf_stage(research_id, "citation_format:quick"):
+                        formatted_content = formatter.format_document(
+                            clean_markdown
+                        )
 
                     # Prepare complete report content
                     full_report_content = (
@@ -1295,12 +1332,13 @@ def run_research_process(research_id, query, mode, **kwargs):
                             logger.info(
                                 f"Quick summary: Saving {len(all_links)} sources to database"
                             )
-                            sources_saved = (
-                                sources_service.save_research_sources(
-                                    research_id=research_id,
-                                    sources=all_links,
-                                    username=username,
-                                )
+                            with _perf_stage(research_id, "save_sources:quick"):
+                                sources_saved = (
+                                    sources_service.save_research_sources(
+                                        research_id=research_id,
+                                        sources=all_links,
+                                        username=username,
+                                    )
                             )
                             logger.info(
                                 f"Quick summary: Saved {sources_saved} sources for research {research_id}"
@@ -1613,13 +1651,18 @@ def run_research_process(research_id, query, mode, **kwargs):
                             92,
                             {"phase": "image_enhancement"},
                         )
-                        final_report["content"] = enhance_report_with_images(
-                            research_id=research_id,
-                            clean_markdown=final_report["content"],
-                            results=results,
-                            db_session=img_db_session,
-                            **img_args,
-                        )
+                        with _perf_stage(
+                            research_id, f"image_enhancement:detailed"
+                        ):
+                            final_report["content"] = (
+                                enhance_report_with_images(
+                                    research_id=research_id,
+                                    clean_markdown=final_report["content"],
+                                    results=results,
+                                    db_session=img_db_session,
+                                    **img_args,
+                                )
+                            )
             except Exception:
                 logger.exception(
                     "Detailed-mode image enhancement step failed; "
@@ -1632,9 +1675,10 @@ def run_research_process(research_id, query, mode, **kwargs):
 
             # Format citations in the report content
             formatter = get_citation_formatter()
-            formatted_content = formatter.format_document(
-                final_report["content"]
-            )
+            with _perf_stage(research_id, "citation_format:detailed"):
+                formatted_content = formatter.format_document(
+                    final_report["content"]
+                )
 
             # Save sources to database (non-fatal - report should still be saved
             # even if source saving fails, e.g. due to expired session password)
@@ -1645,11 +1689,12 @@ def run_research_process(research_id, query, mode, **kwargs):
                 all_links = getattr(search_system, "all_links_of_system", None)
                 if all_links:
                     logger.info(f"Saving {len(all_links)} sources to database")
-                    sources_saved = sources_service.save_research_sources(
-                        research_id=research_id,
-                        sources=all_links,
-                        username=username,
-                    )
+                    with _perf_stage(research_id, "save_sources:detailed"):
+                        sources_saved = sources_service.save_research_sources(
+                            research_id=research_id,
+                            sources=all_links,
+                            username=username,
+                        )
                     logger.info(
                         f"Saved {sources_saved} sources for research {research_id}"
                     )
@@ -2072,6 +2117,20 @@ def run_research_process(research_id, query, mode, **kwargs):
         )
 
     finally:
+        # [PERF] emit overall wall-clock on every exit path. Cheap (one
+        # log line) and arms the after-the-fact analyses that grep
+        # ``event=summary`` — paired with per-stage begin/end it shows
+        # whether stages sum close to total (they should; gaps are
+        # un-instrumented Python work like the per-iteration LLM calls
+        # inside analyze_topic).
+        try:
+            logger.info(
+                f"[PERF] research={research_id} stage=overall event=summary "
+                f"total_s={time.monotonic() - _t_overall_start:.3f}"
+            )
+        except Exception:
+            logger.debug("Failed to emit [PERF] overall summary", exc_info=True)
+
         # RESOURCE CLEANUP: Close search engine HTTP sessions.
         #
         # Search engines (created via get_search()) may hold HTTP connection
