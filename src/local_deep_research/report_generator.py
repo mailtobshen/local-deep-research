@@ -349,6 +349,11 @@ class IntegratedReportGenerator:
             "   - '学术诚信' / '诚信声明'\n"
             "   - '免责声明' / 'disclaimer' / 'caveats'\n"
             "   - 'methodology' / 'scope and limitations' / 'note on sources'\n"
+            "   - '## 参考文献' / '## 参考资料' / '## 引用来源' / "
+            "'## References' / '## Sources' — the trailing ## Sources block "
+            "is assembled by the report generator from the actual cited "
+            "sources; do NOT write a per-section references list yourself, "
+            "in any language.\n"
             "   - Any paragraph that merely *declares* a principle, ethics "
             "stance, or process without giving concrete findings.\n"
             "3. If the research findings on a subsection are insufficient, "
@@ -692,6 +697,7 @@ class IntegratedReportGenerator:
                 build_first_cite_order,
                 renumber_citations,
                 strip_hallucinated_citations,
+                strip_per_section_sources_block,
             )
             from .utilities.url_utils import canonical_url_key
 
@@ -700,6 +706,17 @@ class IntegratedReportGenerator:
             all_docs: List[Document] = []
             for sub_docs in per_subsection_docs:
                 all_docs.extend(sub_docs)
+
+            # 0) Strip any per-section sources/references block the LLM
+            #    may have appended. Done BEFORE the renumbering pass so
+            #    the citation numbers in the dropped block do not skew
+            #    the global first-cite order. The trailing
+            #    ``## Sources`` assembled at the end of this method is
+            #    the single source of truth.
+            for name in list(sections.keys()):
+                sections[name] = strip_per_section_sources_block(
+                    sections[name]
+                )
 
             # 1) Global validity set from doc indices.
             valid_indices = {
@@ -787,7 +804,26 @@ class IntegratedReportGenerator:
                 )
             formatted_all_links = "".join(sources_lines)
         else:
-            # Back-compat: original behaviour, no renumbering.
+            # Back-compat: original behaviour, no renumbering. Still
+            # strip any per-section sources/references block the LLM
+            # appended, so the trailing ``## Sources`` stays the single
+            # source of truth for every caller of this code path
+            # (scheduler, mcp_strategy, langgraph_agent).
+            from .text_optimization.citation_formatter import (
+                strip_per_section_sources_block,
+            )
+
+            for name in list(sections.keys()):
+                sections[name] = strip_per_section_sources_block(
+                    sections[name]
+                )
+            body_parts: List[str] = []
+            for section in structure:
+                if section["name"] in sections:
+                    body_parts.append(sections[section["name"]])
+                    body_parts.append("")
+            report_parts = [report_parts[0], ""] + report_parts[1:1] + body_parts
+
             utilities = importlib.import_module("local_deep_research.utilities")
             formatted_all_links = (
                 utilities.search_utilities.format_links_to_markdown(
