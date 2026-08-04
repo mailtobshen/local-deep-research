@@ -1558,6 +1558,27 @@ def run_research_process(research_id, query, mode, **kwargs):
                         {"phase": "report_complete"},
                     )
 
+                    # Enforce ascending ## Sources [N] and drop orphan
+                    # body citations. See the detailed-mode site for the
+                    # rationale (image enhancement is upstream of this
+                    # step so its citation matching is unaffected).
+                    try:
+                        from ..text_optimization.citation_formatter import (
+                            enforce_sources_ascending_and_drop_orphans,
+                        )
+
+                        with _perf_stage(research_id, "sources_enforce:quick"):
+                            clean_markdown = (
+                                enforce_sources_ascending_and_drop_orphans(
+                                    clean_markdown
+                                )
+                            )
+                    except Exception:
+                        logger.exception(
+                            "Quick-mode sources-enforce step failed; "
+                            "continuing with unenforced content"
+                        )
+
                     # Format citations in the markdown content
                     formatter = get_citation_formatter()
                     with _perf_stage(research_id, "citation_format:quick"):
@@ -1921,6 +1942,31 @@ def run_research_process(research_id, query, mode, **kwargs):
             progress_callback(
                 "Report generation complete", 95, {"phase": "report_complete"}
             )
+
+            # Enforce ascending ## Sources [N] and drop orphan body
+            # citations. Runs BEFORE the citation formatter so the
+            # formatter only sees the cleaned body + ascending block;
+            # the formatter then hyperlinks each remaining [[N]].
+            # Image enhancement runs upstream and relies on the original
+            # [N] numbers for citation matching — by placing the
+            # enforcer after it, we preserve that match while
+            # guaranteeing ascending order in the user-visible report.
+            try:
+                from ..text_optimization.citation_formatter import (
+                    enforce_sources_ascending_and_drop_orphans,
+                )
+
+                with _perf_stage(research_id, "sources_enforce:detailed"):
+                    final_report["content"] = (
+                        enforce_sources_ascending_and_drop_orphans(
+                            final_report["content"]
+                        )
+                    )
+            except Exception:
+                logger.exception(
+                    "Detailed-mode sources-enforce step failed; "
+                    "continuing with unenforced content"
+                )
 
             # Format citations in the report content
             formatter = get_citation_formatter()

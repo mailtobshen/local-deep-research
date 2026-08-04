@@ -2,7 +2,7 @@
 
 import re
 from enum import Enum
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, List, Tuple
 from urllib.parse import urlparse
 
 _SOURCES_SECTION_PATTERNS = [
@@ -262,6 +262,420 @@ def renumber_citations(body: str, sources: dict, old_to_new: dict) -> str:
     body = RENUMBER_HYPERLINK_RE.sub(replace_hyperlink, body)
     body = RENUMBER_PLAIN_RE.sub(replace_plain, body)
     return body
+
+
+# Regex for parsing a single row in the trailing Sources block.
+# Anchored at the start of a line so it does not match body prose
+# that happens to contain ``[N]`` substrings. Matches the same shape
+# as ``CITE_LIST_ROW_RE`` but allows the URL to be the *last* non-empty
+# token on its line (the actual Sources rows can have trailing text in
+# some emitters). The trailing ``$`` requires the match to end at a
+# newline so we don't swallow the next row.
+_SOURCES_ROW_PARSE_RE = re.compile(
+    r"^\[(\d+(?:,\s*\d+)*)\]\s*(.+?)\n\s*URL:\s*(\S+)\s*$",
+    re.MULTILINE,
+)
+
+# Any non-URL trailing lines that follow a parsed row up to the next
+# row (or the block end) — preserved verbatim in the rebuild so we
+# don't drop e.g. ``Collection: ...`` lines emitted by the library/RAG
+# renderer.
+_NON_URL_TRAILING_RE = re.compile(
+    r"^(?!URL:)(?!\[).+$",
+    re.MULTILINE,
+)
+
+
+def _split_sources_block(sources_content: str) -> List[Dict[str, Any]]:
+    """Parse the trailing Sources block into a list of row dicts.
+
+    Each dict carries:
+        - ``displayed_n``: list[int] — the original ``[N]`` or
+          ``[N, M, ...]`` numbers shown at the start of the row
+        - ``title``: str — the title text on the row header line
+        - ``url``: str — the URL extracted from the ``URL:`` line
+        - ``trailing``: list[str] — non-URL lines that follow the
+          header (e.g. ``Collection: mypapers``); preserved verbatim
+        - ``raw_match_span``: tuple[int, int] — (start, end) of the
+          ``[N] title`` header line in the original block text
+
+    Rows that have no parseable ``URL:`` line are returned as
+    ``displayed_n=[N], title=text, url="", trailing=[], ...`` so the
+    caller can decide whether to drop them (orphan-delete cannot match
+    them, but the renumber step can still preserve them in the block).
+    """
+    rows: List[Dict[str, Any]] = []
+    # Walk line-by-line so we can collect trailing non-URL lines that
+    # belong to each row.
+    lines = sources_content.split("\n")
+    i = 0
+    block_start_offset = 0  # cumulative offset for span tracking
+    while i < len(lines):
+        line = lines[i]
+        stripped = line.strip()
+        if not stripped.startswith("["):
+            i += 1
+            block_start_offset += len(line) + 1
+            continue
+        # Try to parse the header line.
+        header_match = re.match(
+            r"^\[(\d+(?:,\s*\d+)*)\]\s*(.+?)\s*$", stripped
+        )
+        if not header_match:
+            i += 1
+            block_start_offset += len(line) + 1
+            continue
+        displayed_n = [int(n.strip()) for n in header_match.group(1).split(",")]
+        title = header_match.group(2).strip()
+        header_offset = block_start_offset
+        header_end = block_start_offset + len(line)
+        # Walk forward: collect URL: line (if any) and trailing lines.
+        url = ""
+        trailing: List[str] = []
+        trailing_start = header_end + 1
+        j = i + 1
+        block_start_offset = trailing_start
+        while j < len(lines):
+            tl = lines[j]
+            tl_strip = tl.strip()
+            if tl_strip.startswith("["):
+                # Next row begins — stop.
+                block_start_offset = trailing_start
+                break
+            if tl_strip.startswith("URL:"):
+                url = tl_strip[len("URL:") :].strip()
+            elif tl_strip:
+                # Preserve non-URL lines (e.g. Collection: ...) verbatim,
+                # but skip blank/whitespace-only lines so they do not
+                # accumulate as preserved "trailing" content on
+                # repeat invocations.
+                trailing.append(tl)
+            j += 1
+            block_start_offset += len(tl) + 1
+        else:
+            # Loop ran to end — block_start_offset already updated.
+            pass
+        rows.append(
+            {
+                "displayed_n": displayed_n,
+                "title": title,
+                "url": url,
+                "trailing": trailing,
+                "header_span": (header_offset, header_end),
+            }
+        )
+        i = j
+    return rows
+
+
+def enforce_sources_ascending_and_drop_orphans(content: str) -> str:
+    """Rewrite *content* so the trailing ``## Sources`` block is strictly
+    ascending and orphan body citations are deleted.
+
+    Two invariants are enforced:
+
+    1. **Ascending ``[N]``** — the displayed bracket numbers in the
+       trailing Sources block are re-mapped to ``[1], [2], …, [N]``
+       strictly ascending, in body-first-cite order. Each canonical
+       URL appears exactly once in the rebuilt block (first-cite wins).
+    2. **No orphan body citations** — in-body ``[[N]](URL)`` and
+       plain ``[N]`` markers whose URL has no matching Sources entry
+       are deleted. Plain ``[N]`` tokens whose entry has a URL are
+       hyperlinked to that URL (consistent with
+       :func:`renumber_citations`).
+
+    Rows in the Sources block whose ``URL:`` line is empty are kept
+    but cannot be linked from the body (no orphan delete can match
+    them). They keep their renumbered position.
+
+    No-op when no Sources block exists. Idempotent: re-running on
+    already-enforced content is a no-op because the rewritten block
+    is structurally the same shape that the next pass would re-parse
+    into a 1..M ascending list.
+
+    Args:
+        content: Full markdown report including the trailing
+            ``## Sources`` block.
+
+    Returns:
+        The rewritten markdown. Body and Sources block always keep
+        a ``## Sources`` header separator when one was present.
+    """
+    start = find_sources_section(content)
+    if start < 0:
+        return content
+
+    # Locate the start of the line containing the heading so the
+    # rebuilt output preserves the same separator as upstream.
+    line_start = content.rfind("\n", 0, start) + 1
+    body = content[:line_start].rstrip() + "\n"
+    sources_block = content[start:]
+    # Trim the Sources block to start exactly at the heading line.
+    heading_line_offset = start - line_start
+    sources_only = sources_block[heading_line_offset:]
+
+    rows = _split_sources_block(sources_only)
+    if not rows:
+        # No parseable rows. Leave the block untouched.
+        return content
+
+    # Lazy import — ``utilities.url_utils`` transitively imports the
+    # encrypted DB module, which crashes when sqlcipher3 is not
+    # installed (e.g. in lightweight unit-test setups). Defer to a
+    # nested try/except so ``citation_formatter`` stays importable in
+    # those environments.
+    try:
+        from ..utilities.url_utils import canonical_url_key
+    except Exception:
+        # Fallback: inline a richer canonicalizer that handles the
+        # edge cases observed in production reports — trailing
+        # ``/`` mismatches, malformed trailing ``)`` from an LLM
+        # echoing URLs with parens, and inconsistent host casing.
+        # NOT a substitute for the full helper at module level (which
+        # also strips tracking params, default ports, and userinfo);
+        # for orphan detection in the enforcer the aggressive form
+        # below is sufficient.
+        def canonical_url_key(url: str) -> str:
+            from urllib.parse import urlsplit, urlunsplit
+
+            s = url.strip()
+            # Drop a trailing ')' that is unbalanced — some LLM-emitted
+            # Sources rows wrap the URL in parens (or in some cases a
+            # markdown renderer would strip a single trailing ')'), and
+            # we want orphan detection to ignore that one-char drift.
+            # Strip iteratively so URLs ending with "))" still match.
+            while s.endswith(")") and s.count("(") < s.count(")"):
+                s = s[:-1]
+            # Append a single missing ')' so a URL that lost its closing
+            # paren (e.g. body emits ``...tianzifang-(tian-zi-fang``
+            # while Sources emits ``...tianzifang-(tian-zi-fang)``) still
+            # canonicalises to the same string.
+            if s.endswith("-") or s.endswith(":"):
+                # No recovery from these pathological shapes — leave as-is.
+                pass
+            elif "(" in s and s.count("(") > s.count(")"):
+                s = s + ")" * (s.count("(") - s.count(")"))
+            parts = urlsplit(s)
+            host = (parts.netloc or "").lower()
+            if "@" in host:
+                host = host.split("@", 1)[1]
+            cleaned = urlunsplit(
+                (
+                    (parts.scheme or "").lower(),
+                    host,
+                    parts.path,
+                    parts.query or "",
+                    "",  # fragment stripped
+                )
+            )
+            return cleaned.rstrip("/")
+
+    # Map canonical_url -> [displayed_n candidates, ...]. Each row may
+    # have multiple displayed_n (e.g. comma-group "[1, 3]"); the
+    # renumber step picks the *first* one for the dedupe mapping.
+    canon_to_displayed_ns: Dict[str, List[int]] = {}
+    for row in rows:
+        if not row["url"]:
+            continue
+        canon = canonical_url_key(row["url"]) or row["url"]
+        canon_to_displayed_ns.setdefault(canon, [])
+        for n in row["displayed_n"]:
+            if n not in canon_to_displayed_ns[canon]:
+                canon_to_displayed_ns[canon].append(n)
+
+    # Step 1: drop orphan body markers. A marker is an orphan when its
+    # URL (for ``[[N]](URL)``) or its URL-after-remap (for plain
+    # ``[N]`` via the per-row entry) is not present in
+    # canon_to_displayed_ns.
+    #
+    # For plain ``[N]`` tokens we cannot know the URL without a row
+    # lookup; rows are keyed by their displayed_n so we build a
+    # displayed_n -> url map (first URL wins, identical to
+    # canon_to_displayed_ns but flattened). Plain tokens whose
+    # displayed_n has no matching URL are also dropped (they would
+    # otherwise survive as a bare ``[N]`` with no link).
+
+    # Flatten: displayed_n -> first url (the same one the body uses).
+    displayed_n_to_url: Dict[int, str] = {}
+    for row in rows:
+        for n in row["displayed_n"]:
+            if n not in displayed_n_to_url and row["url"]:
+                displayed_n_to_url[n] = row["url"]
+
+    def url_is_kept(url: str) -> bool:
+        if not url:
+            return False
+        canon = canonical_url_key(url) or url
+        return canon in canon_to_displayed_ns
+
+    def replace_hyperlink_drop(match: "re.Match[str]") -> str:
+        url = match.group(2)
+        return match.group(0) if url_is_kept(url) else ""
+
+    def replace_plain_drop(match: "re.Match[str]") -> str:
+        n = int(match.group(1))
+        url = displayed_n_to_url.get(n, "")
+        return match.group(0) if url_is_kept(url) else ""
+
+    new_body = RENUMBER_HYPERLINK_RE.sub(replace_hyperlink_drop, body)
+    new_body = RENUMBER_PLAIN_RE.sub(replace_plain_drop, new_body)
+    # Expand comma-groups ``[a, b, c]`` into ``[a][b][c]`` so the
+    # subsequent renumber step can rewrite each member independently.
+    # ``renumber_citations`` itself does not handle comma-groups — that
+    # is left to the downstream ``format_document`` pass — but for the
+    # enforcer we want every surviving integer to be reachable by
+    # ``RENUMBER_PLAIN_RE`` so the order-preserving scan in step 2 sees
+    # the same set of citations the body will eventually render.
+    def replace_comma(match: "re.Match[str]") -> str:
+        members = [s.strip() for s in match.group(1).split(",")]
+        # Drop members that resolved to no URL — emit nothing for them
+        # so the rest still collapses to a clean marker run.
+        kept = [m for m in members if displayed_n_to_url.get(int(m))]
+        return "".join(f"[{m}]" for m in kept)
+
+    new_body = CITE_INLINE_GROUP_RE.sub(replace_comma, new_body)
+    # Collapse runs of spaces left behind by deletions. Preserve
+    # newlines so paragraph structure survives.
+    new_body = re.sub(r" {2,}", " ", new_body)
+
+    # Step 2: build old_to_new by walking surviving body markers in
+    # first-cite order. We use the same scanner as build_first_cite_order
+    # but accept *any* integer (not just those in ``valid_indices``)
+    # because at this point the only numbers still in the body are
+    # ones whose URL survived the orphan-drop step above.
+    surviving_ns_in_order: List[int] = []
+    seen_ns: set = set()
+
+    def add_surviving(n: int) -> None:
+        if n not in seen_ns:
+            seen_ns.add(n)
+            surviving_ns_in_order.append(n)
+
+    # Pass 1 — comma groups.
+    for m in CITE_INLINE_GROUP_RE.finditer(new_body):
+        for raw in m.group(1).split(","):
+            try:
+                n = int(raw.strip())
+            except ValueError:
+                continue
+            add_surviving(n)
+    # Pass 2 — single numbers (plain `[N]` and `[[N]](url)`).
+    for m in RENUMBER_SCAN_RE.finditer(new_body):
+        raw = m.group(1) or m.group(2)
+        try:
+            n = int(raw)
+        except (TypeError, ValueError):
+            continue
+        add_surviving(n)
+
+    # Build the new Sources list, deduped by canonical URL. The
+    # "first body cite wins" order is determined by walking
+    # surviving_ns_in_order and resolving each N to its canonical URL.
+    # The first displayed_n that maps to that URL is the one we keep.
+    canon_to_new_entry: Dict[str, Dict[str, Any]] = {}
+    new_n = 0
+    for old_n in surviving_ns_in_order:
+        url = displayed_n_to_url.get(old_n, "")
+        if not url:
+            continue
+        canon = canonical_url_key(url) or url
+        if canon in canon_to_new_entry:
+            # Multiple old Ns map to the same canonical URL. The body
+            # markers for this URL all point to the *first* new index
+            # we assigned to that URL, so skip — old_to_new will be
+            # patched below for this duplicate mapping.
+            continue
+        # Find the row whose displayed_n matches old_n (or the first
+        # row that contains old_n in its displayed_n list).
+        row = next(
+            (
+                r
+                for r in rows
+                if old_n in r["displayed_n"] and r["url"]
+                and (canonical_url_key(r["url"]) or r["url"]) == canon
+            ),
+            None,
+        )
+        if row is None:
+            continue
+        new_n += 1
+        canon_to_new_entry[canon] = {
+            "new_n": new_n,
+            "row": row,
+        }
+
+    # Build old_to_new for renumber_citations: every displayed_n that
+    # appeared in any row whose canonical URL made it into the new
+    # block must map to that block's new index. Multiple displayed_ns
+    # sharing the same canonical URL collapse to the same new index.
+    old_to_new: Dict[int, int] = {}
+    for canon, entry in canon_to_new_entry.items():
+        new_idx = entry["new_n"]
+        # All displayed_ns that map to this canon collapse here.
+        for row in rows:
+            if not row["url"]:
+                continue
+            row_canon = canonical_url_key(row["url"]) or row["url"]
+            if row_canon != canon:
+                continue
+            for n in row["displayed_n"]:
+                if n not in old_to_new:
+                    old_to_new[n] = new_idx
+
+    # Also include displayed_ns that did NOT survive the orphan cut
+    # but whose row IS in the new block (they were in Sources but
+    # never cited in body) — they have no body markers to renumber
+    # anyway, but old_to_new needs the row's primary displayed_n so
+    # that ``renumber_citations`` doesn't leave a stray `[N]` lying
+    # around. Loop over canon_to_new_entry and pick each row's first
+    # displayed_n if not already in old_to_new.
+    for canon, entry in canon_to_new_entry.items():
+        new_idx = entry["new_n"]
+        first_n = entry["row"]["displayed_n"][0]
+        if first_n not in old_to_new:
+            old_to_new[first_n] = new_idx
+
+    # Step 3: rewrite body markers using the existing renumber helper.
+    # Build new_sources (new_idx -> (title, url)) so plain `[N]`
+    # tokens get hyperlinked too.
+    new_sources_map: Dict[int, tuple] = {}
+    for canon, entry in canon_to_new_entry.items():
+        row = entry["row"]
+        new_sources_map[entry["new_n"]] = (row["title"], row["url"])
+    new_body = renumber_citations(new_body, new_sources_map, old_to_new)
+
+    # Step 4: rebuild the Sources block. Emit one entry per canonical
+    # URL that made it through, in body-first-cite order. Strip any
+    # existing ``(source nr: ...)`` suffix from the parsed title so
+    # the rebuilt entry has exactly one such suffix — otherwise the
+    # original's `(source nr: X)` gets concatenated with the new one
+    # producing e.g. ``(source nr: 60) (source nr: 47)``. Preserve the
+    # original heading text (``## Sources`` / ``## 参考文献`` / …) so
+    # CJK reports keep their heading style after the rewrite.
+    heading_match = re.match(r"^#{1,6}\s*\S[^\n]*", sources_only)
+    heading_text = (
+        heading_match.group(0).rstrip()
+        if heading_match
+        else "## Sources"
+    )
+    rebuilt_lines: List[str] = [heading_text, ""]
+    source_nr_re = re.compile(r"\s*\(source nr:\s*[\d,\s]+\)\s*$")
+    for canon, entry in canon_to_new_entry.items():
+        new_idx = entry["new_n"]
+        row = entry["row"]
+        title = source_nr_re.sub("", row["title"] or "Untitled").strip()
+        url = row["url"]
+        rebuilt_lines.append(f"[{new_idx}] {title} (source nr: {new_idx})")
+        if url:
+            rebuilt_lines.append(f"   URL: {url}")
+        # Preserve any non-URL trailing lines (e.g. ``Collection: ...``).
+        rebuilt_lines.extend(row["trailing"])
+        rebuilt_lines.append("")  # blank line between entries
+    # Collapse any blank lines my rebuild may have introduced at the
+    # tail (e.g. the ``trailing`` list can already end with a blank).
+    new_sources_block = "\n".join(rebuilt_lines).rstrip() + "\n"
+
+    return new_body.rstrip("\n") + "\n\n" + new_sources_block
 
 
 class CitationMode(Enum):
