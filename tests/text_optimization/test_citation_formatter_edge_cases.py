@@ -279,3 +279,222 @@ class TestCitationRenumbering:
         second = formatter.format_document(first)
         assert first == second
 
+
+class TestEnforceSourcesAscending:
+    """Tests for ``enforce_sources_ascending_and_drop_orphans``.
+
+    The enforcer must:
+
+    1. Rewrite the trailing ``## Sources`` block so the displayed
+       bracket numbers are strictly ascending ``[1]..[N]``.
+    2. Delete in-body citation markers whose URL has no matching
+       Sources entry (no orphan-preservation; no missing-sources
+       appendix).
+    """
+
+    def _enforce(self, content: str) -> str:
+        from local_deep_research.text_optimization.citation_formatter import (
+            enforce_sources_ascending_and_drop_orphans,
+        )
+
+        return enforce_sources_ascending_and_drop_orphans(content)
+
+    def _displayed_n(self, content: str):
+        import re
+
+        # Find the heading position regardless of language.
+        from local_deep_research.text_optimization.citation_formatter import (
+            find_sources_section,
+        )
+
+        start = find_sources_section(content)
+        if start < 0:
+            return []
+        tail = content[start:]
+        return [int(x) for x in re.findall(r"^\[(\d+)\]", tail, re.MULTILINE)]
+
+    def test_ascending_enforced_when_display_already_ascending(self):
+        """A correctly-ordered block passes through unchanged in
+        displayed numbering; only URLs are normalised (slash and
+        trailing paren harmonisation)."""
+        content = (
+            "# R\n\n"
+            "See [[3]](https://foo.example) and [[1]](https://bar.example).\n\n"
+            "## Sources\n\n"
+            "[1] Bar\n   URL: https://bar.example\n\n"
+            "[3] Foo\n   URL: https://foo.example\n\n"
+        )
+        out = self._enforce(content)
+        # Displayed numbers are ascending in body-first-cite order.
+        # Body first cites [3] (foo), then [1] (bar) — so new [1]=foo,
+        # new [2]=bar.
+        assert self._displayed_n(out) == [1, 2]
+        # Body markers were renumbered to point at the new indices.
+        assert "[[1]](https://foo.example)" in out
+        assert "[[2]](https://bar.example)" in out
+
+    def test_ascending_enforced_when_display_non_ascending(self):
+        """The original bug — displayed [7], [4], [5], [3], ... — must
+        be reshuffled into strictly ascending [1]..[N]."""
+        content = (
+            "# R\n\n"
+            "Body cites [3], [7], and [1] in that order.\n\n"
+            "## Sources\n\n"
+            "[3] Foo\n   URL: https://foo.example\n\n"
+            "[7] Bar\n   URL: https://bar.example\n\n"
+            "[1] Baz\n   URL: https://baz.example\n\n"
+        )
+        out = self._enforce(content)
+        assert self._displayed_n(out) == [1, 2, 3]
+
+    def test_orphan_body_marker_deleted(self):
+        """A body marker whose URL is missing from the Sources block
+        is deleted; the body keeps the rest of the sentence intact."""
+        content = (
+            "# R\n\n"
+            "Real cite [[3]](https://foo.example). "
+            "Orphan cite [[9]](https://missing.example).\n\n"
+            "## Sources\n\n"
+            "[3] Foo\n   URL: https://foo.example\n\n"
+        )
+        out = self._enforce(content)
+        # The only Sources entry renumbers to [1]; orphan [9] is dropped.
+        assert "[[1]](https://foo.example)" in out
+        assert "missing.example" not in out
+        assert "[[9]]" not in out
+        assert "[9]" not in out
+
+    def test_orphan_plain_marker_deleted(self):
+        """Plain (non-hyperlinked) ``[N]`` whose number has no
+        matching Sources entry is deleted too."""
+        content = (
+            "# R\n\n"
+            "Real [3]. Orphan [9].\n\n"
+            "## Sources\n\n"
+            "[3] Foo\n   URL: https://foo.example\n\n"
+        )
+        out = self._enforce(content)
+        # The only Sources entry renumbers to [1] and is hyperlinked;
+        # the orphan [9] is dropped.
+        assert "[[1]](https://foo.example)" in out
+        assert "[9]" not in out
+        assert "missing" not in out.lower() or "Orphan" in out
+
+    def test_no_sources_block_is_noop(self):
+        """When there is no trailing ``## Sources``, the content is
+        returned unchanged."""
+        content = "# R\n\nJust a body with [1] and no sources block."
+        out = self._enforce(content)
+        assert out == content
+
+    def test_url_normalization_matches_body_to_sources(self):
+        """Body URL with a trailing slash matches the Sources URL
+        without it. Otherwise the enforcer would falsely flag the
+        body marker as an orphan."""
+        content = (
+            "# R\n\n"
+            "Cite [[3]](https://foo.example/page/).\n\n"
+            "## Sources\n\n"
+            "[3] Foo\n   URL: https://foo.example/page\n\n"
+        )
+        out = self._enforce(content)
+        assert "foo.example/page" in out
+
+    def test_url_normalization_balances_trailing_paren(self):
+        """Body URL missing its closing ``)`` still matches the
+        Sources URL that has one. The canonicalizer adds the missing
+        closing paren."""
+        content = (
+            "# R\n\n"
+            "Cite [[3]](https://ooh.example/venue/201/tianzifang-(tian-zi-fang).\n\n"
+            "## Sources\n\n"
+            "[3] OOH\n   URL: https://ooh.example/venue/201/tianzifang-(tian-zi-fang\n\n"
+        )
+        out = self._enforce(content)
+        assert "ooh.example" in out
+
+    def test_url_normalization_drops_stray_trailing_close_paren(self):
+        """Body URL with an unbalanced trailing ``)`` matches a
+        Sources URL without one."""
+        content = (
+            "# R\n\n"
+            "Cite [[3]](https://ooh.example/venue/201/tianzifang-(tian-zi-fang)).\n\n"
+            "## Sources\n\n"
+            "[3] OOH\n   URL: https://ooh.example/venue/201/tianzifang-(tian-zi-fang\n\n"
+        )
+        out = self._enforce(content)
+        assert "ooh.example" in out
+
+    def test_comma_group_in_body_is_expanded(self):
+        """Comma-group body markers are expanded into individual
+        ``[N]`` tokens before renumbering so each member is
+        rewritten independently."""
+        content = (
+            "# R\n\n"
+            "Cite [3, 7].\n\n"
+            "## Sources\n\n"
+            "[3] Foo\n   URL: https://foo.example\n\n"
+            "[7] Bar\n   URL: https://bar.example\n\n"
+        )
+        out = self._enforce(content)
+        # Comma group must be expanded into per-cite markers.
+        assert "[3, 7]" not in out.split("## Sources")[0]
+        # Each cite resolves to its new index.
+        assert "[[1]](https://foo.example)" in out
+        assert "[[2]](https://bar.example)" in out
+
+    def test_idempotent(self):
+        """Re-running the enforcer on already-enforced content is a
+        no-op."""
+        first = self._enforce(
+            "# R\n\nCite [3] and [7].\n\n"
+            "## Sources\n\n"
+            "[3] Foo\n   URL: https://foo.example\n\n"
+            "[7] Bar\n   URL: https://bar.example\n\n"
+        )
+        second = self._enforce(first)
+        assert first == second
+
+    def test_cjk_sources_heading(self):
+        """CJK ``## 参考文献`` variant is recognised and enforced."""
+        content = (
+            "# R\n\n"
+            "Cite [3].\n\n"
+            "## 参考文献\n\n"
+            "[3] Foo\n   URL: https://foo.example\n\n"
+        )
+        out = self._enforce(content)
+        assert self._displayed_n(out) == [1]
+        assert "## 参考文献" in out
+
+    def test_dedupes_by_canonical_url(self):
+        """Two body markers to the same canonical URL produce ONE
+        Sources row, not two."""
+        content = (
+            "# R\n\n"
+            "First [[3]](https://foo.example) and second [[3]](https://foo.example).\n\n"
+            "## Sources\n\n"
+            "[3] Foo\n   URL: https://foo.example\n\n"
+        )
+        out = self._enforce(content)
+        # Only one entry survives.
+        assert self._displayed_n(out) == [1]
+        # Both body markers remain (they resolve to the same new [1]).
+        assert out.count("foo.example") >= 3  # 2 body + 1 source
+
+    def test_strips_existing_source_nr_suffix_before_re_emitting(self):
+        """If a parsed Sources row already carries ``(source nr: N)``,
+        the rebuilt entry does NOT duplicate it. Otherwise we'd
+        emit ``(source nr: 60) (source nr: 47)``."""
+        content = (
+            "# R\n\n"
+            "Cite [3].\n\n"
+            "## Sources\n\n"
+            "[3] Foo (source nr: 60)\n   URL: https://foo.example\n\n"
+        )
+        out = self._enforce(content)
+        # Exactly one "(source nr:" per entry.
+        assert out.count("(source nr:") == 1
+        assert "Foo" in out
+        assert "foo.example" in out
+
