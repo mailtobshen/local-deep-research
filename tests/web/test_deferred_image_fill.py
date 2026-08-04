@@ -214,6 +214,127 @@ class TestDeferredImageFillEndToEnd:
         )
         assert a_sr["html_content"] == ""
 
+    def test_deferred_fetched_img_event_carries_four_user_fields(
+        self, loguru_caplog
+    ):
+        """User requirement (re-raised 2026-08-04): every
+        ``DEFERRED_FETCHED_IMG`` line MUST carry the four fields
+        the user asked for — citation number, reference URL, image
+        source URL, and image alt. Without them, a log consumer
+        cannot tell which fetched image is associated with which
+        in-text citation.
+        """
+        results = _make_results(
+            cited_urls=["https://src/canton-tower", "https://src/lujiazui"]
+        )
+        final_md = (
+            "## Canton Tower\n\nThe tower [1] is tall.\n\n"
+            "## Lujiazui\n\nThe skyline [2] is iconic.\n\n"
+            "## 参考文献\n\n"
+            "[1] Tower source\n   URL: https://src/canton-tower\n"
+            "[2] Skyline source\n   URL: https://src/lujiazui\n"
+        )
+        data = {
+            "https://src/canton-tower": {
+                "text": "tower page",
+                "images": [
+                    _extracted_image(
+                        url="https://img/tower.jpg",
+                        alt="Canton Tower at night",
+                        source_url="https://src/canton-tower",
+                    )
+                ],
+            },
+            "https://src/lujiazui": {
+                "text": "skyline page",
+                "images": [
+                    _extracted_image(
+                        url="https://img/skyline.jpg",
+                        alt="Lujiazui skyline",
+                        source_url="https://src/lujiazui",
+                    )
+                ],
+            },
+        }
+        with patch(
+            "local_deep_research.research_library.downloaders.extraction.pipeline.fetch_content_with_images",
+            return_value=data,
+        ):
+            _deferred_image_fill(
+                "r",
+                final_markdown=final_md,
+                results=results,
+                settings_snapshot={"report.enable_images": True},
+            )
+        text = "\n".join(r.getMessage() for r in loguru_caplog.records)
+        # One DEFERRED_FETCHED_IMG per extracted image — 2 total.
+        per_image = [
+            line for line in text.splitlines()
+            if "[IMG-TRACE] DEFERRED_FETCHED_IMG" in line
+        ]
+        assert len(per_image) == 2
+        for line in per_image:
+            # The four user-required fields MUST be present and
+            # well-formed.
+            for key in ("img_alt", "img_url", "img_source_url",
+                        "cite_num", "ref_url"):
+                assert f"{key}=" in line, (
+                    f"DEFERRED_FETCHED_IMG missing {key}=: {line!r}"
+                )
+        # Spot-check: tower image carries cite_num=1, lujiazui=2.
+        tower = next(line for line in per_image if "tower.jpg" in line)
+        lujiazui = next(line for line in per_image if "skyline.jpg" in line)
+        assert "cite_num=1" in tower
+        assert "ref_url=https://src/canton-tower" in tower
+        assert "img_source_url=https://src/canton-tower" in tower
+        assert "'Canton Tower at night'" in tower
+        assert "cite_num=2" in lujiazui
+        assert "ref_url=https://src/lujiazui" in lujiazui
+        assert "img_source_url=https://src/lujiazui" in lujiazui
+        assert "'Lujiazui skyline'" in lujiazui
+
+    def test_deferred_filled_summary_includes_cite_num_and_ref_url(
+        self, loguru_caplog
+    ):
+        """The per-URL ``DEFERRED_FILLED`` summary event must
+        carry ``cite_num`` + ``ref_url`` so a single line tells
+        you which citation was filled and from which URL."""
+        results = _make_results(cited_urls=["https://src/a"])
+        final_md = (
+            "## X\n\nY [1].\n\n## 参考文献\n\n[1] S\n   URL: https://src/a\n"
+        )
+        data = {
+            "https://src/a": {
+                "text": "t",
+                "images": [_extracted_image(
+                    url="https://img/a.jpg", alt="A", source_url="https://src/a"
+                )],
+            }
+        }
+        with patch(
+            "local_deep_research.research_library.downloaders.extraction.pipeline.fetch_content_with_images",
+            return_value=data,
+        ):
+            _deferred_image_fill(
+                "r",
+                final_markdown=final_md,
+                results=results,
+                settings_snapshot={"report.enable_images": True},
+            )
+        text = "\n".join(r.getMessage() for r in loguru_caplog.records)
+        summary = [
+            line for line in text.splitlines()
+            if "[IMG-TRACE] DEFERRED_FILLED" in line
+        ]
+        assert len(summary) == 1
+        for key in ("cite_num", "ref_url"):
+            assert f"{key}=" in summary[0], (
+                f"DEFERRED_FILLED missing {key}=: {summary[0]!r}"
+            )
+        assert "cite_num=1" in summary[0]
+        assert "ref_url=https://src/a" in summary[0]
+        assert "img_alt_count=1" in summary[0]
+
 
 # ---------- langgraph._finalize no longer fetches per round ----------------
 
