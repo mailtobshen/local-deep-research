@@ -1026,43 +1026,33 @@ class LangGraphAgentStrategy(BaseSearchStrategy):
             except Exception:
                 logger.exception("Failed to format source links")
 
-        # Now that the Sources block is in formatted_output, restrict
-        # the proactive image fetch to URLs the LLM actually cited.
-        # The set is intersected with all_search_results URLs so we
-        # only fetch URLs the agent already discovered (URLs the LLM
-        # hallucinated into the Sources block are silently dropped).
+        # Image fetch is intentionally NOT triggered here. The previous
+        # behaviour called ``_ensure_images_for_results`` once per LLM
+        # reasoning round (the agent loop ran 22 rounds for the
+        # Shanghai 2026-08-03 study, scraping ~80-200 pages per round
+        # and dominating the 7-hour research walltime with Playwright
+        # rendering).
+        #
+        # The new contract: the langgraph agent loop fetches text only;
+        # the image fill is a single post-loop pass done by
+        # ``research_service`` after the markdown report + sources
+        # block are finalised, just before ``enhance_report_with_images``
+        # runs. ``postprocessing`` then reads the populated
+        # ``html_content`` exactly as it did before. The
+        # ``langgraph auto-image-fill: allowlist cited=N`` event
+        # stays as an audit trail (records the cited URL set the
+        # report-finalise pass will fetch) but does not block the
+        # LLM loop. See ``research_service._deferred_image_fill`` for
+        # the new single-pass implementation.
         if all_search_results:
             try:
                 cited_urls = _parse_sources_markdown_urls(formatted_output)
             except Exception:
-                logger.exception(
-                    "Failed to parse Sources block for image-fetch allowlist; "
-                    "falling back to no fetch"
-                )
                 cited_urls = set()
-            if cited_urls:
-                # The LLM-cited URL set is the allowlist. We trust it
-                # directly — a cited URL whose registrable domain
-                # cannot be parsed drops out via _ensure_images_for_results'
-                # own eTLD+1 check. Cross-domain hallucination
-                # (e.g. LLM writing "example.com" in Sources when it
-                # never searched example.com) is bounded by the
-                # per-section eTLD+1 gate in postprocessing; the
-                # fetched images must still match a section's cited
-                # domain to be admitted. So an extra "must also
-                # appear in search results" check is redundant.
-                logger.info(
-                    f"[IMG-TRACE] langgraph auto-image-fill: allowlist "
-                    f"cited={len(cited_urls)}"
-                )
-                self._ensure_images_for_results(
-                    all_search_results, cited_urls
-                )
-            else:
-                logger.info(
-                    "[IMG-TRACE] langgraph auto-image-fill: skipped "
-                    "(no URLs in Sources block)"
-                )
+            logger.info(
+                f"[IMG-TRACE] langgraph auto-image-fill: allowlist "
+                f"cited={len(cited_urls)} (deferred to post-finalize pass)"
+            )
 
         # Build reasoning trace from agent messages
         reasoning_trace = []
