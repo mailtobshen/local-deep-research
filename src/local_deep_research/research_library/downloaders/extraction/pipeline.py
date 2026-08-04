@@ -709,6 +709,27 @@ def _fetch_content_dispatcher(
                 f"extract_scope={extract_scope} "
                 f"elapsed_s={time.monotonic() - _t_url_start:.3f}"
             )
+            # Per-image inventory on the fetcher path. The page-level
+            # ``url=`` line above only counts images; the per-image lines
+            # below carry the alt / source_url for every image that the
+            # fetcher extracted, so a single ``grep IMG-TRACE.*FETCHED_IMG``
+            # over the log reconstructs the (alt, img_url, source_url)
+            # tuple for every image the page ever offered — not just
+            # the ones that later pass the citation-anchored gate.
+            # The five-key vocabulary matches the rest of the IMG-TRACE
+            # schema so log parsers can use one field-extraction regex.
+            # ``cite_num`` / ``ref_url`` are unknown at fetch time (the
+            # image hasn't been bound to a citation yet) and are
+            # recorded as ``-`` so consumers can rely on the keys being
+            # present.
+            for img in images:
+                logger.info(
+                    f"[IMG-TRACE] FETCHED_IMG src_url={url} "
+                    f"img_alt={(img.alt or '')[:200]!r} "
+                    f"img_url={img.url} "
+                    f"img_source_url={img.source_url} "
+                    f"cite_num=- ref_url=-"
+                )
             result[url] = {"text": text, "images": images}
     finally:
         try:
