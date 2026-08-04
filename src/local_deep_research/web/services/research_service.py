@@ -436,6 +436,194 @@ def _open_image_enhancer_session(username, settings_snapshot):
     with get_user_db_session(username) as db_session:
         yield args, db_session
 
+def _deferred_image_fill(
+    research_id: str,
+    *,
+    final_markdown: str,
+    results: dict,
+    settings_snapshot: dict,
+    progress_callback=None,
+) -> int:
+    """One-pass image fill for the cited URLs of a finalized report.
+
+    Replaces the previous per-LLM-round ``_ensure_images_for_results``
+    fetch loop, which dominated research walltime on langgraph runs
+    (the Shanghai 2026-08-03 study spent ~7 hours scraping ~80-200
+    pages per LLM reasoning round for 22 rounds, while the langgraph
+    agent itself only wanted the text snippets).
+
+    New contract:
+
+    1. Run AFTER the markdown report + ``## Sources`` block are
+       finalised (i.e. after ``report_generator.generate_report`` in
+       quick mode or after the detailed-mode per-subsection assembly
+       in detailed mode) and BEFORE
+       ``enhance_report_with_images``.
+    2. Parse the report's ``## Sources`` block to extract the LLM-
+       cited URL set (``num_to_url`` keys), exactly the same set
+       ``build_citation_index`` will use downstream.
+    3. Fetch images (Playwright first, Firecrawl fallback per URL)
+       for every cited URL whose ``html_content`` slot in
+       ``results["findings"][].search_results[]`` is still empty.
+       URLs that already have ``html_content`` from earlier text
+       fetches are left untouched.
+    4. JSON-serialize the per-URL image list and write it back to
+       the matching ``search_results`` record so
+       ``enhance_report_with_images``'s ``build_citation_index``
+       finds the populated ``url_to_html`` map and proceeds.
+
+    Returns the count of cited URLs whose ``html_content`` was
+    filled in this pass. ``0`` is normal when the LLM never
+    cited a URL, when ``report.enable_images`` is off, or when
+    every cited URL was already fetched for text. Errors at the
+    fetch / serialization level are downgraded to debug logs so
+    a partial fill does not fail the whole research.
+    """
+    # Only meaningful when images are enabled — the caller should
+    # gate on the same setting the postprocessing gate uses.
+    from ...config.thread_settings import get_setting_from_snapshot
+
+    if not get_setting_from_snapshot(
+        "report.enable_images", False, settings_snapshot=settings_snapshot
+    ):
+        logger.info(
+            f"[IMG-TRACE] DEFERRED_FILL research={research_id} "
+            f"skipped reason=enable_images=False"
+        )
+        return 0
+
+    # 1. Parse the cited URL set out of the finalised report.
+    try:
+        from ...advanced_search_system.strategies.langgraph_agent_strategy import (
+            _parse_sources_markdown_urls,
+        )
+    except Exception:
+        _parse_sources_markdown_urls = None  # type: ignore[assignment]
+
+    if _parse_sources_markdown_urls is not None:
+        try:
+            cited_urls = _parse_sources_markdown_urls(final_markdown)
+        except Exception:
+            logger.exception(
+                "Failed to parse Sources block for deferred image fill"
+            )
+            cited_urls = set()
+    else:
+        # Fallback: re-use the citation index helper. Same data,
+        # different code path. ``build_citation_index`` is cheap; it
+        # does not hit the network.
+        try:
+            from ...images.relevance import build_citation_index
+
+            num_to_url, _section_to_nums, _url_to_html = build_citation_index(
+                final_markdown, results
+            )
+            cited_urls = set(num_to_url.values())
+        except Exception:
+            logger.exception(
+                "Failed to build citation index for deferred image fill"
+            )
+            cited_urls = set()
+
+    if not cited_urls:
+        logger.info(
+            f"[IMG-TRACE] DEFERRED_FILL research={research_id} "
+            f"skipped reason=no_cited_urls"
+        )
+        return 0
+
+    # 2. Restrict to URLs we still need to fetch (idempotent w.r.t.
+    # the LLM-loop text fetches, which set ``html_content`` on the
+    # matching record so the langgraph pre-fetch and the deferred
+    # pass share the same storage convention).
+    urls_to_fetch: list[str] = []
+    url_already_has_html: set[str] = set()
+    for finding in results.get("findings", []) or []:
+        for sr in finding.get("search_results", []) or []:
+            url = sr.get("url") or sr.get("link") or ""
+            if url not in cited_urls:
+                continue
+            existing = sr.get("html_content")
+            if existing:
+                url_already_has_html.add(url)
+            elif url not in urls_to_fetch:
+                urls_to_fetch.append(url)
+    logger.info(
+        f"[IMG-TRACE] DEFERRED_FILL research={research_id} "
+        f"cited={len(cited_urls)} already_html={len(url_already_has_html)} "
+        f"to_fetch={len(urls_to_fetch)}"
+    )
+    if not urls_to_fetch:
+        return 0
+
+    # 3. Fetch the remaining URLs in a single batch.
+    try:
+        from ...research_library.downloaders.extraction import (
+            pipeline as extract_pipeline,
+        )
+        from ...images.serialize import dumps_images
+    except Exception:
+        logger.exception(
+            "Deferred image fill: imports unavailable; skipping"
+        )
+        return 0
+
+    if progress_callback is not None:
+        try:
+            progress_callback(
+                f"Fetching images for {len(urls_to_fetch)} cited sources...",
+                90,
+                {"phase": "image_fetch_deferred"},
+            )
+        except Exception:
+            pass
+
+    try:
+        data = extract_pipeline.fetch_content_with_images(
+            urls_to_fetch,
+            titles={},
+            settings_snapshot=settings_snapshot,
+        )
+    except Exception:
+        logger.exception(
+            "Deferred image fill: fetch_content_with_images raised; "
+            "continuing with text-only report"
+        )
+        return 0
+
+    # 4. Serialise + write back to ``search_results[].html_content``.
+    filled = 0
+    for url, entry in (data or {}).items():
+        images = (entry or {}).get("images", []) if entry else []
+        if not images:
+            continue
+        try:
+            payload = dumps_images(images)
+        except Exception:
+            logger.exception(
+                f"Deferred image fill: dumps_images failed for {url}"
+            )
+            continue
+        attached = False
+        for finding in results.get("findings", []) or []:
+            for sr in finding.get("search_results", []) or []:
+                sr_url = sr.get("url") or sr.get("link") or ""
+                if sr_url != url:
+                    continue
+                sr["html_content"] = payload
+                attached = True
+        if attached:
+            filled += 1
+            logger.info(
+                f"[IMG-TRACE] DEFERRED_FILLED research={research_id} "
+                f"img_alt_count={len(images)} url={url}"
+            )
+    logger.info(
+        f"[IMG-TRACE] DEFERRED_FILL research={research_id} done "
+        f"filled={filled}/{len(urls_to_fetch)}"
+    )
+    return filled
+
 
 @log_for_research
 @thread_cleanup
@@ -1271,6 +1459,26 @@ def run_research_process(research_id, query, mode, **kwargs):
                                     f"reason=enable_images=False"
                                 )
                             else:
+                                # Deferred image fill: scrape the cited
+                                # source pages once, AFTER the report
+                                # is finalised, and attach the
+                                # extracted images to
+                                # ``search_results[].html_content``
+                                # so the postprocessing stage finds
+                                # them via ``build_citation_index``.
+                                # This replaces the per-LLM-round
+                                # image-fill that previously ran
+                                # inside the langgraph agent loop
+                                # and dominated research walltime
+                                # (~7 h on the 2026-08-03 Shanghai
+                                # run).
+                                _deferred_image_fill(
+                                    research_id,
+                                    final_markdown=clean_markdown,
+                                    results=results,
+                                    settings_snapshot=settings_snapshot,
+                                    progress_callback=progress_callback,
+                                )
                                 progress_callback(
                                     "Enhancing report with real images...",
                                     92,
@@ -1609,27 +1817,10 @@ def run_research_process(research_id, query, mode, **kwargs):
 
             # === Detailed-mode image enhancement (parity with quick branch) ===
             try:
-                # Re-fill any URLs added by per-section analyze_topic() calls
-                # whose html_content is still empty (langgraph strategy only;
-                # idempotent — only fetches URLs missing html_content).
-                try:
-                    from ...advanced_search_system.strategies.langgraph_agent_strategy import (
-                        LangGraphAgentStrategy,
-                    )
-                    strategy = getattr(search_system, "strategy", None)
-                    if isinstance(strategy, LangGraphAgentStrategy) and hasattr(
-                        strategy, "collector"
-                    ):
-                        all_results = list(
-                            getattr(strategy.collector, "results", []) or []
-                        )
-                        if all_results:
-                            strategy._ensure_images_for_results(all_results)
-                except Exception:
-                    logger.debug(
-                        "Detailed-mode image auto-fill skipped", exc_info=True,
-                    )
-
+                # The previous per-LLM-round image-fill loop was
+                # removed (2026-08-04). The image fetch is now a
+                # single post-finalise pass — see
+                # ``_deferred_image_fill`` for the new contract.
                 logger.info(
                     f"[IMG-TRACE] DETAILED_MODE_BEGIN research={research_id} "
                     f"markdown_len={len(final_report['content'])}"
@@ -1646,6 +1837,19 @@ def run_research_process(research_id, query, mode, **kwargs):
                             f"reason=enable_images=False"
                         )
                     else:
+                        # One-pass image fill for the cited sources
+                        # of the now-finalised detailed report.
+                        # Replaces the per-round langgraph auto-
+                        # fill that previously added ~7 h of
+                        # Playwright rendering to a 7-round
+                        # Shanghai run.
+                        _deferred_image_fill(
+                            research_id,
+                            final_markdown=final_report["content"],
+                            results=results,
+                            settings_snapshot=settings_snapshot,
+                            progress_callback=progress_callback,
+                        )
                         progress_callback(
                             "Enhancing detailed report with real images...",
                             92,
