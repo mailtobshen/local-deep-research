@@ -945,6 +945,23 @@ class LangGraphAgentStrategy(BaseSearchStrategy):
         for url in urls_to_fetch:
             entry = data.get(url) if isinstance(data, dict) else None
             images = entry.get("images", []) if entry else []
+            # Per-image LANGGRAPH_FILL event: lets a log consumer see
+            # the (alt, img_url, source_url) of every image the langgraph
+            # fetch surfaced, not just the page-level count. cite_num
+            # and ref_url are unknown at this stage (the image hasn't
+            # been bound to a citation yet) and are emitted as ``-``
+            # so the key set is uniform across the entire IMG-TRACE
+            # schema. One ``grep IMG-TRACE.*LANGGRAPH_FILLED_IMG``
+            # over the log reconstructs the complete alt inventory of
+            # the pre-pipeline image-fill phase.
+            for img in images:
+                logger.info(
+                    f"[IMG-TRACE] LANGGRAPH_FILLED_IMG src_url={url} "
+                    f"img_alt={(getattr(img, 'alt', '') or '')[:200]!r} "
+                    f"img_url={getattr(img, 'url', '')} "
+                    f"img_source_url={getattr(img, 'source_url', '')} "
+                    f"cite_num=- ref_url=-"
+                )
             if self.collector.attach_html_content(url, dumps_images(images)):
                 filled += 1
         logger.info(
