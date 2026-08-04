@@ -297,8 +297,11 @@ class TestDeferredImageFillEndToEnd:
         self, loguru_caplog
     ):
         """The per-URL ``DEFERRED_FILLED`` summary event must
-        carry ``cite_num`` + ``ref_url`` so a single line tells
-        you which citation was filled and from which URL."""
+        carry the full four-field vocabulary the user asked for
+        (cite_num, ref_url, img_source_url, img_alt) so a single
+        line tells you the citation number, the reference URL,
+        the page the images came from, and the alt text of every
+        image that was attached."""
         results = _make_results(cited_urls=["https://src/a"])
         final_md = (
             "## X\n\nY [1].\n\n## 参考文献\n\n[1] S\n   URL: https://src/a\n"
@@ -306,9 +309,18 @@ class TestDeferredImageFillEndToEnd:
         data = {
             "https://src/a": {
                 "text": "t",
-                "images": [_extracted_image(
-                    url="https://img/a.jpg", alt="A", source_url="https://src/a"
-                )],
+                "images": [
+                    _extracted_image(
+                        url="https://img/a.jpg",
+                        alt="A",
+                        source_url="https://src/a",
+                    ),
+                    _extracted_image(
+                        url="https://img/b.jpg",
+                        alt="B",
+                        source_url="https://src/a",
+                    ),
+                ],
             }
         }
         with patch(
@@ -327,13 +339,17 @@ class TestDeferredImageFillEndToEnd:
             if "[IMG-TRACE] DEFERRED_FILLED" in line
         ]
         assert len(summary) == 1
-        for key in ("cite_num", "ref_url"):
+        for key in ("cite_num", "ref_url", "img_source_url", "img_alt"):
             assert f"{key}=" in summary[0], (
                 f"DEFERRED_FILLED missing {key}=: {summary[0]!r}"
             )
         assert "cite_num=1" in summary[0]
         assert "ref_url=https://src/a" in summary[0]
-        assert "img_alt_count=1" in summary[0]
+        assert "img_source_url=https://src/a" in summary[0]
+        # The alts of the two images appear in the bracketed list.
+        assert "'A'" in summary[0]
+        assert "'B'" in summary[0]
+        assert "img_alt_count=2" in summary[0]
 
 
 # ---------- langgraph._finalize no longer fetches per round ----------------

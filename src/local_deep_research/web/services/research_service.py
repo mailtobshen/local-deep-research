@@ -638,9 +638,28 @@ def _deferred_image_fill(
                 attached = True
         if attached:
             filled += 1
+            # Summary event — carries the full four-field vocabulary
+            # the user asked for (cite_num, ref_url, img_source_url,
+            # img_alt) so a single grep ``DEFERRED_FILLED`` line tells
+            # you the citation number, the reference URL, the page
+            # the images came from, and the alt text of every image
+            # that was attached. The per-image ``DEFERRED_FETCHED_IMG``
+            # lines above carry the same fields one image at a time;
+            # this is the at-a-glance summary.
+            alts_repr = ", ".join(
+                repr((getattr(img, "alt", "") or "")[:200])
+                for img in images
+            )
+            src_url = (
+                getattr(images[0], "source_url", "")
+                if images
+                else url
+            )
             logger.info(
                 f"[IMG-TRACE] DEFERRED_FILLED research={research_id} "
                 f"img_alt_count={len(images)} "
+                f"img_source_url={src_url} "
+                f"img_alt=[{alts_repr}] "
                 f"cite_num={cite_num_for_url} "
                 f"ref_url={url}"
             )
