@@ -500,30 +500,32 @@ def _deferred_image_fill(
     except Exception:
         _parse_sources_markdown_urls = None  # type: ignore[assignment]
 
-    if _parse_sources_markdown_urls is not None:
-        try:
-            cited_urls = _parse_sources_markdown_urls(final_markdown)
-        except Exception:
-            logger.exception(
-                "Failed to parse Sources block for deferred image fill"
-            )
-            cited_urls = set()
-    else:
-        # Fallback: re-use the citation index helper. Same data,
-        # different code path. ``build_citation_index`` is cheap; it
-        # does not hit the network.
-        try:
-            from ...images.relevance import build_citation_index
+    # Build the cited-URL set AND the per-URL citation-number map.
+    # We always go through ``build_citation_index`` (which is cheap
+    # and reuses the existing infrastructure) so the deferred pass
+    # has the (cite_num, ref_url) pair per URL available to emit on
+    # the DEFERRED_FETCHED_IMG / DEFERRED_FILLED log lines.
+    try:
+        from ...images.relevance import build_citation_index
 
-            num_to_url, _section_to_nums, _url_to_html = build_citation_index(
-                final_markdown, results
-            )
-            cited_urls = set(num_to_url.values())
-        except Exception:
-            logger.exception(
-                "Failed to build citation index for deferred image fill"
-            )
-            cited_urls = set()
+        num_to_url, _section_to_nums, _url_to_html = build_citation_index(
+            final_markdown, results
+        )
+        cited_urls = set(num_to_url.values())
+        # Per-URL inverse: {url: citation_number_str}. One URL
+        # may appear under multiple cite numbers in pathological
+        # cases (e.g. LLM cites the same source twice); we keep
+        # the first occurrence (insertion order in Python 3.7+).
+        _url_to_cite_num: dict[str, str] = {}
+        for num, url in num_to_url.items():
+            if url not in _url_to_cite_num:
+                _url_to_cite_num[url] = num
+    except Exception:
+        logger.exception(
+            "Failed to build citation index for deferred image fill"
+        )
+        cited_urls = set()
+        _url_to_cite_num = {}
 
     if not cited_urls:
         logger.info(
@@ -604,6 +606,28 @@ def _deferred_image_fill(
                 f"Deferred image fill: dumps_images failed for {url}"
             )
             continue
+        # Per-URL summary that records the cite_num + ref_url
+        # association we know about (extracted from the
+        # ``## Sources`` block before the fetch ran) plus the count
+        # of images attached. A log consumer can union this with
+        # the per-image DEFERRED_FETCHED_IMG lines below to get
+        # the (alt, source_url, ref_url, cite_num) tuple per image.
+        cite_num_for_url = _url_to_cite_num.get(url, "-")
+        # Per-image DEFERRED_FETCHED_IMG so the deferred pass leaves
+        # the same five-key trail as the other IMG-TRACE stages.
+        # ``cite_num`` is unknown at fetch time, ``ref_url`` is the
+        # URL itself (== the cited reference page that the agent
+        # will reference). ``img_source_url`` is the page the image
+        # was extracted from (= ref_url in this single-pass case).
+        for img in images:
+            logger.info(
+                f"[IMG-TRACE] DEFERRED_FETCHED_IMG research={research_id} "
+                f"img_alt={(getattr(img, 'alt', '') or '')[:200]!r} "
+                f"img_url={getattr(img, 'url', '')} "
+                f"img_source_url={getattr(img, 'source_url', '')} "
+                f"cite_num={cite_num_for_url} "
+                f"ref_url={url}"
+            )
         attached = False
         for finding in results.get("findings", []) or []:
             for sr in finding.get("search_results", []) or []:
@@ -616,7 +640,9 @@ def _deferred_image_fill(
             filled += 1
             logger.info(
                 f"[IMG-TRACE] DEFERRED_FILLED research={research_id} "
-                f"img_alt_count={len(images)} url={url}"
+                f"img_alt_count={len(images)} "
+                f"cite_num={cite_num_for_url} "
+                f"ref_url={url}"
             )
     logger.info(
         f"[IMG-TRACE] DEFERRED_FILL research={research_id} done "
