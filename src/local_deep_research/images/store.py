@@ -370,6 +370,7 @@ class ImageStore:
         markdown: str,
         url_to_route: Dict[str, str],
         url_to_size: Optional[Dict[str, Tuple[int, int]]] = None,
+        url_to_source: Optional[Dict[str, tuple]] = None,
     ) -> str:
         """Replace remote image URLs with local routes.
 
@@ -387,12 +388,26 @@ class ImageStore:
         sizes = url_to_size if url_to_size is not None else getattr(
             self, "_last_url_to_size", {}
         )
+        url_to_source = url_to_source or {}
         resized = under = unknown = dropped = 0
 
         def repl(m: re.Match) -> str:
             nonlocal resized, under, unknown, dropped
             alt, url = m.group(1), m.group(2)
             route = url_to_route.get(url)
+            # Pull the (img_source_url, source_title) for this image so
+            # the rewrite-stage events carry the same five-key schema
+            # as the rest of the IMG-TRACE pipeline. ``img_source_url``
+            # and ``ref_url`` are the same page by construction (the
+            # image lives on the page that the report cites as the
+            # reference) but we spell both out for grep-ability.
+            src_entry = url_to_source.get(url) or (None, None)
+            img_source_url = src_entry[0] or ""
+            ref_url = img_source_url
+            size = sizes.get(url)
+            size_str = (
+                f"{size[0]}x{size[1]}" if size is not None else "unknown"
+            )
             if route is None:
                 # No local route means download failed all retries. Drop the
                 # image entirely so no remote URL / broken <img> leaks into
@@ -402,16 +417,21 @@ class ImageStore:
                 dropped += 1
                 logger.info(
                     f"[IMG-TRACE] REWRITE_DROP research={self.research_id} "
-                    f"img_url={url} alt={(alt or '')[:200]!r} "
+                    f"img_alt={(alt or '')[:200]!r} "
+                    f"img_url={url} "
+                    f"img_source_url={img_source_url} "
+                    f"cite_num=- ref_url={ref_url} "
                     f"reason=no_local_route"
                 )
                 return ""
-            size = sizes.get(url)
             if size is None:
                 unknown += 1
                 logger.info(
                     f"[IMG-TRACE] REWRITE_KEEP research={self.research_id} "
-                    f"img_url={url} alt={(alt or '')[:200]!r} "
+                    f"img_alt={(alt or '')[:200]!r} "
+                    f"img_url={url} "
+                    f"img_source_url={img_source_url} "
+                    f"cite_num=- ref_url={ref_url} "
                     f"route={route} size=unknown"
                 )
                 return f"![{alt}]({route})"
@@ -421,14 +441,32 @@ class ImageStore:
                 under += 1
                 logger.info(
                     f"[IMG-TRACE] REWRITE_KEEP research={self.research_id} "
-                    f"img_url={url} alt={(alt or '')[:200]!r} "
+                    f"img_alt={(alt or '')[:200]!r} "
+                    f"img_url={url} "
+                    f"img_source_url={img_source_url} "
+                    f"cite_num=- ref_url={ref_url} "
                     f"route={route} size={w}x{h}"
                 )
                 return f"![{alt}]({route})"
             resized += 1
+            # Per-image RESIZE event: schema matches the other stages
+            # so a log consumer can union them. ``kept_after_resize=1``
+            # is implicit in REWRITE_KEEP; we only emit RESIZE when the
+            # image was actually over the cap.
+            logger.info(
+                f"[IMG-TRACE] RESIZE research={self.research_id} "
+                f"img_alt={(alt or '')[:200]!r} "
+                f"img_url={url} "
+                f"img_source_url={img_source_url} "
+                f"cite_num=- ref_url={ref_url} "
+                f"route={route} size={w}x{h} max_px={_MAX_DISPLAY_PX}"
+            )
             logger.info(
                 f"[IMG-TRACE] REWRITE_KEEP research={self.research_id} "
-                f"img_url={url} alt={(alt or '')[:200]!r} "
+                f"img_alt={(alt or '')[:200]!r} "
+                f"img_url={url} "
+                f"img_source_url={img_source_url} "
+                f"cite_num=- ref_url={ref_url} "
                 f"route={route} size={w}x{h} max_px={_MAX_DISPLAY_PX}"
             )
             # Oversized image. Markdown has no syntax for explicit

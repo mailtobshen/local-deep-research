@@ -46,7 +46,9 @@ def _patch_image_store(monkeypatch):
         def persist(self, chosen, url_to_alt=None, url_to_source=None):
             return {u: u for u in chosen}
 
-        def rewrite_markdown(self, md, url_to_route, url_to_size=None):
+        def rewrite_markdown(
+            self, md, url_to_route, url_to_size=None, url_to_source=None
+        ):
             return md
 
     monkeypatch.setattr(postprocessing, "ImageStore", FakeStore)

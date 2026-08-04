@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 from loguru import logger
@@ -291,11 +292,20 @@ def enhance_report_with_images(
                             binding[img.url] = (num, sidx)
                         kept += 1
                     else:
+                        # Same five-key schema as CANDIDATE_KEPT so a
+                        # log parser can union the two streams into a
+                        # complete per-image decision table. Drops get
+                        # ``kept=0`` reason baked in so consumers don't
+                        # need to fork on the event name to know what
+                        # happened.
                         logger.debug(
                             f"[IMG-TRACE] CANDIDATE_DROPPED research={research_id} "
-                            f"src_url={url} img_url={img.url} "
-                            f"alt={(img.alt or '')[:200]!r} "
-                            f"sec={sidx} num={num} score={score:.3f} "
+                            f"img_alt={(img.alt or '')[:200]!r} "
+                            f"img_url={img.url} "
+                            f"img_source_url={img.source_url} "
+                            f"cite_num={num} "
+                            f"ref_url={url} "
+                            f"sec={sidx} score={score:.3f} "
                             f"reason=below_threshold"
                         )
                         dropped_low += 1
@@ -385,10 +395,53 @@ def enhance_report_with_images(
             firecrawl_client=firecrawl_client,
         )
         mapping = store.persist(chosen, url_to_alt, url_to_source)
-        enhanced = store.rewrite_markdown(enhanced, mapping)
+        enhanced = store.rewrite_markdown(
+            enhanced, mapping, url_to_source=url_to_source
+        )
+        # The aggregate ``PERSIST chosen=N`` line records how many
+        # images we just wrote to disk; the per-image ``PERSISTED_IMG``
+        # lines below carry the full provenance for each one so the
+        # log can answer "where did this image come from, what was
+        # its alt, which citation references it, what was the disk
+        # route" with a single grep — without re-reading the store.
         logger.info(
             f"[IMG-TRACE] PERSIST research={research_id} chosen={len(chosen)}"
         )
+        chosen_img_by_url = {
+            img.url: img for img in bank.candidates_with_alt()
+            if img.url in chosen
+        }
+        for url in chosen:
+            img = chosen_img_by_url.get(url)
+            if img is None:
+                continue
+            num = binding.get(url, (None,))[0]
+            route = mapping.get(url) or ""
+            # ``local_path`` is best-effort: the real ImageStore
+            # exposes ``base_dir``; a test stub might not. Never let
+            # the trace emission itself raise — that would mask the
+            # PERSIST outcome and the inventory becomes incomplete.
+            local_path = ""
+            if route:
+                try:
+                    base_dir = getattr(store, "base_dir", None)
+                    if base_dir is not None:
+                        local_path = (
+                            Path(base_dir) / research_id /
+                            Path(route).name
+                        )
+                except Exception:
+                    local_path = ""
+            logger.info(
+                f"[IMG-TRACE] PERSISTED_IMG research={research_id} "
+                f"img_alt={(img.alt or '')[:200]!r} "
+                f"img_url={img.url} "
+                f"img_source_url={img.source_url} "
+                f"cite_num={num} "
+                f"ref_url={img.source_url} "
+                f"local_route={route} "
+                f"local_path={local_path}"
+            )
         logger.info(
             f"[IMG-TRACE] END research={research_id} status=ok"
         )
