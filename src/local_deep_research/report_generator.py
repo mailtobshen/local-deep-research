@@ -804,19 +804,87 @@ class IntegratedReportGenerator:
                 )
             formatted_all_links = "".join(sources_lines)
         else:
-            # Back-compat: original behaviour, no renumbering. Still
-            # strip any per-section sources/references block the LLM
-            # appended, so the trailing ``## Sources`` stays the single
-            # source of truth for every caller of this code path
-            # (scheduler, mcp_strategy, langgraph_agent).
+            # Back-compat path: per-subsection documents were not captured
+            # (detailed reports where _section_documents_per_subsection
+            # ended up empty). We still must enforce the
+            # body-``[[N]]`` ↔ ``## Sources [N]`` invariant so the
+            # report's citation numbering reads 1..N contiguous and
+            # matches the URL trail. The historical behaviour left body
+            # markers untouched while format_links_to_markdown emitted
+            # langgraph-original ``[N]`` in Sources — which is exactly
+            # the divergence the user flagged.
+            #
+            # Patch verified end-to-end: every body ``[[N]](url)`` ends
+            # up pointing at a Sources entry whose URL is the same.
             from .text_optimization.citation_formatter import (
                 strip_per_section_sources_block,
+                strip_hallucinated_citations,
+                renumber_citations,
+                build_first_cite_order,
             )
+            from .utilities.url_utils import canonical_url_key
 
+            # 1) Strip per-section reference blocks the LLM may have
+            #    appended (trailing heading variant, see R4).
             for name in list(sections.keys()):
                 sections[name] = strip_per_section_sources_block(
                     sections[name]
                 )
+
+            # 2) Build langgraph-index → (title, url) lookup from
+            #    all_links_of_system. ``enumerate(..., start=1)`` mirrors
+            #    the langgraph collector's 1-based citation indices.
+            url_to_meta: Dict[int, tuple] = {}
+            valid_indices: set = set()
+            for idx, link in enumerate(
+                self.search_system.all_links_of_system, start=1
+            ):
+                url = link.get("link") or link.get("url") or ""
+                if url:
+                    url_to_meta[idx] = (
+                        link.get("title", "Untitled"),
+                        url,
+                    )
+                    valid_indices.add(idx)
+
+            # 3) Strip hallucinated citations BEFORE building order so
+            #    they don't poison body_order (mirrors the primary path).
+            for name in list(sections.keys()):
+                sections[name] = strip_hallucinated_citations(
+                    sections[name], valid_indices
+                )
+
+            # 4) First-cite order across all sections, in TOC order.
+            body_order: List[int] = []
+            seen: set = set()
+            for section in structure:
+                body = sections.get(section["name"], "")
+                for n in build_first_cite_order(body, valid_indices):
+                    if n not in seen:
+                        seen.add(n)
+                        body_order.append(n)
+
+            # 5) old → new (1-based) remap. Same scheme as primary path.
+            old_to_new: Dict[int, int] = {
+                old: new + 1 for new, old in enumerate(body_order)
+            }
+
+            # 6) Build new_sources keyed by NEW index from
+            #    url_to_meta (langgraph original URLs — never invent).
+            new_sources: Dict[int, tuple] = {}
+            for old_idx in body_order:
+                meta = url_to_meta.get(old_idx)
+                if meta is not None:
+                    new_sources[old_to_new[old_idx]] = meta
+
+            # 7) Renumber body so ``[[N]](url)`` matches the new
+            #    numbering. URL stays in place; only the digit changes.
+            for name in list(sections.keys()):
+                sections[name] = renumber_citations(
+                    sections[name], new_sources, old_to_new
+                )
+
+            # 8) Rebuild body_parts with the renumbered sections.
             body_parts: List[str] = []
             for section in structure:
                 if section["name"] in sections:
@@ -824,12 +892,20 @@ class IntegratedReportGenerator:
                     body_parts.append("")
             report_parts = [report_parts[0], ""] + report_parts[1:1] + body_parts
 
-            utilities = importlib.import_module("local_deep_research.utilities")
-            formatted_all_links = (
-                utilities.search_utilities.format_links_to_markdown(
-                    all_links=self.search_system.all_links_of_system
+            # 9) Build Sources block keyed by NEW index. Dedup by
+            #    canonical URL; first-seen (body-order) wins.
+            canon_to_entry: Dict[str, tuple] = {}
+            for new_idx in sorted(new_sources.keys()):
+                title, url = new_sources[new_idx]
+                canon = canonical_url_key(url) or url or f"local-{new_idx}"
+                if canon not in canon_to_entry:
+                    canon_to_entry[canon] = (new_idx, title, url)
+            sources_lines: List[str] = []
+            for canon, (new_idx, title, url) in canon_to_entry.items():
+                sources_lines.append(
+                    f"[{new_idx}] {title}\n   URL: {url}\n\n"
                 )
-            )
+            formatted_all_links = "".join(sources_lines)
 
         # Create final report with all parts
         final_report_content = "\n\n".join(report_parts)
