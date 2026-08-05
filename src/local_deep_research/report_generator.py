@@ -699,6 +699,7 @@ class IntegratedReportGenerator:
                 build_first_cite_order,
                 renumber_citations,
                 strip_hallucinated_citations,
+                strip_inline_reference_list,
                 strip_per_section_sources_block,
             )
             from .utilities.url_utils import canonical_url_key
@@ -717,6 +718,15 @@ class IntegratedReportGenerator:
             #    the single source of truth.
             for name in list(sections.keys()):
                 sections[name] = strip_per_section_sources_block(
+                    sections[name]
+                )
+                sections[name] = strip_inline_reference_list(
+                    sections[name]
+                )
+                # Some LLMs (qwen3.5-opus:9b on Aug 5) emit a tail
+                # block of bare ``[N] Title — URL: ...`` rows
+                # without any heading — strip that too.
+                sections[name] = strip_inline_reference_list(
                     sections[name]
                 )
 
@@ -801,8 +811,7 @@ class IntegratedReportGenerator:
                 new_idx = old_to_new[d.metadata["index"]]
                 title = d.metadata.get("title", "Untitled")
                 sources_lines.append(
-                    f"[{new_idx}] {title} (source nr: {new_idx})\n"
-                    f"   URL: {canon}\n\n"
+                    f"[{new_idx}] {title}\n   URL: {canon}\n\n"
                 )
             formatted_all_links = "".join(sources_lines)
         else:
@@ -821,6 +830,7 @@ class IntegratedReportGenerator:
             from .text_optimization.citation_formatter import (
                 strip_per_section_sources_block,
                 strip_hallucinated_citations,
+                strip_inline_reference_list,
                 renumber_citations,
                 build_first_cite_order,
             )
@@ -830,6 +840,9 @@ class IntegratedReportGenerator:
             #    appended (trailing heading variant, see R4).
             for name in list(sections.keys()):
                 sections[name] = strip_per_section_sources_block(
+                    sections[name]
+                )
+                sections[name] = strip_inline_reference_list(
                     sections[name]
                 )
 

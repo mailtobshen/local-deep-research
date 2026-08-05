@@ -136,6 +136,90 @@ def strip_per_section_sources_block(body: str) -> str:
     return truncated
 
 
+# Inline reference-list pattern: matches one "row" of an LLM-written
+# reference list the model emits without a heading prefix. Two flavours:
+#   [1] Title — URL: https://...
+#   [1] Some title
+# The first is format_links_to_markdown's row format; the second is the
+# loose "just enumerate titles" form. The first has an explicit URL
+# line; the second is just text. We require both flavours to start at
+# column 0 and run a numeric index.
+_INLINE_REF_ROW_WITH_URL_RE = re.compile(
+    r"^\s*\[\d+\][^\n]*URL:\s*\S+",
+    re.MULTILINE,
+)
+_INLINE_REF_ROW_PLAIN_RE = re.compile(
+    r"^\s*\[\d+\][^\n]{2,}",
+    re.MULTILINE,
+)
+
+
+def strip_inline_reference_list(body: str) -> str:
+    """Strip a trailing block of LLM-written inline reference list rows.
+
+    Some models (qwen3.5-opus:9b on Aug 5 included) don't emit a
+    ``## 参考文献`` heading but still write a tail block of bare
+    ``[1] Title — URL: ...`` lines, mimicking the trailing Sources
+    block format. The heading-aware ``strip_per_section_sources_block``
+    misses these. This function detects a tail cluster of 3+ consecutive
+    reference-list rows and truncates the body before the first such
+    row.
+
+    Safety: only acts on a TAIL cluster (last 6 lines) of 3+ matching
+    rows. The body proper is never touched, so legitimate inline
+    ``[1]`` mentions in prose (e.g. "see [1] for the study") are
+    preserved.
+
+    Threshold: a single matching row is not enough — that could be
+    prose. Three in a row (3-line minimum) is the heuristic.
+    """
+    lines = body.splitlines()
+    if len(lines) < 3:
+        return body
+
+    # Walk from the end backwards, collecting consecutive tail rows
+    # that match either reference-list flavour.
+    tail_match_count = 0
+    first_match_idx = None
+    for i in range(len(lines) - 1, -1, -1):
+        line = lines[i]
+        if _INLINE_REF_ROW_WITH_URL_RE.match(line) or _INLINE_REF_ROW_PLAIN_RE.match(
+            line
+        ):
+            tail_match_count += 1
+            first_match_idx = i
+        else:
+            # Stop at first non-match (going up). Require that the
+            # break is a single blank line — anything more means the
+            # list isn't tail-attached.
+            if tail_match_count >= 3 and i >= 0 and lines[i].strip() == "":
+                # Allow one blank-line gap between body and list.
+                # Continue to verify nothing else above is a match.
+                continue
+            break
+
+    if tail_match_count < 3 or first_match_idx is None:
+        return body
+
+    # Re-validate: the cluster must be at the tail. Walk back from
+    # first_match_idx upward; any earlier non-blank line that's not a
+    # match means the cluster is embedded mid-document — bail.
+    for j in range(first_match_idx - 1, -1, -1):
+        if lines[j].strip() == "":
+            continue
+        if _INLINE_REF_ROW_WITH_URL_RE.match(
+            lines[j]
+        ) or _INLINE_REF_ROW_PLAIN_RE.match(lines[j]):
+            # Found an earlier reference row → cluster is larger.
+            first_match_idx = j
+        else:
+            break
+
+    # Truncate at the line BEFORE the cluster starts.
+    truncated = "\n".join(lines[:first_match_idx]).rstrip() + "\n"
+    return truncated
+
+
 # Regexes for the citation renumbering / hallucination-stripping helpers
 # below. They deliberately accept both plain `[N]` and the already-
 # hyperlinked `[[N]](url)` form so that the renumber pass is idempotent
