@@ -83,7 +83,28 @@ def _attach_images_if_enabled(
     title: str,
     settings_snapshot: dict | None,
     enable_js_rendering: bool,
+    *,
+    fetch_mode: str = "full",
 ) -> None:
+    """When ``report.enable_images`` is on, extract images for *url* and store
+    them on the collector record's ``html_content`` field.
+
+    No-op (and no extra network request / imports) when the setting is off, so
+    the default text-only fetch path is completely unchanged. Reuses the same
+    ``fetch_content_with_images`` + ``dumps_images`` path as
+    ``full_search._get_full_content`` so the report-stage image enhancer can
+    read images the same way. Failures are logged and never affect the text
+    fetch result the agent sees.
+
+    ``fetch_mode`` selects between immediate and deferred extraction. In
+    ``summary_focus`` / ``summary_focus_query`` modes the text returned to
+    the agent is the LLM-rewritten summary, not the original page HTML —
+    storing the original-page image list under ``html_content`` doesn't
+    line up with what the agent saw, so skip the attach and let the
+    post-report deferred pass fetch the cited URLs' images instead
+    (fix #8 from
+    docs/superpowers/plans/2026-08-05-image-chain-9-fixes.md).
+    """
     """When ``report.enable_images`` is on, extract images for *url* and store
     them on the collector record's ``html_content`` field.
 
@@ -103,6 +124,18 @@ def _attach_images_if_enabled(
         default=False,
         settings_snapshot=settings_snapshot,
     ):
+        return
+
+    # Summary-mode fetches return LLM-rewritten text, not the original
+    # page. The attached html_content wouldn't line up with what the
+    # citation-anchored enhancer expects — let the post-report deferred
+    # pass handle those URLs once we know which ones are actually
+    # cited in the final markdown.
+    if fetch_mode != "full":
+        logger.debug(
+            f"[IMG-TRACE] LANGGRAPH_FILL_SKIP url={url} "
+            f"fetch_mode={fetch_mode} reason=summary_mode"
+        )
         return
 
     try:
@@ -177,6 +210,7 @@ def _make_full_fetch_tool(
                         title,
                         settings_snapshot,
                         enable_js,
+                        fetch_mode="full",
                     )
                     return (
                         f"[{cite_idx}] Title: {title}\nURL: {url}\n\n{content}"
@@ -275,6 +309,7 @@ def _make_summary_fetch_tool(
                     title,
                     settings_snapshot,
                     enable_js,
+                    fetch_mode=mode_label,
                 )
                 return f"[{cite_idx}] Title: {title}\nURL: {url}\n\n{summary}"
         except Exception as exc:
