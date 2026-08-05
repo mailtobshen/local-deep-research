@@ -208,3 +208,153 @@ def test_dumps_warns_on_non_serializable(captured_logs):
     assert out == "[]"
     text = captured_logs.getvalue()
     assert "[IMG-TRACE] DUMPS_FAIL" in text
+
+
+# ---- #8: fetch mode split ----
+
+def test_summary_focus_query_skips_image_attach(captured_logs):
+    """In summary_focus_query mode the tool returns LLM-rewritten
+    summary, not original page HTML. Image attach would store the wrong
+    content; #8 makes it a no-op and the deferred pass picks it up."""
+    from local_deep_research.advanced_search_system.tools.fetch import (
+        _attach_images_if_enabled,
+    )
+    import local_deep_research.config.thread_settings as ts_mod
+
+    collector = MagicMock()
+    collector.attach_html_content = MagicMock(return_value=True)
+
+    with patch.object(ts_mod, "get_bool_setting_from_snapshot", return_value=True):
+        _attach_images_if_enabled(
+            collector,
+            "https://example.com/summary",
+            "title",
+            {},
+            enable_js_rendering=False,
+            fetch_mode="summary_focus_query",
+        )
+
+    # No image attach attempted.
+    assert not collector.attach_html_content.called
+
+    text = captured_logs.getvalue()
+    assert "[IMG-TRACE] LANGGRAPH_FILL_SKIP url=https://example.com/summary" in text
+    assert "fetch_mode=summary_focus_query" in text
+    assert "reason=summary_mode" in text
+    # Crucially, the FILLED event should NOT fire for summary modes.
+    assert "LANGGRAPH_FILLED" not in text
+
+
+def test_summary_focus_mode_also_skips(captured_logs):
+    """Both summary modes (with and without overall_query) skip."""
+    from local_deep_research.advanced_search_system.tools.fetch import (
+        _attach_images_if_enabled,
+    )
+    import local_deep_research.config.thread_settings as ts_mod
+
+    collector = MagicMock()
+    with patch.object(ts_mod, "get_bool_setting_from_snapshot", return_value=True):
+        _attach_images_if_enabled(
+            collector,
+            "https://x/y",
+            "t",
+            {},
+            False,
+            fetch_mode="summary_focus",
+        )
+    assert not collector.attach_html_content.called
+    assert "fetch_mode=summary_focus" in captured_logs.getvalue()
+
+
+def test_full_mode_still_attaches_images(captured_logs):
+    """Pre-#8 behavior preserved: 'full' mode (returns original HTML)
+    still attaches images. Same code path tested by the #2/#4 tests
+    but explicitly verified here with fetch_mode='full' param."""
+    from local_deep_research.advanced_search_system.tools.fetch import (
+        _attach_images_if_enabled,
+    )
+    import local_deep_research.config.thread_settings as ts_mod
+    import local_deep_research.research_library.downloaders.extraction.pipeline as p
+    from local_deep_research.images.extractor import ExtractedImage
+
+    imgs = [
+        ExtractedImage(url="https://x/1.jpg", alt="ok", source_url="", source_title="", width=0, height=0),
+    ]
+
+    def fake_fetch(urls, **kw):
+        return {urls[0]: {"images": imgs}}
+
+    collector = MagicMock()
+    collector.attach_html_content = MagicMock(return_value=True)
+
+    with patch.object(ts_mod, "get_bool_setting_from_snapshot", return_value=True), \
+         patch.object(p, "fetch_content_with_images", side_effect=fake_fetch):
+        _attach_images_if_enabled(
+            collector,
+            "https://x/full-page",
+            "title",
+            {},
+            False,
+            fetch_mode="full",
+        )
+
+    assert collector.attach_html_content.called
+    text = captured_logs.getvalue()
+    assert "[IMG-TRACE] LANGGRAPH_FILLED src_url=https://x/full-page images=1" in text
+    assert "LANGGRAPH_FILL_SKIP" not in text
+
+
+def test_summary_mode_settings_gate_off_still_skips_silently(captured_logs):
+    """When enable_images is OFF, summary mode path is unchanged
+    (no LANGGRAPH_FILL_SKIP event emitted — gate takes priority)."""
+    from local_deep_research.advanced_search_system.tools.fetch import (
+        _attach_images_if_enabled,
+    )
+    import local_deep_research.config.thread_settings as ts_mod
+
+    collector = MagicMock()
+    with patch.object(ts_mod, "get_bool_setting_from_snapshot", return_value=False):
+        _attach_images_if_enabled(
+            collector,
+            "https://x",
+            "t",
+            {},
+            False,
+            fetch_mode="summary_focus_query",
+        )
+    assert not collector.attach_html_content.called
+    text = captured_logs.getvalue()
+    # Gate-off path emits nothing; the SKIP event is only for
+    # enable_images=True but summary mode.
+    assert "LANGGRAPH_FILL_SKIP" not in text
+
+
+def test_default_fetch_mode_is_full_for_backcompat(captured_logs):
+    """No fetch_mode kwarg → defaults to 'full' → attaches images
+    (preserves pre-#8 call sites that didn't pass the param)."""
+    from local_deep_research.advanced_search_system.tools.fetch import (
+        _attach_images_if_enabled,
+    )
+    import local_deep_research.config.thread_settings as ts_mod
+    import local_deep_research.research_library.downloaders.extraction.pipeline as p
+    from local_deep_research.images.extractor import ExtractedImage
+
+    imgs = [
+        ExtractedImage(url="https://x/1.jpg", alt="ok", source_url="", source_title="", width=0, height=0),
+    ]
+
+    def fake_fetch(urls, **kw):
+        return {urls[0]: {"images": imgs}}
+
+    collector = MagicMock()
+    collector.attach_html_content = MagicMock(return_value=True)
+
+    with patch.object(ts_mod, "get_bool_setting_from_snapshot", return_value=True), \
+         patch.object(p, "fetch_content_with_images", side_effect=fake_fetch):
+        # NOTE: no fetch_mode kwarg — relies on default
+        _attach_images_if_enabled(
+            collector, "https://x/default", "t", {}, False,
+        )
+
+    assert collector.attach_html_content.called
+    assert "LANGGRAPH_FILL_SKIP" not in captured_logs.getvalue()
