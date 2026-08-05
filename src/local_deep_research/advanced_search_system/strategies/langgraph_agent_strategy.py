@@ -1026,33 +1026,22 @@ class LangGraphAgentStrategy(BaseSearchStrategy):
             except Exception:
                 logger.exception("Failed to format source links")
 
-        # Image fetch is intentionally NOT triggered here. The previous
-        # behaviour called ``_ensure_images_for_results`` once per LLM
-        # reasoning round (the agent loop ran 22 rounds for the
-        # Shanghai 2026-08-03 study, scraping ~80-200 pages per round
-        # and dominating the 7-hour research walltime with Playwright
-        # rendering).
-        #
-        # The new contract: the langgraph agent loop fetches text only;
-        # the image fill is a single post-loop pass done by
-        # ``research_service`` after the markdown report + sources
-        # block are finalised, just before ``enhance_report_with_images``
-        # runs. ``postprocessing`` then reads the populated
-        # ``html_content`` exactly as it did before. The
-        # ``langgraph auto-image-fill: allowlist cited=N`` event
-        # stays as an audit trail (records the cited URL set the
-        # report-finalise pass will fetch) but does not block the
-        # LLM loop. See ``research_service._deferred_image_fill`` for
-        # the new single-pass implementation.
-        if all_search_results:
-            try:
-                cited_urls = _parse_sources_markdown_urls(formatted_output)
-            except Exception:
-                cited_urls = set()
-            logger.info(
-                f"[IMG-TRACE] langgraph auto-image-fill: allowlist "
-                f"cited={len(cited_urls)} (deferred to post-finalize pass)"
-            )
+        # Image fetch has been removed from the langgraph agent loop.
+        # The previous behaviour called ``_ensure_images_for_results``
+        # once per LLM reasoning round (the agent loop ran 22 rounds
+        # for the Shanghai 2026-08-03 study, scraping ~80-200 pages
+        # per round and dominating the 7-hour research walltime with
+        # Playwright rendering). The langgraph agent loop now fetches
+        # text only; the image fill is a single post-loop pass done by
+        # ``research_service._deferred_image_fill`` after the markdown
+        # report + sources block are finalised, just before
+        # ``enhance_report_with_images`` runs. ``postprocessing`` then
+        # reads the populated ``html_content`` exactly as it did
+        # before. No langgraph-side code path remains — if you see a
+        # ``[IMG-TRACE] langgraph auto-image-fill`` event in any log
+        # it is from a pre-refactor run. See
+        # ``research_service._deferred_image_fill`` for the current
+        # single-pass implementation.
 
         # Build reasoning trace from agent messages
         reasoning_trace = []

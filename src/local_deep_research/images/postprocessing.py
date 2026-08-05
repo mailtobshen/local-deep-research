@@ -28,13 +28,17 @@ from .store import ImageStore, _IMG_RE
 def _dedupe_images(markdown: str) -> tuple[str, int, int]:
     """Collapse duplicate ``![alt](url)`` occurrences to first-only.
 
-    The LLM prompt instructs "Each image URL may appear at most ONCE"
-    (see ``enhancer._PROMPT``), but that's a prompt, not a guarantee —
-    when alt text is generic (``"Image"``, ``"Photo by ..."``) the LLM
-    occasionally places the same URL in 2-3 sections. This pass enforces
-    uniqueness so the final markdown has each persisted image exactly
-    once. We keep the FIRST occurrence (deterministic, matches LLM's
-    earliest judgment) and remove later ones.
+    The multi-bind placement pass above may produce multiple
+    ``![alt](url)`` instances for the same URL when the image's
+    source page is cited in several sections. This pass enforces
+    one-per-URL uniqueness so the final markdown shows each persisted
+    image exactly once. We keep the FIRST occurrence
+    (deterministic, matches LLM's earliest judgment — and now also
+    the natural reading order) and remove later ones.
+
+    The DEDUPE_KEEP / DEDUPE_DROP / DEDUPE_SUMMARY events share
+    the same five-key schema as the upstream per-image events so a
+    log parser can reconstruct the final state from one grep hit.
 
     Returns:
         (deduped_markdown, original_count, unique_count)
@@ -43,29 +47,41 @@ def _dedupe_images(markdown: str) -> tuple[str, int, int]:
     parts: list[str] = []
     last_end = 0
     original_count = 0
+    dropped_count = 0
     for m in _IMG_RE.finditer(markdown):
         original_count += 1
         url = m.group(2)
-        # Always emit the prose between the previous match and this one,
-        # regardless of whether we keep or drop the current match.
+        alt = m.group(1) or ""
+        # Always emit the prose between the previous match and this
+        # one, regardless of whether we keep or drop the current
+        # match.
         parts.append(markdown[last_end:m.start()])
         if url in seen:
-            # Drop the duplicate match. Surrounding prose stays intact.
-            # The trailing newlines may collapse and create runs of blank
-            # lines, which we squeeze below.
+            # Drop the duplicate match. Surrounding prose stays
+            # intact. The trailing newlines may collapse and create
+            # runs of blank lines, which we squeeze below.
+            dropped_count += 1
             logger.info(
-                f"[IMG-TRACE] DEDUPE_DROP alt={(m.group(1) or '')[:200]!r} "
+                f"[IMG-TRACE] DEDUPE_DROP alt={alt[:200]!r} "
                 f"img_url={url}"
             )
         else:
             seen.add(url)
             parts.append(m.group(0))
+            logger.info(
+                f"[IMG-TRACE] DEDUPE_KEEP alt={alt[:200]!r} "
+                f"img_url={url}"
+            )
         last_end = m.end()
     parts.append(markdown[last_end:])
     out = "".join(parts)
     # Squeeze runs of 3+ blank lines that dedup may create when the
     # duplicate was on its own line.
     out = re.sub(r"\n{3,}", "\n\n", out)
+    logger.info(
+        f"[IMG-TRACE] DEDUPE_SUMMARY original={original_count} "
+        f"kept={len(seen)} dropped={dropped_count}"
+    )
     return out, original_count, len(seen)
 
 
@@ -222,7 +238,18 @@ def enhance_report_with_images(
 
         threshold = alt_similarity_threshold
         bank = ImageBank()
-        binding: dict[str, tuple[str, int]] = {}  # url -> (num, section_idx)
+        # binding maps an image URL to every (cite_num, section_idx)
+        # pair where the image was selected for placement. A single
+        # URL can bind to multiple sections (e.g. the same Wikipedia
+        # "Shanghai" infobox appears under both the "Bund" section
+        # and the "City overview" section if both cite the same URL).
+        # The post-insert dedup pass below removes any duplicate
+        # ``![alt](url)`` instances the multi-bind produced — keep
+        # first occurrence by document position. Allowing multi-bind
+        # (instead of collapsing at this stage) gives the insertion
+        # phase a chance to place the image next to every section
+        # that actually cites its source page.
+        binding: dict[str, list[tuple[str, int]]] = {}
 
         # Stage 2: extract images from each cited source, single-section
         # semantic gate against the citation's section.
@@ -238,6 +265,27 @@ def enhance_report_with_images(
                 imgs = loads_images(html)
                 if not imgs:
                     continue
+                # Emit per-(cite, section) candidate list BEFORE we
+                # run any scoring. Useful for post-mortem analysis:
+                # how many images did each cited URL yield, and what
+                # were their alt/source_url tuples. Includes empty-alt
+                # candidates here (they'll be skipped below) so the
+                # event matches the actual bank content. Field schema:
+                # cite_num, ref_url, sec, count, then per-image
+                # img_alt / img_url / img_source_url.
+                cand_lines = []
+                for cand in imgs:
+                    cand_lines.append(
+                        f"img_alt={(cand.alt or '')[:120]!r} "
+                        f"img_url={cand.url} "
+                        f"img_source_url={cand.source_url}"
+                    )
+                logger.info(
+                    f"[IMG-TRACE] CITATION_CANDIDATES research={research_id} "
+                    f"cite_num={num} ref_url={url} sec={sidx} "
+                    f"count={len(imgs)} "
+                    + " | ".join(cand_lines)
+                )
                 kept = 0
                 dropped_low = 0
                 model = semantic_matcher.get_model()
@@ -250,6 +298,27 @@ def enhance_report_with_images(
                         continue
                     raw = model.encode([img.alt], normalize_embeddings=True)[0]
                     alt_vec = list(raw.tolist()) if hasattr(raw, "tolist") else list(raw)
+                    # Emit per-image vector pair BEFORE the cosine
+                    # call. Useful for "why did this drop" debugging:
+                    # consumers can re-run the cosine offline and
+                    # inspect both vectors. We do NOT log the full
+                    # 768-dim float vector (would explode log size);
+                    # we log a deterministic fingerprint instead — a
+                    # short hash of the alt text + the cosine result
+                    # in the CANDIDATE_KEPT/DROPPED lines below gives
+                    # enough to correlate. Built-in ``hash()`` is fine
+                    # here (no security requirement; we just need a
+                    # short, deterministic, log-friendly token).
+                    alt_fp = f"{hash((img.alt or '')) & 0xFFFFFFFF:08x}"
+                    sec_fp = f"{hash(repr(sec_vec)) & 0xFFFFFFFF:08x}"
+                    logger.info(
+                        f"[IMG-TRACE] CANDIDATE_SCORED research={research_id} "
+                        f"img_alt={(img.alt or '')[:200]!r} "
+                        f"img_url={img.url} "
+                        f"img_source_url={img.source_url} "
+                        f"cite_num={num} ref_url={url} sec={sidx} "
+                        f"alt_vec_fp={alt_fp} sec_vec_fp={sec_fp}"
+                    )
                     score = _cosine(alt_vec, sec_vec)
                     if score >= threshold:
                         # Per-image trace on the mandatory path. We
@@ -284,12 +353,18 @@ def enhance_report_with_images(
                             f"sec={sidx} score={score:.3f}"
                         )
                         bank.add([img])
-                        # First bound section wins: when the same source
-                        # URL is cited in several sections, the image
-                        # lands in the earliest section (matches
-                        # _dedupe_images' keep-first semantics).
-                        if img.url not in binding:
-                            binding[img.url] = (num, sidx)
+                        # Multi-bind: this image can be placed in
+                        # every section whose cite matches its source
+                        # URL. The post-insert dedup pass below
+                        # removes any duplicate ``![alt](url)`` the
+                        # multi-bind produced. We do NOT collapse at
+                        # this stage because the same image may
+                        # legitimately belong to several sections
+                        # whose relevance-gate happened to clear
+                        # independently.
+                        binding.setdefault(img.url, []).append(
+                            (num, sidx)
+                        )
                         kept += 1
                     else:
                         # Same five-key schema as CANDIDATE_KEPT so a
@@ -338,19 +413,33 @@ def enhance_report_with_images(
 
         # Stage 3: deterministic insert at each image's bound section.
         # ImageEnhancer is intentionally NOT called (paused).
-        # Build placements from binding (url -> (num, section_idx)) joined
-        # with the bank's images in one pass (avoid O(n^2) lookups).
+        # Build placements from binding (url -> list[(num, sec)]) —
+        # multi-bind semantics: a single image URL can bind to several
+        # sections if its source page is cited in each. We emit one
+        # placement per (url, sec) pair, sorted by section index for
+        # stable in-section ordering. The post-insert dedup pass
+        # (``_dedupe_images`` below) collapses any duplicate
+        # ``![alt](url)`` instances produced by the multi-bind,
+        # keeping the FIRST occurrence in document order.
         bank_by_url = {img.url: img for img in bank.candidates_with_alt()}
         placements = sorted(
             (
                 (sidx, url, bank_by_url[url].alt)
-                for url, (num, sidx) in binding.items()
+                for url, pairs in binding.items()
                 if url in bank_by_url
+                for _num, sidx in pairs
             ),
             key=lambda p: (p[0], p[1]),
         )
         for sidx, p_url, p_alt in placements:
-            p_num = binding.get(p_url, (None, None))[0]
+            # Find the (num, sec) pair for this placement. If the
+            # URL is bound to multiple (num, sec), pick the one that
+            # matches this placement's section.
+            matching = [
+                (n, sec) for n, sec in binding.get(p_url, [])
+                if sec == sidx
+            ]
+            p_num = matching[0][0] if matching else None
             p_src = bank_by_url[p_url].source_url
             # Same field names as CANDIDATE_KEPT so the trace schema
             # is one consistent shape from "candidate kept" through
@@ -415,7 +504,12 @@ def enhance_report_with_images(
             img = chosen_img_by_url.get(url)
             if img is None:
                 continue
-            num = binding.get(url, (None,))[0]
+            # binding[url] is a list of (num, sidx) pairs. Pick the
+            # FIRST pair (matches dedup_images' keep-first semantic
+            # for the displayed image — the persisted image is the
+            # one whose citation the reader saw in the body).
+            pairs = binding.get(url) or [(None, None)]
+            num = pairs[0][0]
             route = mapping.get(url) or ""
             # ``local_path`` is best-effort: the real ImageStore
             # exposes ``base_dir``; a test stub might not. Never let
