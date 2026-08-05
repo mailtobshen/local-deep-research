@@ -28,6 +28,106 @@ def test_builds_three_mappings():
     assert url_to_html["https://example.com/other"] == "[]"
 
 
+def test_all_links_of_system_merged_into_url_to_html():
+    """Detailed mode: _results is wiped by collector.reset() between
+    subsections, but all_links_of_system is preserved. The deferred pass
+    passes the cumulative list in results["all_links_of_system"]; build
+    must surface its html_content through url_to_html.
+
+    Without this fix (#1+#6) the deferred pass only saw the last
+    subsection's records and to_fetch dropped to 0 with html_covered=2
+    even when many subsections had fetched cited URLs (e2ec21ad 2026-08-05).
+    """
+    md = (
+        "## A\n\nCites [[1]](https://sub1.example.com/a) and "
+        "[[2]](https://sub2.example.com/b).\n\n"
+        "## 参考文献\n\n"
+        "[1] One\n   URL: https://sub1.example.com/a\n"
+        "[2] Two\n   URL: https://sub2.example.com/b\n"
+    )
+    # search_results only contains the LAST subsection's records
+    # (sub2 fetched in the final subsection; sub1 was wiped by reset).
+    results = {
+        "findings": [
+            {"search_results": [
+                {"url": "https://sub2.example.com/b", "html_content": "[]"},
+            ]}
+        ],
+        # all_links_of_system carries BOTH subsections' html_content
+        "all_links_of_system": [
+            {
+                "link": "https://sub1.example.com/a",
+                "url": "https://sub1.example.com/a",
+                "html_content": "[sub1 fetched earlier]",
+            },
+            {
+                "link": "https://sub2.example.com/b",
+                "url": "https://sub2.example.com/b",
+                "html_content": "[]",
+            },
+        ],
+    }
+    _, _, url_to_html = build_citation_index(md, results)
+    # sub1 comes from all_links_of_system; sub2 from either source.
+    assert url_to_html["https://sub1.example.com/a"] == "[sub1 fetched earlier]"
+    assert url_to_html["https://sub2.example.com/b"] == "[]"
+
+
+def test_all_links_of_system_does_not_overwrite_existing():
+    """If both search_results and all_links_of_system have the same URL,
+    search_results wins (it's the freshest data path)."""
+    md = (
+        "## A\n\n[[1]](https://x.example.com)\n\n"
+        "## 参考文献\n\n[1] X\n   URL: https://x.example.com\n"
+    )
+    results = {
+        "findings": [
+            {"search_results": [
+                {"url": "https://x.example.com", "html_content": "fresh"},
+            ]}
+        ],
+        "all_links_of_system": [
+            {
+                "link": "https://x.example.com",
+                "html_content": "stale",
+            }
+        ],
+    }
+    _, _, url_to_html = build_citation_index(md, results)
+    assert url_to_html["https://x.example.com"] == "fresh"
+
+
+def test_all_links_of_system_absent_keeps_old_behavior():
+    """Without the field, behavior is unchanged from pre-#1+#6."""
+    md = (
+        "## A\n\n[[1]](https://x.example.com)\n\n"
+        "## 参考文献\n\n[1] X\n   URL: https://x.example.com\n"
+    )
+    results = {
+        "findings": [
+            {"search_results": [
+                {"url": "https://x.example.com", "html_content": "ok"},
+            ]}
+        ]
+    }
+    _, _, url_to_html = build_citation_index(md, results)
+    assert url_to_html == {"https://x.example.com": "ok"}
+
+
+def test_all_links_of_system_empty_list_keeps_old_behavior():
+    """An empty list is treated the same as absent."""
+    md = (
+        "## A\n\n[[1]](https://x.example.com)\n\n"
+        "## 参考文献\n\n[1] X\n   URL: https://x.example.com\n"
+    )
+    results = {
+        "findings": [],
+        "all_links_of_system": [],
+    }
+    _, _, url_to_html = build_citation_index(md, results)
+    assert url_to_html == {}
+
+
 def test_plain_double_bracket_citation_without_link():
     """[[N]] without a following (url) is also a valid body citation."""
     md = "## A\n\nText [[1]] here.\n\n## 参考文献\n\n[1] S\n   URL: https://x/a\n"
