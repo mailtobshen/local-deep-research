@@ -498,63 +498,81 @@ class TestEnforceSourcesAscending:
         assert "Foo" in out
         assert "foo.example" in out
 
-    def test_no_zhang_guan_li_dai_with_duplicate_urls(self):
+    def test_no_zhang_guan_li_dai_with_byte_different_urls(self):
         """REGRESSION GUARD — 张冠李戴 prevention.
 
-        When two distinct Sources rows happen to share the same
-        canonical URL, the enforcer MUST NOT collapse them into one
-        and MUST NOT rewire a body marker from one row to the
-        other. Each row keeps its own displayed index and its own
-        title; body markers resolve to the row whose URL they
-        actually point at.
+        Two Sources rows whose URLs differ at the byte level (e.g.
+        trailing slash, tracking param, different path) are NOT
+        duplicates — they are kept as distinct entries. Body
+        markers resolve to the row whose URL they actually point
+        at, never to a different row.
         """
         content = (
             "# R\n\n"
-            "First paper about March [[3]](https://arxiv.org/abs/111).\n"
-            "Second paper about July [[7]](https://arxiv.org/abs/111).\n\n"
+            "First paper [[3]](https://arxiv.org/abs/111).\n"
+            "Second paper [[7]](https://arxiv.org/abs/111/?v=2).\n\n"
             "## Sources\n\n"
             "[3] March paper - Authors A, B (source nr: 3)\n"
             "   URL: https://arxiv.org/abs/111\n\n"
             "[7] July paper - Authors C, D (source nr: 7)\n"
-            "   URL: https://arxiv.org/abs/111\n\n"
+            "   URL: https://arxiv.org/abs/111/?v=2\n\n"
         )
         out = self._enforce(content)
         # Both rows preserved as distinct entries.
         assert "March paper" in out
         assert "July paper" in out
-        # Body [[3]] must NOT point at the July-paper row's content.
-        # The Sources block now lists [[new]] in body-first-cite order;
-        # the FIRST body cite is [[3]] (March), so it becomes new [1].
-        # The SECOND body cite is [[7]] (July), it becomes new [2].
-        # Critically, the body markers are distinct:
+        # Body markers are distinct and point at their own rows.
         first_block = out.split("## Sources")[0]
         assert first_block.count("[[1]](https://arxiv.org/abs/111)") == 1
-        assert first_block.count("[[2]](https://arxiv.org/abs/111)") == 1
+        assert first_block.count("[[2]](https://arxiv.org/abs/111/?v=2)") == 1
         # Both Sources entries present.
         sources_tail = out.split("## Sources")[1]
         assert sources_tail.count("https://arxiv.org/abs/111") == 2
 
-    def test_no_zhang_guan_li_dai_with_trailing_slash(self):
-        """Body URL with trailing slash matches Sources URL without;
-        the body marker is preserved (not orphan-dropped), the
-        Sources row is preserved, and the (renumbered) body marker
-        points at the right Sources row.
+    def test_trailing_slash_dedups_as_canonical_equal(self):
+        """Two Sources rows whose URLs differ only by a trailing
+        slash canonicalise to the same string under
+        canonical_url_key and are therefore treated as duplicates
+        — the LLM wrote the same source twice with slightly
+        different formatting. They collapse to one entry.
         """
         content = (
             "# R\n\n"
             "Real [[5]](https://example.com/page/).\n"
-            "And another [[9]](https://example.com/page/) about something else.\n\n"
+            "And another [[9]](https://example.com/page) about something else.\n\n"
             "## Sources\n\n"
-            "[5] Foo (source nr: 5)\n   URL: https://example.com/page\n\n"
+            "[5] Foo (source nr: 5)\n   URL: https://example.com/page/\n\n"
             "[9] Bar (source nr: 9)\n   URL: https://example.com/page\n\n"
         )
         out = self._enforce(content)
+        # Both rows merge to a single entry — canonical treats
+        # /page and /page/ as the same URL.
+        assert self._displayed_n(out) == [1]
         body = out.split("## Sources")[0]
-        assert "Foo" in out
-        assert "Bar" in out
-        # Both body markers preserved and re-numbered independently.
-        assert body.count("[[1]](https://example.com/page") == 1
-        assert body.count("[[2]](https://example.com/page") == 1
+        # Both body markers renumber to the winner.
+        assert body.count("[[1]](https://example.com/page") == 2
+
+    def test_different_path_or_query_does_not_dedup(self):
+        """URLs that differ in PATH or in non-tracking query
+        parameters are NOT collapsed by the canonical-then-exact
+        dedup rule — those are genuinely different resources.
+        """
+        content = (
+            "# R\n\n"
+            "March [[3]](https://arxiv.org/abs/111). "
+            "July [[7]](https://arxiv.org/abs/111/?v=2).\n\n"
+            "## Sources\n\n"
+            "[3] March\n"
+            "   URL: https://arxiv.org/abs/111\n\n"
+            "[7] July\n"
+            "   URL: https://arxiv.org/abs/111/?v=2\n\n"
+        )
+        out = self._enforce(content)
+        # Both rows preserved (canonical keeps the ?v=2 query).
+        assert self._displayed_n(out) == [1, 2]
+        body = out.split("## Sources")[0]
+        assert body.count("[[1]](https://arxiv.org/abs/111)") == 1
+        assert body.count("[[2]](https://arxiv.org/abs/111/?v=2)") == 1
 
     def test_uncited_rows_get_appended_last(self):
         """A Sources row whose displayed_n is never cited in the body
@@ -605,13 +623,13 @@ class TestEnforceSourcesAscending:
         body = out.split("## Sources")[0]
         assert body.count("[[1]](https://en.wikipedia.org/wiki/Shanghai)") == 2
 
-    def test_dedup_same_url_different_titles_keeps_both(self):
-        """Two Sources rows that share canonical URL but have
-        distinct titles are NOT duplicates — they are different
-        sources that happen to point at the same URL. The enforcer
-        must keep both rows with their own displayed_n, and each
-        body marker must resolve to its own row's title (no
-        张冠李戴).
+    def test_dedup_same_url_different_titles_merges(self):
+        """Two Sources rows that share the SAME byte-URL (even with
+        distinct titles) collapse to a single entry — in research
+        reports the dominant pattern is LLM-hallucinated
+        duplicates of the same source, not two genuinely distinct
+        papers sharing one URL. The body marker for the dropped
+        row's N renumbers onto the winner.
         """
         content = (
             "# R\n\n"
@@ -624,15 +642,11 @@ class TestEnforceSourcesAscending:
             "   URL: https://arxiv.org/abs/111\n\n"
         )
         out = self._enforce(content)
-        sources_tail = out.split("## Sources")[1]
-        displayed = self._displayed_n(out)
-        assert displayed == [1, 2]
-        assert "March paper" in sources_tail
-        assert "July paper" in sources_tail
-        # Body markers keep distinct identities.
+        # Only the winner row survives.
+        assert self._displayed_n(out) == [1]
+        # Body markers from BOTH rows renumber onto the survivor.
         body = out.split("## Sources")[0]
-        assert body.count("[[1]](https://arxiv.org/abs/111)") == 1
-        assert body.count("[[2]](https://arxiv.org/abs/111)") == 1
+        assert body.count("[[1]](https://arxiv.org/abs/111)") == 2
 
     def test_dedup_preserves_body_marker_for_dropped_row(self):
         """When row A and row B share URL + title (LLM duplicate)
