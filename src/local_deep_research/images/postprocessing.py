@@ -500,14 +500,32 @@ def enhance_report_with_images(
             enhanced, mapping, url_to_source=url_to_source
         )
         # The aggregate ``PERSIST chosen=N`` line records how many
-        # images we just wrote to disk; the per-image ``PERSISTED_IMG``
-        # lines below carry the full provenance for each one so the
-        # log can answer "where did this image come from, what was
-        # its alt, which citation references it, what was the disk
-        # route" with a single grep — without re-reading the store.
+        # images we tried to write to disk; the per-image
+        # ``PERSISTED_IMG`` lines below carry the full provenance for
+        # each one so the log can answer "where did this image come
+        # from, what was its alt, which citation references it, what
+        # was the disk route" with a single grep — without re-reading
+        # the store.
+        #
+        # Fix #10: also surface the count of URLs that FAILED to
+        # persist. rewrite_markdown already drops them from the
+        # markdown (REWRITE_DROP reason=no_local_route), but the
+        # caller wants to know at a glance how many survived vs how
+        # many got anti-hotlinked or 404'd. The aggregate
+        # PERSIST_BROKEN_LINKS event makes this greppable.
+        failed_persist = [u for u in chosen if not mapping.get(u)]
+        succeeded_count = len(chosen) - len(failed_persist)
         logger.info(
-            f"[IMG-TRACE] PERSIST research={research_id} chosen={len(chosen)}"
+            f"[IMG-TRACE] PERSIST research={research_id} "
+            f"chosen={len(chosen)} succeeded={succeeded_count} "
+            f"failed={len(failed_persist)}"
         )
+        if failed_persist:
+            logger.warning(
+                f"[IMG-TRACE] PERSIST_BROKEN_LINKS research={research_id} "
+                f"count={len(failed_persist)} "
+                f"urls={failed_persist[:5]!r}"
+            )
         chosen_img_by_url = {
             img.url: img for img in bank.candidates_with_alt()
             if img.url in chosen
