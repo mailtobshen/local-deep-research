@@ -275,19 +275,37 @@ def test_citation_candidates_and_scored_events_emitted(monkeypatch):
             db_session=MagicMock(), enable_images=True, vision_model="",
         )
     log_text = "\n".join(captured)
-    # CITATION_CANDIDATES was emitted with count=2 (both images in
-    # the page, including the empty-alt one — counted here so the
-    # event matches the bank content).
+    # CITATION_CANDIDATES was emitted with count=1 (only the
+    # alt-bearing image; the empty-alt candidate is excluded
+    # from the candidate list and emits CANDIDATE_NO_ALT instead).
     assert "CITATION_CANDIDATES research=r" in log_text
-    assert "cite_num=7 ref_url=https://src/p sec=0 count=2" in log_text
+    assert "cite_num=7 ref_url=https://src/p sec=0 count=1" in log_text
     assert "img_url=https://img/a.jpg" in log_text
-    assert "img_url=https://img/b.jpg" in log_text
-    # CANDIDATE_SCORED emitted for the alt-bearing image only
-    # (the empty-alt one is skipped via CANDIDATE_NO_ALT).
+    # Empty-alt candidate must NOT appear in the CITATION_CANDIDATES
+    # candidate list. It surfaces via the per-image CANDIDATE_NO_ALT
+    # debug event below.
+    candidates_line = [
+        line for line in captured
+        if "CITATION_CANDIDATES research=r" in line
+    ][0]
+    assert "img_url=https://img/b.jpg" not in candidates_line
+    # CANDIDATE_SCORED emitted for the alt-bearing image only.
     scored_count = log_text.count("CANDIDATE_SCORED research=r")
     assert scored_count == 1
-    assert "alt_vec_fp=" in log_text
-    assert "sec_vec_fp=" in log_text
-    assert "img_url=https://img/a.jpg" in log_text.split(
-        "CANDIDATE_SCORED research=r", 1
-    )[1].split("\n", 1)[0]
+    # The event now emits the raw inputs (alt text + section
+    # phrase text) instead of opaque vector fingerprints, so the
+    # log line is human-readable and re-computable.
+    scored_line = [
+        line for line in captured
+        if "CANDIDATE_SCORED research=r" in line
+    ][0]
+    assert "img_alt='Canton Tower'" in scored_line
+    assert "img_url=https://img/a.jpg" in scored_line
+    assert "sec_phrase_text='Canton Tower'" in scored_line
+    assert "alt_vec_fp=" not in scored_line
+    assert "sec_vec_fp=" not in scored_line
+    # The empty-alt candidate is recorded as CANDIDATE_NO_ALT
+    # (debug-level). Since our monkeypatch captures both info and
+    # debug, the event should appear in `captured`.
+    assert "CANDIDATE_NO_ALT" in log_text
+    assert "img_url=https://img/b.jpg" in log_text
