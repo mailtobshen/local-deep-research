@@ -6,26 +6,35 @@ from typing import Any, Dict, List, Tuple
 from urllib.parse import urlparse
 
 _SOURCES_SECTION_PATTERNS = [
+    # Heading variant: ``## Sources`` / ``## References`` / …,
+    # optionally followed by a short suffix (Notes, List, Annotation
+    # Notes, 标注说明, 列表, …). The suffix is bounded to short
+    # CJK/Latin runs to avoid matching sentences that happen to start
+    # with "Sources." or similar in prose. Trailing whitespace is
+    # absorbed by the suffix group so end-of-line still matches.
     re.compile(
-        r"^#{1,3}\s*(?:Sources|References|Bibliography|Citations)",
+        r"^#{1,3}\s*(?:Sources|References|Bibliography|Citations)"
+        r"(?:[\s　]*[\w一-鿿]{1,12})?\s*$",
         re.MULTILINE | re.IGNORECASE,
     ),
+    # Bare heading variant: ``Sources:`` / ``References:`` at line start.
     re.compile(
         r"^(?:Sources|References|Bibliography|Citations):?\s*$",
         re.MULTILINE | re.IGNORECASE,
     ),
 ]
 
-# CJK variants of the sources / references heading. English headings
+# CJK variants of the sources/references heading. English headings
 # (above) miss these because they only accept ASCII tokens. The per-
 # section reports in the wild use ``## 参考文献`` / ``## 参考资料`` /
-# ``## 引用来源`` so we need our own patterns for them. Kept
-# deliberately narrow — must look like a markdown heading (1-3 '#'
-# + space + the heading token) so a sentence containing "参考文献" in
-# running prose is not matched.
+# ``## 引用来源``. LLMs also invent suffixes like ``## 参考文献标注说明``
+# / ``## 参考资料 Notes`` — the optional suffix group below catches
+# them. Bounded to short CJK/Latin runs to avoid false positives on
+# running prose.
 _SOURCES_SECTION_CJK_PATTERNS = [
     re.compile(
-        r"^#{1,3}\s*(?:参考文献|参考资料|引用来源|参考来源|资料来源|引用文献)\s*$",
+        r"^#{1,3}\s*(?:参考文献|参考资料|引用来源|参考来源|资料来源|引用文献)"
+        r"(?:[\s　]*[\w一-鿿]{1,12})?\s*$",
         re.MULTILINE,
     ),
 ]
