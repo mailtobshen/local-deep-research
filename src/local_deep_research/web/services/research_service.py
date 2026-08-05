@@ -463,6 +463,29 @@ def _inject_all_links_of_system(
     return merged
 
 
+def _split_cited_urls(
+    cited_urls: set[str], url_to_html: dict[str, str]
+) -> tuple[set[str], list[str]]:
+    """Partition ``cited_urls`` into (already_covered, still_to_fetch).
+
+    Reads the source of truth ``url_to_html`` directly so the partition
+    matches what ``build_citation_index`` will use downstream. The
+    invariant ``len(covered) + len(gap) == len(cited_urls)`` always
+    holds here (per-URL partition, no skip).
+
+    Fix #3 from
+    docs/superpowers/plans/2026-08-05-image-chain-9-fixes.md.
+    """
+    covered: set[str] = set()
+    gap: list[str] = []
+    for url in cited_urls:
+        if url_to_html.get(url):
+            covered.add(url)
+        else:
+            gap.append(url)
+    return covered, gap
+
+
 def _deferred_image_fill(
     research_id: str,
     *,
@@ -561,26 +584,29 @@ def _deferred_image_fill(
         )
         return 0
 
-    # 2. Restrict to URLs we still need to fetch (idempotent w.r.t.
-    # the LLM-loop text fetches, which set ``html_content`` on the
-    # matching record so the langgraph pre-fetch and the deferred
-    # pass share the same storage convention).
-    urls_to_fetch: list[str] = []
-    url_already_has_html: set[str] = set()
-    for finding in results.get("findings", []) or []:
-        for sr in finding.get("search_results", []) or []:
-            url = sr.get("url") or sr.get("link") or ""
-            if url not in cited_urls:
-                continue
-            existing = sr.get("html_content")
-            if existing:
-                url_already_has_html.add(url)
-            elif url not in urls_to_fetch:
-                urls_to_fetch.append(url)
+    # 2. Compute covered/gap from the same source build_citation_index
+    # used downstream. Pre-#3 the loop iterated search_results[]
+    # only, which gave `already_html=2 / to_fetch=0` even when 9
+    # subsections had fetched cited URLs but only the last survived
+    # the per-subsection reset() (e2ec21ad 2026-08-05).
+    # url_to_html is the truth — covered + gap == len(cited_urls)
+    # always holds.
+    url_already_has_html, urls_to_fetch = _split_cited_urls(
+        cited_urls, url_to_html
+    )
+    # Invariant check — log a loud warning if the inputs are inconsistent
+    # rather than silently producing self-contradicting counts.
+    total = len(cited_urls)
+    cov = len(url_already_has_html)
+    gap = len(urls_to_fetch)
+    if cov + gap != total:
+        logger.warning(
+            f"[IMG-TRACE] DEFERRED_FILL invariant_violated research={research_id} "
+            f"cited={total} covered={cov} gap={gap} sum={cov+gap}"
+        )
     logger.info(
         f"[IMG-TRACE] DEFERRED_FILL research={research_id} "
-        f"cited={len(cited_urls)} already_html={len(url_already_has_html)} "
-        f"to_fetch={len(urls_to_fetch)}"
+        f"cited={total} covered={cov} gap={gap}"
     )
     if not urls_to_fetch:
         return 0
