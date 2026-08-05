@@ -178,9 +178,13 @@ def test_firecrawl_client_forwarded_to_image_store(monkeypatch):
     assert store_mock.call_args.kwargs.get("firecrawl_client") == "FIRE"
 
 
-def test_same_url_cited_in_two_sections_lands_in_first(monkeypatch):
-    """Same source cited in two sections: the image binds to the FIRST
-    section (no last-write-wins overwrite)."""
+def test_same_url_cited_in_two_sections_multi_bind_then_dedup(monkeypatch):
+    """Same source cited in two sections — the multi-bind path
+    inserts the image in BOTH sections, then the post-insert
+    ``_dedupe_images`` pass collapses to first-occurrence-only
+    so the final markdown shows the image exactly once (in
+    Section A, the earlier section).
+    """
     md = (
         "## Section A\n\n[[7]]\n\n"
         "## Section B\n\n[[7]]\n\n"
@@ -208,6 +212,82 @@ def test_same_url_cited_in_two_sections_lands_in_first(monkeypatch):
             research_id="r", clean_markdown=md, results=results,
             db_session=MagicMock(), enable_images=True, vision_model="",
         )
-    # Image lands in Section A (first binding), not Section B.
+    # Final markdown shows the image exactly once, in Section A
+    # (the first-occurrence-wins semantic of _dedupe_images).
+    assert out.count("img/a.jpg") == 1
     before_b, _after_b = out.split("## Section B")
     assert "img/a.jpg" in before_b
+    assert "img/a.jpg" not in _after_b
+
+
+def test_citation_candidates_and_scored_events_emitted(monkeypatch):
+    """The two new IMG-TRACE events — CITATION_CANDIDATES (right
+    after loads_images, with the full candidate list) and
+    CANDIDATE_SCORED (right before _cosine, with the vector
+    fingerprints) — fire for every (cite, section) pair. Log
+    parsers can reconstruct the candidate set and the scoring
+    decision from the grep hits.
+    """
+    md = (
+        "## Section A\n\n[[7]]\n\n"
+        "## 参考文献\n\n[7] S\n   URL: https://src/p\n"
+    )
+    results = {"findings": [{"search_results": [
+        {"url": "https://src/p", "html_content": (
+            '[{"url": "https://img/a.jpg", "alt": "Canton Tower", '
+            '"source_url": "https://src/p", "source_title": "", '
+            '"width": null, "height": null}, '
+            '{"url": "https://img/b.jpg", "alt": "", '
+            '"source_url": "https://src/p", "source_title": "", '
+            '"width": null, "height": null}]'
+        )},
+    ]}]}
+    fake = _fake_model({"Canton Tower": [1.0, 0.0, 0.0, 0.0], "": [0.0, 0.0, 0.0, 0.0]})
+    monkeypatch.setattr(postprocessing.semantic_matcher, "get_model", lambda *a, **k: fake)
+    monkeypatch.setattr(
+        postprocessing.semantic_matcher, "_canonical_section_phrase",
+        lambda heading, entities: "Canton Tower",
+    )
+    # Capture loguru output by monkey-patching the logger's bound
+    # ``info`` method on the postprocessing module. loguru's
+    # ``logger.add(sink)`` approach is unreliable across the test
+    # runner's per-test fixture setup; binding info directly via
+    # monkeypatch.setattr captures every call reliably.
+    captured: list[str] = []
+    real_info = postprocessing.logger.info
+    real_debug = postprocessing.logger.debug
+
+    def _capture_info(message, *a, **k):
+        captured.append(str(message))
+        return real_info(message, *a, **k)
+
+    def _capture_debug(message, *a, **k):
+        captured.append(str(message))
+        return real_debug(message, *a, **k)
+
+    monkeypatch.setattr(postprocessing.logger, "info", _capture_info)
+    monkeypatch.setattr(postprocessing.logger, "debug", _capture_debug)
+    with patch.object(postprocessing, "ImageStore") as store_mock:
+        store_mock.return_value.persist.return_value = {}
+        store_mock.return_value.rewrite_markdown.side_effect = lambda md, m, **k: md
+        postprocessing.enhance_report_with_images(
+            research_id="r", clean_markdown=md, results=results,
+            db_session=MagicMock(), enable_images=True, vision_model="",
+        )
+    log_text = "\n".join(captured)
+    # CITATION_CANDIDATES was emitted with count=2 (both images in
+    # the page, including the empty-alt one — counted here so the
+    # event matches the bank content).
+    assert "CITATION_CANDIDATES research=r" in log_text
+    assert "cite_num=7 ref_url=https://src/p sec=0 count=2" in log_text
+    assert "img_url=https://img/a.jpg" in log_text
+    assert "img_url=https://img/b.jpg" in log_text
+    # CANDIDATE_SCORED emitted for the alt-bearing image only
+    # (the empty-alt one is skipped via CANDIDATE_NO_ALT).
+    scored_count = log_text.count("CANDIDATE_SCORED research=r")
+    assert scored_count == 1
+    assert "alt_vec_fp=" in log_text
+    assert "sec_vec_fp=" in log_text
+    assert "img_url=https://img/a.jpg" in log_text.split(
+        "CANDIDATE_SCORED research=r", 1
+    )[1].split("\n", 1)[0]

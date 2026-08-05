@@ -307,8 +307,16 @@ def test_beijing_scenario_full_pipeline(monkeypatch):
         ln for ln in trace_lines
         if "INSERT research=test-beijing-86132889" in ln
     )
-    assert "placements=18" in insert_line, (
-        f"placements != 18: {insert_line!r}"
+    # Multi-bind semantics: each (url, section) pair emits its own
+    # PLACEMENT, so the count is >= bank size. The post-insert
+    # _dedupe_images pass then collapses any duplicates produced by
+    # the multi-bind. We assert >= 18 and check DEDUPE_SUMMARY below.
+    assert "placements=" in insert_line
+    placements_count = int(
+        insert_line.split("placements=")[1].split()[0]
+    )
+    assert placements_count >= 18, (
+        f"placements {placements_count} < 18 (bank size)"
     )
 
     # 3. status=ok and the returned markdown contains the images.
