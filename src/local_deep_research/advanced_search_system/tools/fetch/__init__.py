@@ -77,110 +77,14 @@ def _register_in_collector(
     return start + 1
 
 
-def _attach_images_if_enabled(
-    collector: Any,
-    url: str,
-    title: str,
-    settings_snapshot: dict | None,
-    enable_js_rendering: bool,
-    *,
-    fetch_mode: str = "full",
-) -> None:
-    """When ``report.enable_images`` is on, extract images for *url* and store
-    them on the collector record's ``html_content`` field.
-
-    No-op (and no extra network request / imports) when the setting is off, so
-    the default text-only fetch path is completely unchanged. Reuses the same
-    ``fetch_content_with_images`` + ``dumps_images`` path as
-    ``full_search._get_full_content`` so the report-stage image enhancer can
-    read images the same way. Failures are logged and never affect the text
-    fetch result the agent sees.
-
-    ``fetch_mode`` selects between immediate and deferred extraction. In
-    ``summary_focus`` / ``summary_focus_query`` modes the text returned to
-    the agent is the LLM-rewritten summary, not the original page HTML —
-    storing the original-page image list under ``html_content`` doesn't
-    line up with what the agent saw, so skip the attach and let the
-    post-report deferred pass fetch the cited URLs' images instead
-    (fix #8 from
-    docs/superpowers/plans/2026-08-05-image-chain-9-fixes.md).
-    """
-    """When ``report.enable_images`` is on, extract images for *url* and store
-    them on the collector record's ``html_content`` field.
-
-    No-op (and no extra network request / imports) when the setting is off, so
-    the default text-only fetch path is completely unchanged. Reuses the same
-    ``fetch_content_with_images`` + ``dumps_images`` path as
-    ``full_search._get_full_content`` so the report-stage image enhancer can
-    read images the same way. Failures are logged and never affect the text
-    fetch result the agent sees.
-    """
-    from local_deep_research.config.thread_settings import (
-        get_bool_setting_from_snapshot,
-    )
-
-    if not get_bool_setting_from_snapshot(
-        "report.enable_images",
-        default=False,
-        settings_snapshot=settings_snapshot,
-    ):
-        return
-
-    # Summary-mode fetches return LLM-rewritten text, not the original
-    # page. The attached html_content wouldn't line up with what the
-    # citation-anchored enhancer expects — let the post-report deferred
-    # pass handle those URLs once we know which ones are actually
-    # cited in the final markdown.
-    if fetch_mode != "full":
-        logger.debug(
-            f"[IMG-TRACE] LANGGRAPH_FILL_SKIP url={url} "
-            f"fetch_mode={fetch_mode} reason=summary_mode"
-        )
-        return
-
-    try:
-        from local_deep_research.images.serialize import dumps_images
-        from local_deep_research.research_library.downloaders.extraction.pipeline import (
-            fetch_content_with_images,
-        )
-
-        logger.debug(
-            f"[IMG-TRACE] LANGGRAPH_FILL_BEGIN url={url} "
-            f"enable_images=true"
-        )
-        # language intentionally omitted — the LangGraph strategy has no
-        # language attribute; pipeline default ("English") only affects text
-        # extraction fallback, not <img> extraction.
-        data = fetch_content_with_images(
-            [url],
-            titles={url: title},
-            settings_snapshot=settings_snapshot,
-            enable_js_rendering=enable_js_rendering,
-        ).get(url)
-        images = data.get("images", []) if data else []
-        logger.info(
-            f"[IMG-TRACE] LANGGRAPH_FILLED src_url={url} images={len(images)}"
-        )
-        before_alt = len(images)
-        filtered = [
-            i for i in images if (i.alt and i.alt.strip())
-        ]
-        dropped = before_alt - len(filtered)
-        if dropped:
-            logger.info(
-                f"[IMG-TRACE] LANGGRAPH_FILL alt_filter dropped={dropped}"
-            )
-        payload = dumps_images(filtered, drop_empty_alt=True)
-        attached = collector.attach_html_content(url, payload)
-        logger.debug(
-            f"[IMG-TRACE] LANGGRAPH_ATTACH url={url} "
-            f"payload_chars={len(payload)} attached={attached}"
-        )
-    except Exception as e:
-        logger.warning(
-            f"[IMG-TRACE] LANGGRAPH_FILL_FAILED url={url} "
-            f"reason={type(e).__name__}: {e}"
-        )
+# Image fetching was historically triggered inside the fetch_content
+# tool (immediate). After fix #5 in
+# docs/superpowers/plans/2026-08-05-image-chain-9-fixes.md, all image
+# fetching is unified into the post-report _deferred_image_fill pass.
+# The langgraph fetch tool now only returns text/URL — image attach
+# would have been a no-op anyway since the LLM never sees the
+# returned image data. See _deferred_image_fill in
+# web/services/research_service.py for the unified path.
 
 
 def _make_full_fetch_tool(
@@ -204,14 +108,8 @@ def _make_full_fetch_tool(
                     cite_idx = _register_in_collector(
                         collector, url, title, content
                     )
-                    _attach_images_if_enabled(
-                        collector,
-                        url,
-                        title,
-                        settings_snapshot,
-                        enable_js,
-                        fetch_mode="full",
-                    )
+                    # Image extraction moved entirely to the
+                    # post-report _deferred_image_fill pass (fix #5).
                     return (
                         f"[{cite_idx}] Title: {title}\nURL: {url}\n\n{content}"
                     )
@@ -303,14 +201,8 @@ def _make_summary_fetch_tool(
                 cite_idx = _register_in_collector(
                     collector, url, title, summary or content
                 )
-                _attach_images_if_enabled(
-                    collector,
-                    url,
-                    title,
-                    settings_snapshot,
-                    enable_js,
-                    fetch_mode=mode_label,
-                )
+                # Image extraction moved entirely to the
+                # post-report _deferred_image_fill pass (fix #5).
                 return f"[{cite_idx}] Title: {title}\nURL: {url}\n\n{summary}"
         except Exception as exc:
             logger.exception("fetch_content tool error")
