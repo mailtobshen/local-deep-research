@@ -70,6 +70,44 @@ class TestFindSourcesSection:
         text = "Content\n### Citations\nSome refs"
         assert find_sources_section(text) == text.index("### Citations")
 
+    # ----- R4: loose heading variants (LLM-invented suffixes) -----
+
+    def test_cjk_heading_with_标注说明_suffix(self):
+        """## 参考文献标注说明 — qwen3.5-opus:9b invented this on Aug 5."""
+        text = "Body\n## 参考文献标注说明\n[1] Foo"
+        assert find_sources_section(text) == text.index("## 参考文献标注说明")
+
+    def test_cjk_heading_with_列表_suffix(self):
+        text = "Body\n## 参考文献 列表\n[1] Foo"
+        assert find_sources_section(text) == text.index("## 参考文献 列表")
+
+    def test_cjk_heading_with_notes_suffix(self):
+        text = "Body\n## 参考资料 Notes\n[1] Foo"
+        assert find_sources_section(text) == text.index("## 参考资料 Notes")
+
+    def test_english_heading_with_notes_suffix(self):
+        text = "Body\n## References Notes\n[1] Foo"
+        assert find_sources_section(text) == text.index("## References Notes")
+
+    def test_english_heading_with_list_suffix(self):
+        text = "Body\n## Sources List\n[1] Foo"
+        assert find_sources_section(text) == text.index("## Sources List")
+
+    def test_cjk_heading_no_space_before_suffix(self):
+        """LLM wrote '## 参考文献标注说明' with no separator."""
+        text = "Body\n## 参考文献标注说明\n[1] Foo"
+        # Should still match
+        assert find_sources_section(text) == text.index("## 参考文献标注说明")
+
+    def test_cjk_running_prose_with_参考文献_not_matched(self):
+        """A sentence mentioning 参考文献 in prose must NOT be matched."""
+        text = "see 参考文献 for details about sources"
+        assert find_sources_section(text) == -1
+
+    def test_cjk_running_prose_with_参考文献标注说明_not_matched(self):
+        text = "请参考 参考文献标注说明 部分获取更多信息。"
+        assert find_sources_section(text) == -1
+
 
 # ---------------------------------------------------------------------------
 # CitationFormatter._extract_domain
