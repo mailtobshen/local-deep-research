@@ -518,6 +518,80 @@ def enforce_sources_ascending_and_drop_orphans(content: str) -> str:
         for n in row["displayed_n"]:
             displayed_n_to_canon_urls.setdefault(n, set()).add(canon)
 
+    # Dedup pass — collapse rows that are CLEARLY duplicates of the
+    # same source. We deliberately use a conservative rule: two
+    # rows are merged ONLY when they share the same canonical URL
+    # AND their titles normalise to the same string. This handles
+    # the common LLM-hallucination case (the model writes the same
+    # entry twice under two different displayed_n with slightly
+    # different titles — both go to the same URL because there is
+    # only one real source) without merging two genuinely distinct
+    # sources that happen to share a URL (rare but real: two
+    # different papers both pointing at the same arxiv preprint).
+    # Rows with distinct titles keep their own identity (no
+    # 张冠李式).
+    dedup_winner: Dict[int, int] = {}
+    _NON_WORD_RE = re.compile(r"\W+")
+    _SOURCE_NR_TRAILING_RE = re.compile(
+        r"\s*\(source nr:\s*[\d,\s]+\)\s*$"
+    )
+
+    def _normalised_title(s: str) -> str:
+        cleaned = _SOURCE_NR_TRAILING_RE.sub("", s or "")
+        cleaned = re.sub(r"^\s*\[[\d,\s]+\]\s*", "", cleaned)
+        return _NON_WORD_RE.sub("", cleaned.lower()).strip()
+
+    def _compute_dedup(body_ns: List[int]) -> Dict[int, int]:
+        rows_by_canon: Dict[str, List[int]] = {}
+
+        for ridx, row in enumerate(rows):
+            if not row["url"]:
+                continue
+            canon = canonical_url_key(row["url"]) or row["url"]
+            rows_by_canon.setdefault(canon, []).append(ridx)
+        result: Dict[int, int] = {}
+        for canon, ridxes in rows_by_canon.items():
+            if len(ridxes) <= 1:
+                continue
+            cluster_of: Dict[int, int] = {}
+            cluster_titles: Dict[int, str] = {}
+            for ridx in ridxes:
+                nt = _normalised_title(rows[ridx]["title"])
+                found = None
+                for cid, ct in cluster_titles.items():
+                    if ct == nt:
+                        found = cid
+                        break
+                if found is None:
+                    cluster_titles[ridx] = nt
+                    cluster_of[ridx] = ridx
+                else:
+                    cluster_of[ridx] = found
+            winners: Dict[int, int] = {}
+            for cid in set(cluster_of.values()):
+                cluster_rows = [
+                    ridx for ridx in ridxes if cluster_of[ridx] == cid
+                ]
+                cluster_displayed_ns = {
+                    n
+                    for ridx in cluster_rows
+                    for n in rows[ridx]["displayed_n"]
+                }
+                best = max(
+                    cluster_rows,
+                    key=lambda r: (
+                        sum(1 for n in body_ns if n in cluster_displayed_ns),
+                        len((rows[r]["title"] or "").strip()),
+                        -r,
+                    ),
+                )
+                winners[cid] = best
+            for ridx in ridxes:
+                winner = winners[cluster_of[ridx]]
+                if ridx != winner:
+                    result[ridx] = winner
+        return result
+
     # Union of all Sources URLs — the URL-level set the user asked
     # for: any body marker whose URL is in this set is recognised
     # as a valid citation (even if its displayed_n points at a
@@ -636,6 +710,12 @@ def enforce_sources_ascending_and_drop_orphans(content: str) -> str:
     # URL, but the LAST row's title wins as the canonical "what does
     # this N reference".
 
+    # First: populate dedup_winner (LLM-duplicate rows that share
+    # both URL and normalised title). The ordered_rows loop below
+    # skips dropped rows so each canonical source gets exactly one
+    # Sources entry.
+    dedup_winner = _compute_dedup(surviving_ns_in_order)
+
     # First pass: map each row's displayed_n to its index, capturing
     # which URLs each N is allowed to match (for body-orphan check).
     row_by_displayed_n: Dict[int, List[int]] = {}
@@ -672,6 +752,11 @@ def enforce_sources_ascending_and_drop_orphans(content: str) -> str:
         if chosen is None or chosen in seen_rows:
             continue
         seen_rows.add(chosen)
+        # Skip rows that the dedup pass has marked as dropped —
+        # their winner already got picked first (winner precedes
+        # loser in body-first-cite order when both are cited).
+        if chosen in dedup_winner:
+            continue
         ordered_rows.append(chosen)
 
     # Third pass: append rows that the body never cited. They keep
@@ -679,19 +764,33 @@ def enforce_sources_ascending_and_drop_orphans(content: str) -> str:
     # so the bibliography is complete. Each gets its own new_n
     # after the cited ones.
     for ridx in range(len(rows)):
-        if ridx not in seen_rows:
-            ordered_rows.append(ridx)
+        if ridx in seen_rows:
+            continue
+        if ridx in dedup_winner:
+            continue
+        ordered_rows.append(ridx)
 
     # Build old_to_new and new_sources_map together.
     old_to_new: Dict[int, int] = {}
     new_sources_map: Dict[int, tuple] = {}
+    # First: every displayed_n of a DEDUPED-DROPPED row maps onto
+    # the winner row's new index. This rewires body [[N]] (where N
+    # is the dropped row's displayed_n) to the surviving row.
+    new_idx_for_ridx = {
+        ridx: new_idx for new_idx, ridx in enumerate(ordered_rows, start=1)
+    }
+    for dropped_ridx, winner_ridx in dedup_winner.items():
+        winner_new = new_idx_for_ridx[winner_ridx]
+        for n in rows[dropped_ridx]["displayed_n"]:
+            old_to_new[n] = winner_new
+    # Then: surviving rows map their own displayed_n to their own
+    # new index. If a displayed_n is shared between a dropped row
+    # and a surviving row (LLM typo), the surviving row's mapping
+    # wins — the dropped row's body markers resolve to the real
+    # source, not the hallucinated twin.
     for new_idx, ridx in enumerate(ordered_rows, start=1):
         row = rows[ridx]
         new_sources_map[new_idx] = (row["title"], row["url"])
-        # Map every displayed_n in this row to new_idx. If the same
-        # displayed_n appears in multiple rows (LLM typo), the
-        # LAST-ordered row wins (later entries override earlier ones
-        # in the dict).
         for n in row["displayed_n"]:
             old_to_new[n] = new_idx
 
