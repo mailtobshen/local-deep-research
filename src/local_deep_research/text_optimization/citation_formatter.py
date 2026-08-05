@@ -490,32 +490,77 @@ def enforce_sources_ascending_and_drop_orphans(content: str) -> str:
     #
     # For plain ``[N]`` tokens we cannot know the URL without a row
     # lookup; rows are keyed by their displayed_n so we build a
-    # displayed_n -> url map (first URL wins, identical to
-    # canon_to_displayed_ns but flattened). Plain tokens whose
-    # displayed_n has no matching URL are also dropped (they would
-    # otherwise survive as a bare ``[N]`` with no link).
-
-    # Flatten: displayed_n -> first url (the same one the body uses).
+    # displayed_n -> url map. CRUCIALLY: each row is an INDEPENDENT
+    # citation — even when two rows share the same canonical URL they
+    # must be treated as different sources with different displayed_n.
+    # Collapsing them would cause 张冠李戴 (the wrong title/content
+    # being linked from the wrong body position). So if a displayed_n
+    # appears in multiple rows (rare but possible — e.g. the LLM
+    # reused the displayed N by accident), the LAST row's URL wins
+    # so the same displayed_n resolves consistently in the body.
     displayed_n_to_url: Dict[int, str] = {}
     for row in rows:
         for n in row["displayed_n"]:
-            if n not in displayed_n_to_url and row["url"]:
+            if row["url"]:
                 displayed_n_to_url[n] = row["url"]
 
-    def url_is_kept(url: str) -> bool:
+    # Build a per-displayed_n set of valid URLs (any of which the
+    # body marker for that N is allowed to match). When multiple
+    # rows share a displayed_n, an orphan check against this set
+    # accepts the marker if ANY of the rows' URLs matches the
+    # marker's URL. This preserves the semantic: "this body marker
+    # is one of these rows" rather than collapsing rows into one.
+    displayed_n_to_canon_urls: Dict[int, set] = {}
+    for row in rows:
+        if not row["url"]:
+            continue
+        canon = canonical_url_key(row["url"]) or row["url"]
+        for n in row["displayed_n"]:
+            displayed_n_to_canon_urls.setdefault(n, set()).add(canon)
+
+    # Union of all Sources URLs — the URL-level set the user asked
+    # for: any body marker whose URL is in this set is recognised
+    # as a valid citation (even if its displayed_n points at a
+    # different row); markers whose URL is NOT in this set are
+    # genuine orphans and get dropped.
+    all_canon_urls: set = set()
+    for row in rows:
+        if not row["url"]:
+            continue
+        canon = canonical_url_key(row["url"]) or row["url"]
+        all_canon_urls.add(canon)
+
+    def url_is_kept(url: str, n: int) -> bool:
+        """Return True if a body marker ``[[n]](url)`` survives the
+        orphan cut. Survives iff at least one Sources row — for ANY
+        displayed_n — accepts a canonical URL matching url. This is
+        the URL-level check the user asked for: a body marker whose
+        URL has no matching Sources entry is dropped; markers whose
+        URL exists in Sources under a *different* displayed_n are
+        kept and get rewired (via the renumber step) to the row that
+        owns the URL.
+        """
         if not url:
             return False
         canon = canonical_url_key(url) or url
-        return canon in canon_to_displayed_ns
+        return canon in all_canon_urls
 
     def replace_hyperlink_drop(match: "re.Match[str]") -> str:
+        n = int(match.group(1))
         url = match.group(2)
-        return match.group(0) if url_is_kept(url) else ""
+        return match.group(0) if url_is_kept(url, n) else ""
 
     def replace_plain_drop(match: "re.Match[str]") -> str:
         n = int(match.group(1))
-        url = displayed_n_to_url.get(n, "")
-        return match.group(0) if url_is_kept(url) else ""
+        # Plain `[N]` cannot carry a URL. Survive iff at least one
+        # Sources row references N — that row's URL is what
+        # ``renumber_citations`` will use to hyperlink the plain
+        # marker in the next step.
+        return (
+            match.group(0)
+            if n in displayed_n_to_canon_urls and displayed_n_to_canon_urls[n]
+            else ""
+        )
 
     new_body = RENUMBER_HYPERLINK_RE.sub(replace_hyperlink_drop, body)
     new_body = RENUMBER_PLAIN_RE.sub(replace_plain_drop, new_body)
@@ -568,90 +613,100 @@ def enforce_sources_ascending_and_drop_orphans(content: str) -> str:
             continue
         add_surviving(n)
 
-    # Build the new Sources list, deduped by canonical URL. The
-    # "first body cite wins" order is determined by walking
-    # surviving_ns_in_order and resolving each N to its canonical URL.
-    # The first displayed_n that maps to that URL is the one we keep.
-    canon_to_new_entry: Dict[str, Dict[str, Any]] = {}
-    new_n = 0
+    # Build the new ordering. CRUCIAL invariant: each Sources row is an
+    # INDEPENDENT entry that maps a body marker to a specific title/
+    # URL/content. Two rows that happen to share the same canonical
+    # URL are NOT duplicates — they are different sources (different
+    # titles, different semantic content). The enforcer must NOT
+    # collapse them, or body marker [[7]] pointing at row 2's content
+    # gets rewired to row 1's title (张冠李戴).
+    #
+    # Strategy:
+    #   - Walk surviving_ns_in_order (body first-cite order).
+    #   - For each old N, find the FIRST row whose displayed_n list
+    #     contains old_n AND whose URL matches (any accepted canon
+    #     for that N). Each row gets its own new_n.
+    #   - old_to_new maps every displayed_n in the surviving row to
+    #     that row's new_n.
+    #
+    # When two rows share BOTH the same canonical URL AND the same
+    # displayed_n (LLM wrote the same number twice for the same
+    # source), we keep only the LAST row — the earlier one is
+    # shadowed in body markers anyway because both point at the same
+    # URL, but the LAST row's title wins as the canonical "what does
+    # this N reference".
+
+    # First pass: map each row's displayed_n to its index, capturing
+    # which URLs each N is allowed to match (for body-orphan check).
+    row_by_displayed_n: Dict[int, List[int]] = {}
+    for ridx, row in enumerate(rows):
+        for n in row["displayed_n"]:
+            row_by_displayed_n.setdefault(n, []).append(ridx)
+
+    # Second pass: walk surviving old Ns and assign new_n in body-
+    # first-cite order.
+    ordered_rows: List[int] = []  # row indices in the new order
+    seen_rows: set = set()
     for old_n in surviving_ns_in_order:
-        url = displayed_n_to_url.get(old_n, "")
-        if not url:
+        # Pick the first matching row whose URL also matches the
+        # body's accepted canon(s) for old_n. If body has no accepted
+        # canon (plain marker with no row URL) just pick the first
+        # matching row.
+        accepted = displayed_n_to_canon_urls.get(old_n, set())
+        candidates = row_by_displayed_n.get(old_n, [])
+        chosen = None
+        for ridx in candidates:
+            r = rows[ridx]
+            if not r["url"]:
+                continue
+            row_canon = canonical_url_key(r["url"]) or r["url"]
+            if not accepted or row_canon in accepted:
+                chosen = ridx
+                break
+        if chosen is None:
+            # Plain marker whose displayed_n has no row URL — pick
+            # any row containing the number so renumber_citations
+            # can rewrite the number; the URL lookup will be empty
+            # so no link is emitted.
+            chosen = candidates[0] if candidates else None
+        if chosen is None or chosen in seen_rows:
             continue
-        canon = canonical_url_key(url) or url
-        if canon in canon_to_new_entry:
-            # Multiple old Ns map to the same canonical URL. The body
-            # markers for this URL all point to the *first* new index
-            # we assigned to that URL, so skip — old_to_new will be
-            # patched below for this duplicate mapping.
-            continue
-        # Find the row whose displayed_n matches old_n (or the first
-        # row that contains old_n in its displayed_n list).
-        row = next(
-            (
-                r
-                for r in rows
-                if old_n in r["displayed_n"] and r["url"]
-                and (canonical_url_key(r["url"]) or r["url"]) == canon
-            ),
-            None,
-        )
-        if row is None:
-            continue
-        new_n += 1
-        canon_to_new_entry[canon] = {
-            "new_n": new_n,
-            "row": row,
-        }
+        seen_rows.add(chosen)
+        ordered_rows.append(chosen)
 
-    # Build old_to_new for renumber_citations: every displayed_n that
-    # appeared in any row whose canonical URL made it into the new
-    # block must map to that block's new index. Multiple displayed_ns
-    # sharing the same canonical URL collapse to the same new index.
+    # Third pass: append rows that the body never cited. They keep
+    # their own displayed_n in the new block (in original row order)
+    # so the bibliography is complete. Each gets its own new_n
+    # after the cited ones.
+    for ridx in range(len(rows)):
+        if ridx not in seen_rows:
+            ordered_rows.append(ridx)
+
+    # Build old_to_new and new_sources_map together.
     old_to_new: Dict[int, int] = {}
-    for canon, entry in canon_to_new_entry.items():
-        new_idx = entry["new_n"]
-        # All displayed_ns that map to this canon collapse here.
-        for row in rows:
-            if not row["url"]:
-                continue
-            row_canon = canonical_url_key(row["url"]) or row["url"]
-            if row_canon != canon:
-                continue
-            for n in row["displayed_n"]:
-                if n not in old_to_new:
-                    old_to_new[n] = new_idx
-
-    # Also include displayed_ns that did NOT survive the orphan cut
-    # but whose row IS in the new block (they were in Sources but
-    # never cited in body) — they have no body markers to renumber
-    # anyway, but old_to_new needs the row's primary displayed_n so
-    # that ``renumber_citations`` doesn't leave a stray `[N]` lying
-    # around. Loop over canon_to_new_entry and pick each row's first
-    # displayed_n if not already in old_to_new.
-    for canon, entry in canon_to_new_entry.items():
-        new_idx = entry["new_n"]
-        first_n = entry["row"]["displayed_n"][0]
-        if first_n not in old_to_new:
-            old_to_new[first_n] = new_idx
+    new_sources_map: Dict[int, tuple] = {}
+    for new_idx, ridx in enumerate(ordered_rows, start=1):
+        row = rows[ridx]
+        new_sources_map[new_idx] = (row["title"], row["url"])
+        # Map every displayed_n in this row to new_idx. If the same
+        # displayed_n appears in multiple rows (LLM typo), the
+        # LAST-ordered row wins (later entries override earlier ones
+        # in the dict).
+        for n in row["displayed_n"]:
+            old_to_new[n] = new_idx
 
     # Step 3: rewrite body markers using the existing renumber helper.
-    # Build new_sources (new_idx -> (title, url)) so plain `[N]`
-    # tokens get hyperlinked too.
-    new_sources_map: Dict[int, tuple] = {}
-    for canon, entry in canon_to_new_entry.items():
-        row = entry["row"]
-        new_sources_map[entry["new_n"]] = (row["title"], row["url"])
     new_body = renumber_citations(new_body, new_sources_map, old_to_new)
 
-    # Step 4: rebuild the Sources block. Emit one entry per canonical
-    # URL that made it through, in body-first-cite order. Strip any
-    # existing ``(source nr: ...)`` suffix from the parsed title so
-    # the rebuilt entry has exactly one such suffix — otherwise the
-    # original's `(source nr: X)` gets concatenated with the new one
-    # producing e.g. ``(source nr: 60) (source nr: 47)``. Preserve the
-    # original heading text (``## Sources`` / ``## 参考文献`` / …) so
-    # CJK reports keep their heading style after the rewrite.
+    # Step 4: rebuild the Sources block. Emit ONE entry per row that
+    # made it through, in body-first-cite order (uncited rows
+    # appended last). Strip any existing ``(source nr: ...)`` suffix
+    # from the parsed title so the rebuilt entry has exactly one such
+    # suffix — otherwise the original's `(source nr: X)` gets
+    # concatenated with the new one producing e.g.
+    # ``(source nr: 60) (source nr: 47)``. Preserve the original
+    # heading text (``## Sources`` / ``## 参考文献`` / …) so CJK
+    # reports keep their heading style after the rewrite.
     heading_match = re.match(r"^#{1,6}\s*\S[^\n]*", sources_only)
     heading_text = (
         heading_match.group(0).rstrip()
@@ -660,9 +715,8 @@ def enforce_sources_ascending_and_drop_orphans(content: str) -> str:
     )
     rebuilt_lines: List[str] = [heading_text, ""]
     source_nr_re = re.compile(r"\s*\(source nr:\s*[\d,\s]+\)\s*$")
-    for canon, entry in canon_to_new_entry.items():
-        new_idx = entry["new_n"]
-        row = entry["row"]
+    for new_idx, ridx in enumerate(ordered_rows, start=1):
+        row = rows[ridx]
         title = source_nr_re.sub("", row["title"] or "Untitled").strip()
         url = row["url"]
         rebuilt_lines.append(f"[{new_idx}] {title} (source nr: {new_idx})")
