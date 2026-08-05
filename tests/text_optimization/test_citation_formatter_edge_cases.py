@@ -498,3 +498,84 @@ class TestEnforceSourcesAscending:
         assert "Foo" in out
         assert "foo.example" in out
 
+    def test_no_zhang_guan_li_dai_with_duplicate_urls(self):
+        """REGRESSION GUARD — 张冠李戴 prevention.
+
+        When two distinct Sources rows happen to share the same
+        canonical URL, the enforcer MUST NOT collapse them into one
+        and MUST NOT rewire a body marker from one row to the
+        other. Each row keeps its own displayed index and its own
+        title; body markers resolve to the row whose URL they
+        actually point at.
+        """
+        content = (
+            "# R\n\n"
+            "First paper about March [[3]](https://arxiv.org/abs/111).\n"
+            "Second paper about July [[7]](https://arxiv.org/abs/111).\n\n"
+            "## Sources\n\n"
+            "[3] March paper - Authors A, B (source nr: 3)\n"
+            "   URL: https://arxiv.org/abs/111\n\n"
+            "[7] July paper - Authors C, D (source nr: 7)\n"
+            "   URL: https://arxiv.org/abs/111\n\n"
+        )
+        out = self._enforce(content)
+        # Both rows preserved as distinct entries.
+        assert "March paper" in out
+        assert "July paper" in out
+        # Body [[3]] must NOT point at the July-paper row's content.
+        # The Sources block now lists [[new]] in body-first-cite order;
+        # the FIRST body cite is [[3]] (March), so it becomes new [1].
+        # The SECOND body cite is [[7]] (July), it becomes new [2].
+        # Critically, the body markers are distinct:
+        first_block = out.split("## Sources")[0]
+        assert first_block.count("[[1]](https://arxiv.org/abs/111)") == 1
+        assert first_block.count("[[2]](https://arxiv.org/abs/111)") == 1
+        # Both Sources entries present.
+        sources_tail = out.split("## Sources")[1]
+        assert sources_tail.count("https://arxiv.org/abs/111") == 2
+
+    def test_no_zhang_guan_li_dai_with_trailing_slash(self):
+        """Body URL with trailing slash matches Sources URL without;
+        the body marker is preserved (not orphan-dropped), the
+        Sources row is preserved, and the (renumbered) body marker
+        points at the right Sources row.
+        """
+        content = (
+            "# R\n\n"
+            "Real [[5]](https://example.com/page/).\n"
+            "And another [[9]](https://example.com/page/) about something else.\n\n"
+            "## Sources\n\n"
+            "[5] Foo (source nr: 5)\n   URL: https://example.com/page\n\n"
+            "[9] Bar (source nr: 9)\n   URL: https://example.com/page\n\n"
+        )
+        out = self._enforce(content)
+        body = out.split("## Sources")[0]
+        assert "Foo" in out
+        assert "Bar" in out
+        # Both body markers preserved and re-numbered independently.
+        assert body.count("[[1]](https://example.com/page") == 1
+        assert body.count("[[2]](https://example.com/page") == 1
+
+    def test_uncited_rows_get_appended_last(self):
+        """A Sources row whose displayed_n is never cited in the body
+        is still preserved in the rebuilt block (appended after cited
+        rows, in original row order). Its new number continues the
+        ascending sequence."""
+        content = (
+            "# R\n\n"
+            "Cite [3].\n\n"
+            "## Sources\n\n"
+            "[3] Foo\n   URL: https://foo.example\n\n"
+            "[7] Uncited\n   URL: https://bar.example\n\n"
+        )
+        out = self._enforce(content)
+        sources_tail = out.split("## Sources")[1]
+        # Foo renumbers to [1]; Uncited (uncited) gets [2] appended.
+        assert "[1] Foo" in sources_tail
+        assert sources_tail.index("[1] Foo") < sources_tail.index("[2] Uncited")
+        assert "[2] Uncited" in sources_tail
+        # The body must NOT have a [[2]] since [7] was uncited and
+        # the enforcer never writes body markers for uncited rows.
+        body = out.split("## Sources")[0]
+        assert "[[2]]" not in body
+
