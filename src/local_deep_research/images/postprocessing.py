@@ -268,13 +268,21 @@ def enhance_report_with_images(
                 # Emit per-(cite, section) candidate list BEFORE we
                 # run any scoring. Useful for post-mortem analysis:
                 # how many images did each cited URL yield, and what
-                # were their alt/source_url tuples. Includes empty-alt
-                # candidates here (they'll be skipped below) so the
-                # event matches the actual bank content. Field schema:
-                # cite_num, ref_url, sec, count, then per-image
+                # were their alt/source_url tuples. Only candidates
+                # with a non-empty alt are listed — they are the only
+                # ones that will go on to the CANDIDATE_SCORED /
+                # _KEPT / _DROPPED pipeline below. Empty-alt
+                # candidates are emitted separately as
+                # CANDIDATE_NO_ALT (debug). Field schema: cite_num,
+                # ref_url, sec, count, then per-image
                 # img_alt / img_url / img_source_url.
                 cand_lines = []
                 for cand in imgs:
+                    if not (cand.alt and cand.alt.strip()):
+                        # Empty-alt candidate — skip the verbose
+                        # CITATION_CANDIDATES line; the per-image
+                        # CANDIDATE_NO_ALT event below records it.
+                        continue
                     cand_lines.append(
                         f"img_alt={(cand.alt or '')[:120]!r} "
                         f"img_url={cand.url} "
@@ -283,8 +291,8 @@ def enhance_report_with_images(
                 logger.info(
                     f"[IMG-TRACE] CITATION_CANDIDATES research={research_id} "
                     f"cite_num={num} ref_url={url} sec={sidx} "
-                    f"count={len(imgs)} "
-                    + " | ".join(cand_lines)
+                    f"count={len(cand_lines)} "
+                    + ("| ".join(cand_lines) if cand_lines else "(no_alt_candidates)")
                 )
                 kept = 0
                 dropped_low = 0
