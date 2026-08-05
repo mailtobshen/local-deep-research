@@ -436,6 +436,33 @@ def _open_image_enhancer_session(username, settings_snapshot):
     with get_user_db_session(username) as db_session:
         yield args, db_session
 
+
+def _inject_all_links_of_system(
+    results: dict, system: object | None
+) -> dict:
+    """Return a shallow copy of ``results`` with ``all_links_of_system`` merged.
+
+    In detailed mode, the deferred pass only sees the LAST subsection's
+    ``search_results[]`` because ``langgraph_agent_strategy.collector.reset()``
+    clears ``_results`` between subsections. ``all_links_of_system`` is the
+    cross-subsection cumulative list that survives ``reset()``. Without it,
+    images extracted by ``_attach_images_if_enabled`` during earlier
+    subsections never reach ``build_citation_index`` and the deferred
+    pass's ``to_fetch=0`` short-circuit fires (e.g. e2ec21ad 2026-08-05).
+
+    Part of #1+#6 fix from
+    docs/superpowers/plans/2026-08-05-image-chain-9-fixes.md.
+    """
+    if system is None:
+        return results
+    cumulative = getattr(system, "all_links_of_system", None)
+    if not cumulative:
+        return results
+    merged = dict(results)
+    merged["all_links_of_system"] = list(cumulative)
+    return merged
+
+
 def _deferred_image_fill(
     research_id: str,
     *,
@@ -1517,10 +1544,20 @@ def run_research_process(research_id, query, mode, **kwargs):
                                 # and dominated research walltime
                                 # (~7 h on the 2026-08-03 Shanghai
                                 # run).
+                                #
+                                # Inject the cross-subsection
+                                # cumulative all_links_of_system
+                                # so build_citation_index sees
+                                # fetch results from every
+                                # subsection, not just the last
+                                # one (fix #1+#6).
+                                results_for_fill = _inject_all_links_of_system(
+                                    results, system
+                                )
                                 _deferred_image_fill(
                                     research_id,
                                     final_markdown=clean_markdown,
-                                    results=results,
+                                    results=results_for_fill,
                                     settings_snapshot=settings_snapshot,
                                     progress_callback=progress_callback,
                                 )
@@ -1909,10 +1946,18 @@ def run_research_process(research_id, query, mode, **kwargs):
                         # fill that previously added ~7 h of
                         # Playwright rendering to a 7-round
                         # Shanghai run.
+                        #
+                        # Inject the cross-subsection cumulative
+                        # all_links_of_system so the deferred pass
+                        # sees fetch results from every subsection
+                        # (fix #1+#6).
+                        results_for_fill = _inject_all_links_of_system(
+                            results, search_system
+                        )
                         _deferred_image_fill(
                             research_id,
                             final_markdown=final_report["content"],
-                            results=results,
+                            results=results_for_fill,
                             settings_snapshot=settings_snapshot,
                             progress_callback=progress_callback,
                         )

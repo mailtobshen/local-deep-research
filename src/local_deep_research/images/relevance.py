@@ -677,6 +677,18 @@ def build_citation_index(
             if url and html and url not in url_to_html:
                 url_to_html[url] = html
 
+    # Merge in the cross-subsection cumulative list (fix #1+#6).
+    # In detailed mode the langgraph collector's ``_results`` is reset
+    # between subsections, but ``all_links_of_system`` is intentionally
+    # preserved across resets. The deferred pass passes this list in
+    # ``results["all_links_of_system"]`` so url_to_html covers every
+    # subsection's fetch output, not just the last one.
+    for r in results.get("all_links_of_system") or []:
+        url = r.get("link") or r.get("url")
+        html = r.get("html_content")
+        if url and html and url not in url_to_html:
+            url_to_html[url] = html
+
     return num_to_url, section_to_nums, url_to_html
 
 
