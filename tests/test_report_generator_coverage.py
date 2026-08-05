@@ -252,14 +252,29 @@ class TestFormatFinalReportDetailed:
         assert "Present content" in content
 
     def test_sources_section_appended_at_end(self, generator, _patch_importlib):
-        """Final report ends with ## Sources followed by formatted links."""
+        """Final report ends with ## Sources block.
+
+        R1: the fallback path now builds Sources directly from
+        new_sources keyed by NEW index (1..N contiguous) so body
+        ``[[N]]`` ↔ Sources ``[N]`` invariant holds. With body
+        containing ``[[N]](url)`` markers and matching all_links,
+        the Sources block must end with the URL line of the
+        renumbered entry.
+        """
         structure = [{"name": "A", "subsections": []}]
-        sections = {"A": "body"}
+        sections = {"A": "Foo [[1]](http://a.com)"}
+
+        # Populate all_links so the fallback path has URL metadata.
+        generator.search_system.all_links_of_system = [
+            {"link": "http://a.com", "title": "Link1"},
+        ]
 
         report = generator._format_final_report(sections, structure, "q")
         content = report["content"]
 
-        assert content.rstrip().endswith("- [Link1](http://a.com)")
+        # Body and Sources must coexist; Sources at the end with URL.
+        assert "## Sources" in content
+        assert content.rstrip().endswith("URL: http://a.com")
 
     def test_research_summary_present(self, generator, _patch_importlib):
         """Report contains '# Research Summary' section."""
