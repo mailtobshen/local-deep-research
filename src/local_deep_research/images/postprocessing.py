@@ -257,6 +257,13 @@ def enhance_report_with_images(
             if not nums or sidx not in section_vecs:
                 continue
             sec_vec = section_vecs[sidx]
+            # Pre-canonicalised section phrase (heading + entities
+            # joined with spaces). Captured here so the CANDIDATE_SCORED
+            # event below can log the original text the model encoded
+            # for this section, instead of an opaque hash. Truncated
+            # to 200 chars so a long entity list doesn't blow up the
+            # log.
+            sec_phrase_text = (section_phrases.get(sidx) or "")[:200]
             for num in nums:
                 url = num_to_url.get(num)
                 html = url_to_html.get(url) if url else None
@@ -306,26 +313,23 @@ def enhance_report_with_images(
                         continue
                     raw = model.encode([img.alt], normalize_embeddings=True)[0]
                     alt_vec = list(raw.tolist()) if hasattr(raw, "tolist") else list(raw)
-                    # Emit per-image vector pair BEFORE the cosine
-                    # call. Useful for "why did this drop" debugging:
-                    # consumers can re-run the cosine offline and
-                    # inspect both vectors. We do NOT log the full
-                    # 768-dim float vector (would explode log size);
-                    # we log a deterministic fingerprint instead — a
-                    # short hash of the alt text + the cosine result
-                    # in the CANDIDATE_KEPT/DROPPED lines below gives
-                    # enough to correlate. Built-in ``hash()`` is fine
-                    # here (no security requirement; we just need a
-                    # short, deterministic, log-friendly token).
-                    alt_fp = f"{hash((img.alt or '')) & 0xFFFFFFFF:08x}"
-                    sec_fp = f"{hash(repr(sec_vec)) & 0xFFFFFFFF:08x}"
+                    # Emit the raw inputs that feed the cosine call:
+                    # the image's alt text and the section's canonical
+                    # phrase text (heading + entities joined). The
+                    # vector itself is NOT logged — loguru lines
+                    # would explode to many KB per image — but the
+                    # exact strings let consumers re-run the cosine
+                    # offline or audit whether the gate picked the
+                    # right section for the right image. Both fields
+                    # are truncated to 200 chars to keep log lines
+                    # compact.
                     logger.info(
                         f"[IMG-TRACE] CANDIDATE_SCORED research={research_id} "
                         f"img_alt={(img.alt or '')[:200]!r} "
                         f"img_url={img.url} "
                         f"img_source_url={img.source_url} "
                         f"cite_num={num} ref_url={url} sec={sidx} "
-                        f"alt_vec_fp={alt_fp} sec_vec_fp={sec_fp}"
+                        f"sec_phrase_text={sec_phrase_text!r}"
                     )
                     score = _cosine(alt_vec, sec_vec)
                     if score >= threshold:
