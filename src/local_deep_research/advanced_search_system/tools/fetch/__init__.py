@@ -111,6 +111,10 @@ def _attach_images_if_enabled(
             fetch_content_with_images,
         )
 
+        logger.debug(
+            f"[IMG-TRACE] LANGGRAPH_FILL_BEGIN url={url} "
+            f"enable_images=true"
+        )
         # language intentionally omitted — the LangGraph strategy has no
         # language attribute; pipeline default ("English") only affects text
         # extraction fallback, not <img> extraction.
@@ -121,9 +125,29 @@ def _attach_images_if_enabled(
             enable_js_rendering=enable_js_rendering,
         ).get(url)
         images = data.get("images", []) if data else []
-        collector.attach_html_content(url, dumps_images(images))
-    except Exception:
-        logger.exception("fetch_content image enhancement failed")
+        logger.info(
+            f"[IMG-TRACE] LANGGRAPH_FILLED src_url={url} images={len(images)}"
+        )
+        before_alt = len(images)
+        filtered = [
+            i for i in images if (i.alt and i.alt.strip())
+        ]
+        dropped = before_alt - len(filtered)
+        if dropped:
+            logger.info(
+                f"[IMG-TRACE] LANGGRAPH_FILL alt_filter dropped={dropped}"
+            )
+        payload = dumps_images(filtered, drop_empty_alt=True)
+        attached = collector.attach_html_content(url, payload)
+        logger.debug(
+            f"[IMG-TRACE] LANGGRAPH_ATTACH url={url} "
+            f"payload_chars={len(payload)} attached={attached}"
+        )
+    except Exception as e:
+        logger.warning(
+            f"[IMG-TRACE] LANGGRAPH_FILL_FAILED url={url} "
+            f"reason={type(e).__name__}: {e}"
+        )
 
 
 def _make_full_fetch_tool(
