@@ -518,32 +518,38 @@ def enforce_sources_ascending_and_drop_orphans(content: str) -> str:
         for n in row["displayed_n"]:
             displayed_n_to_canon_urls.setdefault(n, set()).add(canon)
 
-    # Dedup pass — collapse rows that are CLEARLY duplicates of the
-    # same source. We deliberately use a conservative rule: two
-    # rows are merged ONLY when they share the same canonical URL
-    # AND their titles normalise to the same string. This handles
-    # the common LLM-hallucination case (the model writes the same
-    # entry twice under two different displayed_n with slightly
-    # different titles — both go to the same URL because there is
-    # only one real source) without merging two genuinely distinct
-    # sources that happen to share a URL (rare but real: two
-    # different papers both pointing at the same arxiv preprint).
-    # Rows with distinct titles keep their own identity (no
-    # 张冠李式).
+    # Dedup pass — collapse every pair of rows whose URLs
+    # canonicalise to the same string. Two rows whose URLs differ
+    # only in trailing slash or in utm_* / fbclid / gclid / etc.
+    # parameters ARE considered the same source (canonical
+    # equality). URLs that differ in path or in non-tracking
+    # query parameters (e.g. arxiv /abs/111 vs /abs/111/?v=2)
+    # are NOT collapsed — those are genuinely different
+    # resources. Winner selection: 1) the row whose displayed_n
+    # is cited most in the body, 2) the longest non-empty title,
+    # 3) the earliest row index. The dropped row's displayed_n
+    # is rewired to the winner's new index so body markers
+    # pointing at the dropped N continue to resolve correctly.
     dedup_winner: Dict[int, int] = {}
-    _NON_WORD_RE = re.compile(r"\W+")
-    _SOURCE_NR_TRAILING_RE = re.compile(
-        r"\s*\(source nr:\s*[\d,\s]+\)\s*$"
-    )
-
-    def _normalised_title(s: str) -> str:
-        cleaned = _SOURCE_NR_TRAILING_RE.sub("", s or "")
-        cleaned = re.sub(r"^\s*\[[\d,\s]+\]\s*", "", cleaned)
-        return _NON_WORD_RE.sub("", cleaned.lower()).strip()
 
     def _compute_dedup(body_ns: List[int]) -> Dict[int, int]:
+        # Two rows are duplicates iff their URLs canonicalise to
+        # the same string (scheme/host lowercased, default ports
+        # stripped, fragment stripped, tracking query params
+        # stripped, trailing slash on non-root paths stripped).
+        # This is the SAME canonicalisation the orphan-detection
+        # and renumber paths already use, so dedupe runs on the
+        # same key the rest of the pipeline recognises. URLs that
+        # differ only in trailing slash or in utm_* / fbclid /
+        # gclid / etc. ARE considered the same source — the LLM
+        # wrote it twice with slightly different formatting.
+        # URLs that differ in path or in non-tracking query
+        # parameters (e.g. arxiv /abs/111 vs /abs/111/?v=2) are
+        # NOT collapsed — those are genuinely different resources.
+        # Winner selection: 1) row whose displayed_n is cited
+        # most in the body, 2) longest non-empty title, 3)
+        # earliest row.
         rows_by_canon: Dict[str, List[int]] = {}
-
         for ridx, row in enumerate(rows):
             if not row["url"]:
                 continue
@@ -553,44 +559,24 @@ def enforce_sources_ascending_and_drop_orphans(content: str) -> str:
         for canon, ridxes in rows_by_canon.items():
             if len(ridxes) <= 1:
                 continue
-            cluster_of: Dict[int, int] = {}
-            cluster_titles: Dict[int, str] = {}
+            cluster_displayed_ns = {
+                n
+                for ridx in ridxes
+                for n in rows[ridx]["displayed_n"]
+            }
+            winner = max(
+                ridxes,
+                key=lambda r: (
+                    sum(1 for n in body_ns if n in cluster_displayed_ns),
+                    len((rows[r]["title"] or "").strip()),
+                    -r,
+                ),
+            )
             for ridx in ridxes:
-                nt = _normalised_title(rows[ridx]["title"])
-                found = None
-                for cid, ct in cluster_titles.items():
-                    if ct == nt:
-                        found = cid
-                        break
-                if found is None:
-                    cluster_titles[ridx] = nt
-                    cluster_of[ridx] = ridx
-                else:
-                    cluster_of[ridx] = found
-            winners: Dict[int, int] = {}
-            for cid in set(cluster_of.values()):
-                cluster_rows = [
-                    ridx for ridx in ridxes if cluster_of[ridx] == cid
-                ]
-                cluster_displayed_ns = {
-                    n
-                    for ridx in cluster_rows
-                    for n in rows[ridx]["displayed_n"]
-                }
-                best = max(
-                    cluster_rows,
-                    key=lambda r: (
-                        sum(1 for n in body_ns if n in cluster_displayed_ns),
-                        len((rows[r]["title"] or "").strip()),
-                        -r,
-                    ),
-                )
-                winners[cid] = best
-            for ridx in ridxes:
-                winner = winners[cluster_of[ridx]]
                 if ridx != winner:
                     result[ridx] = winner
         return result
+
 
     # Union of all Sources URLs — the URL-level set the user asked
     # for: any body marker whose URL is in this set is recognised
