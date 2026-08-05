@@ -579,3 +579,82 @@ class TestEnforceSourcesAscending:
         body = out.split("## Sources")[0]
         assert "[[2]]" not in body
 
+    def test_dedup_same_url_same_title_merges(self):
+        """Two Sources rows that share BOTH canonical URL AND
+        normalised title are the LLM-hallucination duplicate case:
+        the same source written twice. They collapse into a single
+        Sources entry, and every body marker pointing at either
+        row's displayed_n renumbers to the surviving entry.
+        """
+        content = (
+            "# R\n\n"
+            "First [[3]](https://en.wikipedia.org/wiki/Shanghai) "
+            "and again [[7]](https://en.wikipedia.org/wiki/Shanghai).\n\n"
+            "## Sources\n\n"
+            "[3] Shanghai - Wikipedia\n"
+            "   URL: https://en.wikipedia.org/wiki/Shanghai\n\n"
+            "[7] Shanghai - Wikipedia\n"
+            "   URL: https://en.wikipedia.org/wiki/Shanghai\n\n"
+        )
+        out = self._enforce(content)
+        sources_tail = out.split("## Sources")[1]
+        # Only one Sources entry survives.
+        displayed = self._displayed_n(out)
+        assert displayed == [1]
+        # Both body markers renumber to the surviving entry.
+        body = out.split("## Sources")[0]
+        assert body.count("[[1]](https://en.wikipedia.org/wiki/Shanghai)") == 2
+
+    def test_dedup_same_url_different_titles_keeps_both(self):
+        """Two Sources rows that share canonical URL but have
+        distinct titles are NOT duplicates — they are different
+        sources that happen to point at the same URL. The enforcer
+        must keep both rows with their own displayed_n, and each
+        body marker must resolve to its own row's title (no
+        张冠李戴).
+        """
+        content = (
+            "# R\n\n"
+            "March [[3]](https://arxiv.org/abs/111). "
+            "July [[7]](https://arxiv.org/abs/111).\n\n"
+            "## Sources\n\n"
+            "[3] March paper - Authors A, B\n"
+            "   URL: https://arxiv.org/abs/111\n\n"
+            "[7] July paper - Authors C, D\n"
+            "   URL: https://arxiv.org/abs/111\n\n"
+        )
+        out = self._enforce(content)
+        sources_tail = out.split("## Sources")[1]
+        displayed = self._displayed_n(out)
+        assert displayed == [1, 2]
+        assert "March paper" in sources_tail
+        assert "July paper" in sources_tail
+        # Body markers keep distinct identities.
+        body = out.split("## Sources")[0]
+        assert body.count("[[1]](https://arxiv.org/abs/111)") == 1
+        assert body.count("[[2]](https://arxiv.org/abs/111)") == 1
+
+    def test_dedup_preserves_body_marker_for_dropped_row(self):
+        """When row A and row B share URL + title (LLM duplicate)
+        and the body cites BOTH A and B, all body markers must
+        renumber to the surviving row — none get orphaned because
+        of the dedup. The renumber step maps the dropped row's
+        displayed_n onto the winner's new index.
+        """
+        content = (
+            "# R\n\n"
+            "First cite [[3]](https://example.com/page). "
+            "Then cite [[7]](https://example.com/page). "
+            "And one more time [[9]](https://example.com/page).\n\n"
+            "## Sources\n\n"
+            "[3] Same Source\n   URL: https://example.com/page\n\n"
+            "[7] Same Source\n   URL: https://example.com/page\n\n"
+            "[9] Same Source\n   URL: https://example.com/page\n\n"
+        )
+        out = self._enforce(content)
+        # All three body markers collapse to the single surviving [1].
+        body = out.split("## Sources")[0]
+        assert body.count("[[1]](https://example.com/page)") == 3
+        # Single Sources entry.
+        assert self._displayed_n(out) == [1]
+
