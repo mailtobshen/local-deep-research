@@ -1,4 +1,4 @@
-"""Test that the trailing ``## Sources`` block built inside
+"""Test that the trailing Sources block built inside
 `_format_final_report` is strictly ascending 1..N in body-first-cite
 order for both branches (per-subsection docs captured vs back-compat).
 
@@ -13,9 +13,15 @@ strictly ascending in every case.
 
 from __future__ import annotations
 
+import re
 from unittest.mock import MagicMock
 
 from langchain_core.documents import Document
+
+# The Sources heading is locale-driven; default report.language=zh-CN
+# emits `## 参考文献`, English users get `## Sources`. Either is a
+# valid marker — tests below resolve whichever appears in the output.
+_SOURCES_HEADINGS = ("## Sources", "## 参考文献")
 
 
 def _make_generator():
@@ -41,10 +47,20 @@ def _basic_structure():
     ]
 
 
+def _sources_tail(content: str) -> str:
+    """Return the substring starting at the Sources heading."""
+    for marker in _SOURCES_HEADINGS:
+        if marker in content:
+            return content[content.index(marker) :]
+    raise AssertionError(
+        f"no Sources heading found in content (searched {_SOURCES_HEADINGS})"
+    )
+
+
 class TestReportSourcesAscending:
-    """The trailing ``## Sources`` block built by `_format_final_report`
-    must display bracket numbers strictly ``[1],[2],...,[N]`` ascending
-    in body-first-cite order, regardless of how the upstream
+    """The trailing Sources block built by `_format_final_report` must
+    display bracket numbers strictly ``[1],[2],...,[N]`` ascending in
+    body-first-cite order, regardless of how the upstream
     ``all_links_of_system`` ordered the URLs (langgraph's original
     collector produced ``[6],[1],[2],[8],[4]...`` for typical
     multi-iteration reports).
@@ -52,7 +68,7 @@ class TestReportSourcesAscending:
 
     def test_sources_block_is_strictly_ascending_zh(self):
         """Back-compat (no per-subsection docs captured) path rebuilds
-        a strictly ascending ## 参考文献 block."""
+        a strictly ascending Sources block in body-first-cite order."""
         gen = _make_generator()
         # Simulate a langgraph-style ``all_links_of_system`` whose
         # displayed_n is in the user's reported buggy order.
@@ -73,19 +89,15 @@ class TestReportSourcesAscending:
             ),
         }
         report = gen._format_final_report(sections, _basic_structure(), "示例")
-        import re
-
         content = report["content"]
-        marker = "## Sources"
-        assert marker in content
-        tail = content[content.index(marker) :]
+        tail = _sources_tail(content)
         nums = [int(x) for x in re.findall(r"^\[(\d+)\]", tail, re.MULTILINE)]
         assert nums == list(range(1, len(nums) + 1))
 
     def test_sources_block_is_strictly_ascending_when_docs_captured(self):
         """Per-subsection-docs-captured path also produces ascending
-        ``## Sources`` — including the bug-triggering case where the
-        body cites [[2]] BEFORE [[1]] (so old_to_new maps 1↔2
+        Sources — including the bug-triggering case where the body
+        cites [[2]] BEFORE [[1]] (so old_to_new maps 1↔2
         differently) and the per-subsection-doc insertion order
         would otherwise leak into the displayed block."""
         gen = _make_generator()
@@ -124,11 +136,7 @@ class TestReportSourcesAscending:
             ),
         }
         report = gen._format_final_report(sections, _basic_structure(), "示例")
-        import re
-
         content = report["content"]
-        marker = "## Sources"
-        assert marker in content
-        tail = content[content.index(marker) :]
+        tail = _sources_tail(content)
         nums = [int(x) for x in re.findall(r"^\[(\d+)\]", tail, re.MULTILINE)]
         assert nums == [1, 2]

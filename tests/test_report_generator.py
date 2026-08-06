@@ -229,12 +229,20 @@ def test_format_final_report(report_generator, monkeypatch):
     # Verify report structure
     assert "content" in report
     assert "metadata" in report
-    assert "# Table of Contents" in report["content"]
+    # Default report.language=zh-CN renders Chinese TOC heading; English only for opted-in en users.
+    assert (
+        "# Table of Contents" in report["content"]
+        or "# 目录" in report["content"]
+    ), report["content"]
     assert "Introduction" in report["content"]
     assert "Findings" in report["content"]
     assert "Background content here" in report["content"]
     assert "Key results content here" in report["content"]
-    assert "## Sources" in report["content"]
+    # See test_format_final_report above: zh-CN renders ## 参考文献, en renders ## Sources.
+    assert (
+        "## Sources" in report["content"]
+        or "## 参考文献" in report["content"]
+    ), report["content"]
 
     # Verify metadata
     assert report["metadata"]["query"] == "Test query"

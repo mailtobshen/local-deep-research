@@ -273,7 +273,13 @@ class TestFormatFinalReportDetailed:
         content = report["content"]
 
         # Body and Sources must coexist; Sources at the end with URL.
-        assert "## Sources" in content
+        # Default report.language=zh-CN renders '## 参考文献' here; the
+        # English fallback path emits '## Sources'. Either heading is
+        # correct as long as the URL trailing line is the very last
+        # content.
+        assert (
+            "## Sources" in content or "## 参考文献" in content
+        ), content
         assert content.rstrip().endswith("URL: http://a.com")
 
     def test_research_summary_present(self, generator, _patch_importlib):
@@ -282,7 +288,12 @@ class TestFormatFinalReportDetailed:
         sections = {"A": "body"}
 
         report = generator._format_final_report(sections, structure, "q")
-        assert "# Research Summary" in report["content"]
+        # Default report.language=zh-CN emits the Chinese summary heading;
+        # the English one renders only for opted-in English users.
+        assert (
+            "# Research Summary" in report["content"]
+            or "# 研究摘要" in report["content"]
+        ), report["content"]
 
     def test_metadata_searches_per_section(self, generator, _patch_importlib):
         """Metadata includes searches_per_section value."""
@@ -326,8 +337,16 @@ class TestFormatFinalReportDetailed:
     ):
         """Empty structure list still produces a report with TOC header and sources."""
         report = generator._format_final_report({}, [], "q")
-        assert "Table of Contents" in report["content"]
-        assert "## Sources" in report["content"]
+        # Default zh-CN renders Chinese TOC heading; English only for opted-in en users.
+        assert (
+            "Table of Contents" in report["content"]
+            or "# 目录" in report["content"]
+        ), report["content"]
+        # Default zh-CN renders ## 参考文献; English only for opted-in en users.
+        assert (
+            "## Sources" in report["content"]
+            or "## 参考文献" in report["content"]
+        ), report["content"]
         assert report["metadata"]["sections_researched"] == 0
 
 

@@ -101,6 +101,40 @@ class IntegratedReportGenerator:
             f"regardless of the language of the sources. "
         )
 
+    def _get_chapter_headings(self) -> dict:
+        """Return localized headings for the report's chapter scaffolding.
+
+        Reports with a Chinese ``report.language`` value must use the
+        Chinese ``# 目录`` / ``# 研究摘要`` / ``## 参考文献`` headings
+        instead of the historical English defaults, so the body's
+        language and the chapter scaffolding stay consistent. English
+        reports and any other supported locale get the English set;
+        unknown locales fall through to English so we never emit
+        broken headings.
+
+        Returns a dict with keys ``toc``, ``summary``, ``sources``.
+        """
+        # Defensive against test/legacy callers that build the
+        # generator via ``__new__`` and skip ``__init__`` — the
+        # setting snapshot attribute may be missing in that case.
+        # Fall through to the zh-CN default in that situation rather
+        # than raising, since this is a UI-localization concern, not
+        # a correctness gate.
+        snapshot = getattr(self, "settings_snapshot", None) or {}
+        lang = get_setting_from_snapshot(
+            "report.language",
+            default="zh-CN",
+            settings_snapshot=snapshot,
+        )
+        localized = {
+            "zh-CN": {"toc": "# 目录", "summary": "# 研究摘要", "sources": "## 参考文献"},
+        }.get(lang)
+        return localized or {
+            "toc": "# Table of Contents",
+            "summary": "# Research Summary",
+            "sources": "## Sources",
+        }
+
     def close(self) -> None:
         """Close the LLM client if this instance created it."""
         from .utilities.resource_utils import safe_close
@@ -657,8 +691,13 @@ class IntegratedReportGenerator:
         query: str,
     ) -> Dict:
         """Format the final report with table of contents and sections."""
+        # Localized chapter scaffolding (TOC + Research Summary +
+        # Sources headings). Driven by report.language so the
+        # scaffolding matches the body language.
+        headings = self._get_chapter_headings()
+
         # Generate TOC
-        toc = ["# Table of Contents\n"]
+        toc = [f"{headings['toc']}\n"]
         for i, section in enumerate(structure, 1):
             toc.append(f"{i}. **{section['name']}**")
             if len(section["subsections"]) > 1:
@@ -671,7 +710,7 @@ class IntegratedReportGenerator:
         report_parts = ["\n".join(toc), ""]
 
         # Add a summary of the research
-        report_parts.append("# Research Summary")
+        report_parts.append(headings["summary"])
         report_parts.append(
             "This report was researched using an advanced search system."
         )
@@ -940,7 +979,11 @@ class IntegratedReportGenerator:
         # Create final report with all parts
         final_report_content = "\n\n".join(report_parts)
         final_report_content = (
-            final_report_content + "\n\n## Sources\n\n" + formatted_all_links
+            final_report_content
+            + "\n\n"
+            + headings["sources"]
+            + "\n\n"
+            + formatted_all_links
         )
 
         # Create metadata dictionary
