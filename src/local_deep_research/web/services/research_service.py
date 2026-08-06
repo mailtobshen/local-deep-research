@@ -558,7 +558,7 @@ def _deferred_image_fill(
     try:
         from ...images.relevance import build_citation_index
 
-        num_to_url, _section_to_nums, _url_to_html = build_citation_index(
+        num_to_url, _section_to_nums, url_to_html = build_citation_index(
             final_markdown, results
         )
         cited_urls = set(num_to_url.values())
@@ -576,6 +576,11 @@ def _deferred_image_fill(
         )
         cited_urls = set()
         _url_to_cite_num = {}
+        # Mirror the success-path binding so the downstream
+        # _split_cited_urls call site doesn't NameError if
+        # build_citation_index raised. An empty map is the right
+        # value here — every cited URL needs a fetch.
+        url_to_html = {}
 
     if not cited_urls:
         logger.info(
