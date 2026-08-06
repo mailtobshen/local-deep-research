@@ -807,7 +807,22 @@ class IntegratedReportGenerator:
                     canon_to_doc[canon] = d
 
             sources_lines: List[str] = []
-            for canon, d in canon_to_doc.items():
+            # Iterate in ascending `new_idx` order so the trailing
+            # Sources block reads [1],[2],...,[N] strictly ascending
+            # (matches the body-first-cite ordering the renumber pass
+            # already produced). Iterating `canon_to_doc` directly is
+            # not safe: its iteration order is the per-subsection
+            # insertion order, which corresponds to `old_idx` from
+            # the citation collector — those map to a SHUFFLED
+            # `new_idx` set when the body cites a higher displayed_n
+            # before a lower one (the user's reported [6],[1],[2],
+            # [8],[4] pattern is exactly this). Sorting by `new_idx`
+            # restores the ascending display.
+            sorted_canon_docs = sorted(
+                canon_to_doc.items(),
+                key=lambda item: old_to_new[item[1].metadata["index"]],
+            )
+            for canon, d in sorted_canon_docs:
                 new_idx = old_to_new[d.metadata["index"]]
                 title = d.metadata.get("title", "Untitled")
                 sources_lines.append(
