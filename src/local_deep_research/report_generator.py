@@ -839,7 +839,7 @@ class IntegratedReportGenerator:
                 if section["name"] in sections:
                     body_parts.append(sections[section["name"]])
                     body_parts.append("")
-            report_parts = [report_parts[0], ""] + report_parts[1:1] + body_parts
+            report_parts = [report_parts[0], ""] + report_parts[1:6] + body_parts
 
             # 8) Build the Sources block from `all_docs`, deduped by
             #    canonical URL. First-seen (subsection order) wins.
@@ -967,7 +967,7 @@ class IntegratedReportGenerator:
                 if section["name"] in sections:
                     body_parts.append(sections[section["name"]])
                     body_parts.append("")
-            report_parts = [report_parts[0], ""] + report_parts[1:1] + body_parts
+            report_parts = [report_parts[0], ""] + report_parts[1:6] + body_parts
 
             # 9) Build Sources block keyed by NEW index. Dedup by
             #    canonical URL; first-seen (body-order) wins.
