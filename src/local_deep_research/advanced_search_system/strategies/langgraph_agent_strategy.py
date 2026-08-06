@@ -1042,6 +1042,10 @@ class LangGraphAgentStrategy(BaseSearchStrategy):
         # it is from a pre-refactor run. See
         # ``research_service._deferred_image_fill`` for the current
         # single-pass implementation.
+        logger.info(
+            "image fetch deferred to post-finalize pass; "
+            "see research_service._deferred_image_fill"
+        )
 
         # Build reasoning trace from agent messages
         reasoning_trace = []

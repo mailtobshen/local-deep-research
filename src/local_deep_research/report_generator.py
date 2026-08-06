@@ -87,8 +87,16 @@ class IntegratedReportGenerator:
         values. Used to inject language into the IntegratedReportGenerator's
         own prompts (which bypass the citation handler's prefix).
         """
+        # Defensive against test/legacy callers that build the
+        # generator via ``__new__`` and skip ``__init__`` — the
+        # setting snapshot attribute may be missing in that case.
+        # Mirror the getattr guard used by _get_chapter_headings
+        # so the two paths can't disagree on a missing snapshot.
+        snapshot = getattr(self, "settings_snapshot", None) or {}
         lang = get_setting_from_snapshot(
-            "report.language", default="zh-CN", settings_snapshot=self.settings_snapshot
+            "report.language",
+            default="zh-CN",
+            settings_snapshot=snapshot,
         )
         label = {
             "zh-CN": "Simplified Chinese (简体中文)",
