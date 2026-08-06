@@ -108,6 +108,16 @@ def _make_full_fetch_tool(
                     cite_idx = _register_in_collector(
                         collector, url, title, content
                     )
+                    # Event 3 (closes G5): FETCH_CONTENT_TOOL_CALL —
+                    # definitive evidence whether LLM called
+                    # fetch_content during the run. research_id is not
+                    # in scope at the tool layer; loguru's
+                    # research_id patcher injects it on emission.
+                    logger.info(
+                        "[IMG-TRACE] FETCH_CONTENT_TOOL_CALL "
+                        f"url={url} mode=full "
+                        f"result_status=success html_len={len(content)}"
+                    )
                     # Image extraction moved entirely to the
                     # post-report _deferred_image_fill pass (fix #5).
                     return (
@@ -200,6 +210,14 @@ def _make_summary_fetch_tool(
 
                 cite_idx = _register_in_collector(
                     collector, url, title, summary or content
+                )
+                # Event 3 (closes G5): FETCH_CONTENT_TOOL_CALL —
+                # summary mode variant. research_id injected by loguru
+                # patcher.
+                logger.info(
+                    "[IMG-TRACE] FETCH_CONTENT_TOOL_CALL "
+                    f"url={url} mode=summary "
+                    f"result_status=success html_len={len(summary or content)}"
                 )
                 # Image extraction moved entirely to the
                 # post-report _deferred_image_fill pass (fix #5).

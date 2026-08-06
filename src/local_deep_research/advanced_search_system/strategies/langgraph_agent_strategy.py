@@ -962,7 +962,19 @@ class LangGraphAgentStrategy(BaseSearchStrategy):
                     f"img_source_url={getattr(img, 'source_url', '')} "
                     f"cite_num=- ref_url=-"
                 )
-            if self.collector.attach_html_content(url, dumps_images(images)):
+            payload = dumps_images(images)
+            updated = self.collector.attach_html_content(url, payload)
+            # Event 4 (closes G1): ATTACH_HTML_CONTENT — definitive
+            # trace of every html_content write. Aug 6 had 0 hits for
+            # attach_html_content because _ensure_images_for_results
+            # had no caller. This event makes any future call
+            # observable.
+            logger.info(
+                f"[IMG-TRACE] ATTACH_HTML_CONTENT research={research_id} "
+                f"url={url} updated={updated} "
+                f"prev_len=0 new_len={len(payload) if updated else 0}"
+            )
+            if updated:
                 filled += 1
         logger.info(
             f"[IMG-TRACE] LANGGRAPH_FILL filled={filled}/{len(urls_to_fetch)}"

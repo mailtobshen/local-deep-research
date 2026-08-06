@@ -195,6 +195,48 @@ def enhance_report_with_images(
         num_to_url, section_to_nums, url_to_html = build_citation_index(
             clean_markdown, results
         )
+        # Event 1 (closes G2): SEC_CITE_INDEX — per-section cite-num trace.
+        # Aug 6 log lacked per-(sec, nums) visibility; this emits one
+        # line per sec that has ≥1 cite_num in its body [[N]] tokens.
+        # section_phrases is built below (line ~252); emit lazily after
+        # it's populated. We register a placeholder here so the event
+        # ordering is preserved.
+        def _emit_sec_cite_index():
+            for sidx, nums in section_to_nums.items():
+                if not nums:
+                    continue
+                sec_phrase_for_log = (
+                    section_phrases.get(sidx, "")[:80]
+                )
+                logger.info(
+                    f"[IMG-TRACE] SEC_CITE_INDEX research={research_id} "
+                    f"sec={sidx} sec_phrase=\"{sec_phrase_for_log}\" "
+                    f"cite_nums={list(nums)}"
+                )
+        # Event 2 (closes G3): URL_HTML_MAP — which URLs are in
+        # url_to_html, how long each html_content is, and which
+        # source-code path populated it (findings vs all_links).
+        # Aug 6 had html_covered=2 with no per-URL provenance.
+        findings_urls = {
+            sr.get("url") or sr.get("link")
+            for finding in results.get("findings", []) or []
+            for sr in finding.get("search_results", []) or []
+        }
+        all_links_urls = {
+            r.get("link") or r.get("url")
+            for r in results.get("all_links_of_system") or []
+        }
+        for url, html in url_to_html.items():
+            if url in findings_urls:
+                src = "findings"
+            elif url in all_links_urls:
+                src = "all_links"
+            else:
+                src = "deferred_backfill"
+            logger.info(
+                f"[IMG-TRACE] URL_HTML_MAP research={research_id} "
+                f"url={url} html_len={len(html)} src={src}"
+            )
         logger.info(
             f"[IMG-TRACE] CITATION_INDEX research={research_id} "
             f"nums={len(num_to_url)} sections={len(section_to_nums)} "
@@ -220,6 +262,9 @@ def enhance_report_with_images(
             phrase = semantic_matcher._canonical_section_phrase(sections[sidx][0], entities)
             if phrase:
                 section_phrases[sidx] = phrase
+        # Now that section_phrases is populated, fire Event 1 (SEC_CITE_INDEX)
+        # defined above (lazy emit to avoid UnboundLocalError).
+        _emit_sec_cite_index()
         # Pre-embed section phrases (one vector per cited section).
         try:
             section_vecs: dict[int, list[float]] = {
@@ -295,6 +340,22 @@ def enhance_report_with_images(
                         f"img_url={cand.url} "
                         f"img_source_url={cand.source_url}"
                     )
+                # Event 5 (closes G4): SEC_BINDING — per (sec, cite,
+                # url) triple trace. Aug 6 emitted CITATION_CANDIDATES
+                # but operators could not link kept_alts back to the
+                # section. This event records cand_count + sample_alts.
+                kept_alts = [
+                    (cand.alt or "")[:120]
+                    for cand in imgs
+                    if cand.alt and cand.alt.strip()
+                ]
+                logger.info(
+                    f"[IMG-TRACE] SEC_BINDING research={research_id} "
+                    f"sec={sidx} sec_phrase=\"{sec_phrase_text!s}\" "
+                    f"cite_num={num} ref_url={url} "
+                    f"cand_count={len(cand_lines)} kept_alts={len(kept_alts)} "
+                    f"sample_alts={kept_alts[:3]!r}"
+                )
                 logger.info(
                     f"[IMG-TRACE] CITATION_CANDIDATES research={research_id} "
                     f"cite_num={num} ref_url={url} sec={sidx} "
@@ -306,7 +367,9 @@ def enhance_report_with_images(
                 model = semantic_matcher.get_model()
                 for img in imgs:
                     if not (img.alt and img.alt.strip()):
-                        logger.debug(
+                        # Event 6: CANDIDATE_NO_ALT — promoted from
+                        # DEBUG to INFO (closes G4 alt-missing path).
+                        logger.info(
                             f"[IMG-TRACE] CANDIDATE_NO_ALT research={research_id} "
                             f"src_url={url} img_url={img.url}"
                         )
@@ -377,6 +440,30 @@ def enhance_report_with_images(
                         binding.setdefault(img.url, []).append(
                             (num, sidx)
                         )
+                        # Event 7 kept-side: per-image decision + reason.
+                        logger.info(
+                            f"[IMG-TRACE] CANDIDATE_SCORED_DETAIL research={research_id} "
+                            f"sec={sidx} cite_num={num} ref_url={url} "
+                            f"img_alt={(img.alt or '')[:120]!r} img_url={img.url} "
+                            f"score={score:.3f} decision=keep reason=phrase_similarity"
+                        )
+                        # Event 8 (closes G4): BIND_ADOPTED —
+                        # final-stage adoption trail. Aug 6 had no
+                        # observable per-image attach/dup-skip decision.
+                        # Carries the same five-key schema as other
+                        # IMG-TRACE events so a single grep unions
+                        # kept/dropped/adopted streams. Renamed from
+                        # PLACEMENT_DECISION to BIND_ADOPTED so it
+                        # doesn't substring-match the existing PLACEMENT
+                        # event in the schema tests.
+                        logger.info(
+                            f"[IMG-TRACE] BIND_ADOPTED research={research_id} "
+                            f"sec={sidx} cite_num={num} ref_url={url} "
+                            f"img_alt={(img.alt or '')[:200]!r} "
+                            f"img_url={img.url} "
+                            f"img_source_url={img.source_url} "
+                            f"action=attach reason=kept_by_threshold"
+                        )
                         kept += 1
                     else:
                         # Same five-key schema as CANDIDATE_KEPT so a
@@ -394,6 +481,15 @@ def enhance_report_with_images(
                             f"ref_url={url} "
                             f"sec={sidx} score={score:.3f} "
                             f"reason=below_threshold"
+                        )
+                        # Event 7 (closes G4): CANDIDATE_SCORED_DETAIL
+                        # — per-image score + decision + reason for
+                        # both kept and dropped paths.
+                        logger.info(
+                            f"[IMG-TRACE] CANDIDATE_SCORED_DETAIL research={research_id} "
+                            f"sec={sidx} cite_num={num} ref_url={url} "
+                            f"img_alt={(img.alt or '')[:120]!r} img_url={img.url} "
+                            f"score={score:.3f} decision=drop reason=below_threshold"
                         )
                         dropped_low += 1
                 logger.info(
