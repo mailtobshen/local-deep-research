@@ -694,6 +694,18 @@ def _deferred_image_fill(
                     continue
                 sr["html_content"] = payload
                 attached = True
+        # Also write the cumulative cross-subsection list. In detailed
+        # mode ``collector.reset()`` clears ``_results`` between
+        # subsections, so a cited URL often survives ONLY here.
+        # ``build_citation_index`` already READS this list (relevance.py
+        # "Merge in the cross-subsection cumulative list (fix #1+#6)");
+        # writing it keeps the read and write surfaces symmetric.
+        for record in results.get("all_links_of_system") or []:
+            rec_url = record.get("link") or record.get("url") or ""
+            if rec_url != url:
+                continue
+            record["html_content"] = payload
+            attached = True
         if attached:
             filled += 1
             # Summary event — carries the full four-field vocabulary
