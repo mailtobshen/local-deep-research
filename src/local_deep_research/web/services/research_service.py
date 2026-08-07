@@ -687,8 +687,10 @@ def _deferred_image_fill(
                 f"ref_url={url}"
             )
         attached = False
+        findings_scanned = 0
         for finding in results.get("findings", []) or []:
             for sr in finding.get("search_results", []) or []:
+                findings_scanned += 1
                 sr_url = sr.get("url") or sr.get("link") or ""
                 if sr_url != url:
                     continue
@@ -700,12 +702,25 @@ def _deferred_image_fill(
         # ``build_citation_index`` already READS this list (relevance.py
         # "Merge in the cross-subsection cumulative list (fix #1+#6)");
         # writing it keeps the read and write surfaces symmetric.
+        all_links_scanned = 0
         for record in results.get("all_links_of_system") or []:
+            all_links_scanned += 1
             rec_url = record.get("link") or record.get("url") or ""
             if rec_url != url:
                 continue
             record["html_content"] = payload
             attached = True
+        if not attached:
+            # Fetched images with nowhere to put them. Records the
+            # candidate-set sizes so a reader can tell "no records at
+            # all" from "records present but no URL matched".
+            logger.info(
+                f"[IMG-TRACE] ATTACH_MISS research={research_id} "
+                f"cite_num={cite_num_for_url} "
+                f"ref_url={url} "
+                f"findings_scanned={findings_scanned} "
+                f"all_links_scanned={all_links_scanned}"
+            )
         if attached:
             filled += 1
             # Summary event — carries the full four-field vocabulary

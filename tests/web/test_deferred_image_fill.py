@@ -625,3 +625,42 @@ def test_inject_returns_new_dict_original_lacks_key():
         "record objects are shared, so writes through `merged` are visible "
         "to any holder of the same record"
     )
+
+
+# ---------- observability: ATTACH_MISS -------------------------------------
+
+
+def test_attach_miss_event_emitted_when_no_record_matches(loguru_caplog):
+    """A cited URL matching no record must announce itself.
+
+    Silence here is what made research a6e77742 cost a full forensic
+    pass: filled=0/77 with no per-URL reason.
+    """
+    cited = "https://orphan.example/never-in-results"
+    markdown = (
+        "## S\n\n"
+        f"x [[7]]({cited})。\n\n"
+        "## Sources\n\n"
+        "[7, 1] Orphan\n"
+        f"   URL: {cited}\n"
+    )
+    results = {"findings": [], "all_links_of_system": []}
+    fetched = {cited: {"text": "t", "images": [_extracted_image(
+        url="https://img/o.jpg", alt="orphan", source_url=cited)]}}
+
+    with patch(
+        "local_deep_research.research_library.downloaders.extraction."
+        "pipeline.fetch_content_with_images",
+        return_value=fetched,
+    ):
+        filled = _deferred_image_fill(
+            "res-miss",
+            final_markdown=markdown,
+            results=results,
+            settings_snapshot={"report.enable_images": True},
+        )
+
+    text = "\n".join(r.getMessage() for r in loguru_caplog.records)
+    assert filled == 0
+    assert "ATTACH_MISS" in text
+    assert cited in text
