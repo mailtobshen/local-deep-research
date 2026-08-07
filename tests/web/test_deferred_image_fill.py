@@ -500,3 +500,95 @@ class TestLanggraphFinalizeDoesNotFetchPerRound:
             # Critical regression guard: per-round fetch is gone.
             strat._ensure_images_for_results.assert_not_called()
             assert result["current_knowledge"].startswith("OK final")
+
+
+# ---------- post-reset shape: cited URL survives ONLY in
+#             ``all_links_of_system`` ---------------------------------------
+
+
+class TestDeferredFillPostResetShape:
+    """Detailed mode: ``collector.reset()`` clears ``_results`` between
+    subsections, so a cross-subsection cited URL survives ONLY in
+    ``all_links_of_system``. The attach loop must write there too, or
+    ``filled`` stays 0 and ``build_citation_index`` sees an empty map.
+
+    Regression for research a6e77742 (2026-08-07): 2919 images fetched,
+    filled=0/77, BANK_EMPTY reason=no_citations_or_html.
+    """
+
+    CITED = "https://www.chinadiscovery.com/shanghai/zhujiajiao.html"
+
+    def _markdown(self):
+        return (
+            "## 朱家角古镇\n\n"
+            f"江南水乡 [[56]]({self.CITED})。\n\n"
+            "## Sources\n\n"
+            "[56, 1224] Zhujiajiao Ancient Town\n"
+            f"   URL: {self.CITED}\n"
+        )
+
+    def _results_post_reset(self):
+        """findings[] holds only the LAST subsection (a different URL);
+        the cited URL lives in the cumulative all_links_of_system list."""
+        return {
+            "findings": [
+                {"search_results": [{"link": "https://other.example/last"}]}
+            ],
+            "all_links_of_system": [{"link": self.CITED}],
+        }
+
+    def test_attaches_when_url_only_in_all_links_of_system(self):
+        results = self._results_post_reset()
+        fetched = {self.CITED: {"text": "t", "images": [_extracted_image(
+            url="https://img/z.jpg", alt="放生桥", source_url=self.CITED)]}}
+
+        with patch(
+            "local_deep_research.research_library.downloaders.extraction."
+            "pipeline.fetch_content_with_images",
+            return_value=fetched,
+        ):
+            filled = _deferred_image_fill(
+                "res-post-reset",
+                final_markdown=self._markdown(),
+                results=results,
+                settings_snapshot={"report.enable_images": True},
+            )
+
+        assert filled == 1, (
+            "attach loop must match the cited URL inside "
+            "all_links_of_system, not only findings[].search_results[]"
+        )
+        record = results["all_links_of_system"][0]
+        assert record.get("html_content"), (
+            "html_content must be written onto the all_links_of_system record"
+        )
+
+    def test_all_links_html_visible_to_build_citation_index(self):
+        """End-to-end read check: what the fill writes, the index must see."""
+        from local_deep_research.images.relevance import build_citation_index
+
+        results = self._results_post_reset()
+        fetched = {self.CITED: {"text": "t", "images": [_extracted_image(
+            url="https://img/z.jpg", alt="放生桥", source_url=self.CITED)]}}
+
+        with patch(
+            "local_deep_research.research_library.downloaders.extraction."
+            "pipeline.fetch_content_with_images",
+            return_value=fetched,
+        ):
+            _deferred_image_fill(
+                "res-post-reset-2",
+                final_markdown=self._markdown(),
+                results=results,
+                settings_snapshot={"report.enable_images": True},
+            )
+
+        num_to_url, _sections, url_to_html = build_citation_index(
+            self._markdown(), results
+        )
+        assert num_to_url, "citation index should parse the Sources block"
+        assert url_to_html, (
+            "url_to_html must be non-empty — an empty map is exactly the "
+            "BANK_EMPTY reason=no_citations_or_html production signature"
+        )
+        assert self.CITED in url_to_html
