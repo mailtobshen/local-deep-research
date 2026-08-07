@@ -592,3 +592,36 @@ class TestDeferredFillPostResetShape:
             "BANK_EMPTY reason=no_citations_or_html production signature"
         )
         assert self.CITED in url_to_html
+
+
+# ---------- call-site contract: same dict to fill and postprocessing -------
+
+
+def test_inject_returns_new_dict_original_lacks_key():
+    """Guards the call-site contract.
+
+    ``_inject_all_links_of_system`` returns a NEW dict; the original
+    ``results`` never gains ``all_links_of_system``. So passing
+    ``results_for_fill`` to the fill but the original ``results`` to
+    ``enhance_report_with_images`` hides everything the fill wrote
+    into the cumulative list. Both stages must receive the same dict.
+    """
+    from local_deep_research.web.services.research_service import (
+        _inject_all_links_of_system,
+    )
+
+    class _Sys:
+        all_links_of_system = [{"link": "https://cited.example/page"}]
+
+    results = {"findings": []}
+    merged = _inject_all_links_of_system(results, _Sys())
+
+    assert "all_links_of_system" in merged
+    assert "all_links_of_system" not in results, (
+        "original results must NOT gain the key — this is precisely why "
+        "both stages have to be handed `merged`, not `results`"
+    )
+    assert merged["all_links_of_system"][0] is _Sys.all_links_of_system[0], (
+        "record objects are shared, so writes through `merged` are visible "
+        "to any holder of the same record"
+    )

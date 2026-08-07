@@ -1615,7 +1615,7 @@ def run_research_process(research_id, query, mode, **kwargs):
                                     clean_markdown = enhance_report_with_images(
                                         research_id=research_id,
                                         clean_markdown=clean_markdown,
-                                        results=results,
+                                        results=results_for_fill,
                                         db_session=img_db_session,
                                         **img_args,
                                     )
@@ -2016,7 +2016,7 @@ def run_research_process(research_id, query, mode, **kwargs):
                                 enhance_report_with_images(
                                     research_id=research_id,
                                     clean_markdown=final_report["content"],
-                                    results=results,
+                                    results=results_for_fill,
                                     db_session=img_db_session,
                                     **img_args,
                                 )
