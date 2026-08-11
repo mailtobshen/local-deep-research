@@ -664,3 +664,55 @@ def test_attach_miss_event_emitted_when_no_record_matches(loguru_caplog):
     assert filled == 0
     assert "ATTACH_MISS" in text
     assert cited in text
+
+
+# ---------- structural no-image domain blocklist (fetch pre-filter) ---------
+
+
+def test_structural_no_image_domain_skipped_from_fetch(monkeypatch, loguru_caplog):
+    """A cited URL on a structural no-image domain (instagram) must be
+    removed from urls_to_fetch before fetch_content_with_images runs,
+    and a STRUCTURAL_SKIP event emitted. The fetch stub must NOT see it.
+    """
+    fetched_urls: list[str] = []
+
+    def _fake_fetch(urls, **kwargs):
+        fetched_urls.extend(urls)
+        return {u: {"text": "t", "images": []} for u in urls}
+
+    monkeypatch.setattr(
+        "local_deep_research.research_library.downloaders.extraction."
+        "pipeline.fetch_content_with_images",
+        _fake_fetch,
+    )
+    cited_instagram = "https://www.instagram.com/some.post"
+    cited_ok = "https://www.example.org/article"
+    markdown = (
+        "## S\n\n"
+        f"x [[1]]({cited_instagram}) y [[2]]({cited_ok})。\n\n"
+        "## Sources\n\n"
+        f"[1] IG\n   URL: {cited_instagram}\n"
+        f"[2] Ex\n   URL: {cited_ok}\n"
+    )
+    results = {"findings": [], "all_links_of_system": []}
+    _deferred_image_fill(
+        "res-skip",
+        final_markdown=markdown,
+        results=results,
+        settings_snapshot={"report.enable_images": True},
+    )
+    # Primary contract: instagram URL never reaches fetch.
+    assert cited_instagram not in fetched_urls, (
+        "instagram URL must be filtered out before fetch"
+    )
+    assert cited_ok in fetched_urls, (
+        "non-blocklisted URL must still be fetched"
+    )
+    # Secondary contract: STRUCTURAL_SKIP event emitted with domain info.
+    text = "\n".join(r.getMessage() for r in loguru_caplog.records)
+    assert "STRUCTURAL_SKIP" in text, (
+        f"STRUCTURAL_SKIP event must be emitted; got: {text!r}"
+    )
+    assert "instagram.com" in text, (
+        f"instagram.com must appear in the STRUCTURAL_SKIP line; got: {text!r}"
+    )

@@ -613,6 +613,32 @@ def _deferred_image_fill(
         f"[IMG-TRACE] DEFERRED_FILL research={research_id} "
         f"cited={total} covered={cov} gap={gap}"
     )
+    # Filter out structural no-image domains BEFORE fetching. These
+    # domains' HTML has no extractable <img> (social/video JS-injected
+    # media, document previews). Skipping them saves network + the
+    # ~35s Firecrawl fallback timeout. Text is unaffected: this stage
+    # only consumes ``entry["images"]`` (research_service.py:656).
+    from ...images.relevance import (
+        STRUCTURAL_NO_IMAGE_DOMAINS, _extract_registered_domain,
+    )
+    structural_skipped: dict[str, list[str]] = {}
+    filtered: list[str] = []
+    for u in urls_to_fetch:
+        dom = _extract_registered_domain(u)
+        if dom in STRUCTURAL_NO_IMAGE_DOMAINS:
+            structural_skipped.setdefault(dom, []).append(u)
+        else:
+            filtered.append(u)
+    if structural_skipped:
+        skipped_summary = ", ".join(
+            f"{d}:{len(us)}" for d, us in structural_skipped.items()
+        )
+        logger.info(
+            f"[IMG-TRACE] STRUCTURAL_SKIP research={research_id} "
+            f"count={sum(len(us) for us in structural_skipped.values())} "
+            f"domains={skipped_summary}"
+        )
+    urls_to_fetch = filtered
     if not urls_to_fetch:
         return 0
 

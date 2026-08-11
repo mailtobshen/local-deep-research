@@ -215,6 +215,22 @@ def _normalize_url(url: str) -> str:
     return (url or "").strip().rstrip("/")
 
 
+# Structural no-image domains: these sites' HTML contains no extractable
+# static <img> (posts/videos are JS-injected; document previews are
+# Flash/JS-rendered). This is an inherent property of the site class,
+# NOT anti-bot. C-class domains (wikipedia/ctrip/360cities etc.) that
+# HAVE images but occasionally fail to fetch are deliberately excluded
+# — they are handled by normal fetch + probe, never this list.
+STRUCTURAL_NO_IMAGE_DOMAINS: frozenset[str] = frozenset({
+    # A: social/video — JS-injected media, no static <img>
+    "instagram.com", "facebook.com", "pinterest.com",
+    "youtube.com", "tiktok.com", "x.com", "twitter.com",
+    "weibo.com", "xiaohongshu.com",
+    # B: document-preview — Flash/JS-rendered content
+    "wenku.baidu.com", "docin.com", "doc88.com",
+})
+
+
 def _extract_registered_domain(url: str) -> str:
     """Return eTLD+1 ('ctrip.com', 'bbc.co.uk', 'github.io') for a URL.
 
