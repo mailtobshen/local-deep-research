@@ -498,6 +498,50 @@ def _section_offsets(markdown: str) -> list[int]:
     return [m.start() for m in matches]
 
 
+def _section_levels(markdown: str) -> list[int]:
+    """`#`-level of each heading (1 for '#', 2 for '##', ...).
+
+    Aligned by index with ``_split_sections``: ``levels[i]`` is the
+    heading level of the i-th section. Used by ``_find_parent_heading``
+    to walk the section hierarchy WITHOUT changing ``_split_sections``
+    return shape (which stores heading text without leading ``#``).
+    """
+    if not markdown:
+        return []
+    return [len(m.group(1)) for m in _HEADING_RE.finditer(markdown)]
+
+
+def _find_parent_heading(
+    sections: list[tuple[str, str]],
+    levels: list[int],
+    idx: int,
+) -> str:
+    """Return the nearest preceding heading with a SMALLER ``#`` level.
+
+    Gives entity-poor subsections ('主题园区与核心设施') the context of
+    their parent section ('上海迪士尼乐园') for semantic matching.
+    ``levels`` is the parallel list from ``_section_levels`` (same index
+    alignment as ``sections``). Returns "" if none (top-level section,
+    idx at start, or levels/sections length mismatch — fail closed).
+    """
+    if (
+        idx <= 0
+        or idx >= len(sections)
+        or idx >= len(levels)
+    ):
+        return ""
+    child_level = levels[idx]
+    if child_level <= 1:
+        return ""
+    for j in range(idx - 1, -1, -1):
+        lj = levels[j] if j < len(levels) else 0
+        if 0 < lj < child_level:
+            # sections[j][0] is heading text WITHOUT leading '#'
+            # (per _split_sections); return it stripped.
+            return sections[j][0].strip()
+    return ""
+
+
 def _scan_references_block(markdown: str) -> Dict[str, str]:
     """Parse the trailing References/Sources/参考文献 block.
 

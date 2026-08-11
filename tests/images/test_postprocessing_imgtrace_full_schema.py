@@ -106,7 +106,7 @@ def pipeline(monkeypatch):
     )
     monkeypatch.setattr(
         postprocessing.semantic_matcher, "_canonical_section_phrase",
-        lambda heading, entities: "Canton Tower",
+        lambda heading, entities, parent_heading="": "Canton Tower",
     )
     return {"md": md, "results": results}
 
@@ -241,7 +241,7 @@ def test_candidate_dropped_carries_source_url(
     )
     monkeypatch.setattr(
         postprocessing.semantic_matcher, "_canonical_section_phrase",
-        lambda heading, entities: "DIFFERENT SECTION",
+        lambda heading, entities, parent_heading="": "DIFFERENT SECTION",
     )
     with patch.object(postprocessing, "ImageStore") as store_mock:
         store_mock.return_value.persist.return_value = {}

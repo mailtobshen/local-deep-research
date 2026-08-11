@@ -200,14 +200,22 @@ def get_model(
 # Section embeddings
 # ---------------------------------------------------------------------------
 
-def _canonical_section_phrase(heading: str, entities: Iterable[str]) -> str:
+def _canonical_section_phrase(
+    heading: str,
+    entities: Iterable[str],
+    parent_heading: str = "",
+) -> str:
     """Build the text the embedding model encodes for one section.
 
     Heading contributes section topic; the entity list contributes
-    domain terms. Empty inputs return ``""`` and the caller should
-    skip embedding for that section.
+    domain terms; ``parent_heading`` (the nearest preceding higher-
+    level heading) gives entity-poor subsections like '主题园区与核心
+    设施' the context of their parent ('上海迪士尼乐园'). Empty inputs
+    return ``""`` and the caller should skip embedding for that section.
     """
     parts: list[str] = []
+    if parent_heading:
+        parts.append(parent_heading)
     if heading:
         parts.append(heading)
     parts.extend(entities)

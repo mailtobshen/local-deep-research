@@ -48,7 +48,7 @@ def test_cited_image_passes_gate_and_is_inserted(monkeypatch):
     # and patching _canonical_section_phrase to return "Canton Tower".
     monkeypatch.setattr(
         postprocessing.semantic_matcher, "_canonical_section_phrase",
-        lambda heading, entities: "Canton Tower",
+        lambda heading, entities, parent_heading="": "Canton Tower",
     )
 
     with patch.object(postprocessing, "ImageStore") as store_mock:
@@ -91,7 +91,7 @@ def test_uncited_source_image_not_extracted(monkeypatch):
     monkeypatch.setattr(postprocessing.semantic_matcher, "get_model", lambda *a, **k: fake)
     monkeypatch.setattr(
         postprocessing.semantic_matcher, "_canonical_section_phrase",
-        lambda heading, entities: "Canton Tower",
+        lambda heading, entities, parent_heading="": "Canton Tower",
     )
     with patch.object(postprocessing, "ImageStore") as store_mock:
         store_mock.return_value.persist.return_value = {}
@@ -123,7 +123,7 @@ def test_low_similarity_image_dropped(monkeypatch):
     monkeypatch.setattr(postprocessing.semantic_matcher, "get_model", lambda *a, **k: fake)
     monkeypatch.setattr(
         postprocessing.semantic_matcher, "_canonical_section_phrase",
-        lambda heading, entities: "section phrase orthogonal",
+        lambda heading, entities, parent_heading="": "section phrase orthogonal",
     )
     with patch.object(postprocessing, "ImageStore") as store_mock:
         store_mock.return_value.persist.return_value = {}
@@ -163,7 +163,7 @@ def test_firecrawl_client_forwarded_to_image_store(monkeypatch):
     monkeypatch.setattr(postprocessing.semantic_matcher, "get_model", lambda *a, **k: fake)
     monkeypatch.setattr(
         postprocessing.semantic_matcher, "_canonical_section_phrase",
-        lambda heading, entities: "Canton Tower",
+        lambda heading, entities, parent_heading="": "Canton Tower",
     )
     with patch.object(postprocessing, "ImageStore") as store_mock:
         store_mock.return_value.persist.return_value = (
@@ -201,7 +201,7 @@ def test_same_url_cited_in_two_sections_multi_bind_then_dedup(monkeypatch):
     monkeypatch.setattr(postprocessing.semantic_matcher, "get_model", lambda *a, **k: fake)
     monkeypatch.setattr(
         postprocessing.semantic_matcher, "_canonical_section_phrase",
-        lambda heading, entities: "Canton Tower",
+        lambda heading, entities, parent_heading="": "Canton Tower",
     )
     with patch.object(postprocessing, "ImageStore") as store_mock:
         store_mock.return_value.persist.return_value = (
@@ -246,7 +246,7 @@ def test_citation_candidates_and_scored_events_emitted(monkeypatch):
     monkeypatch.setattr(postprocessing.semantic_matcher, "get_model", lambda *a, **k: fake)
     monkeypatch.setattr(
         postprocessing.semantic_matcher, "_canonical_section_phrase",
-        lambda heading, entities: "Canton Tower",
+        lambda heading, entities, parent_heading="": "Canton Tower",
     )
     # Capture loguru output by monkey-patching the logger's bound
     # ``info`` method on the postprocessing module. loguru's

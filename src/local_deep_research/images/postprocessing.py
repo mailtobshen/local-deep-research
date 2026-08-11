@@ -10,6 +10,8 @@ from loguru import logger
 from .bank import ImageBank
 from .reference_sanitizer import sanitize_references
 from .relevance import (
+    _find_parent_heading,
+    _section_levels,
     _split_sections,
     build_citation_index,
 )
@@ -254,12 +256,16 @@ def enhance_report_with_images(
 
         # Per-section entity pool + embeddings for the semantic gate.
         sections = _split_sections(clean_markdown)
+        levels = _section_levels(clean_markdown)
         entity_pool = semantic_matcher.build_report_entity_pool(clean_markdown)
         section_phrases: dict[int, str] = {}
         for sidx, entities in entity_pool.items():
             if sidx >= len(sections) or not entities:
                 continue
-            phrase = semantic_matcher._canonical_section_phrase(sections[sidx][0], entities)
+            parent = _find_parent_heading(sections, levels, sidx)
+            phrase = semantic_matcher._canonical_section_phrase(
+                sections[sidx][0], entities, parent_heading=parent
+            )
             if phrase:
                 section_phrases[sidx] = phrase
         # Now that section_phrases is populated, fire Event 1 (SEC_CITE_INDEX)

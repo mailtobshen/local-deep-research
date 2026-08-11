@@ -106,7 +106,7 @@ def kept_image_setup(monkeypatch):
     )
     monkeypatch.setattr(
         postprocessing.semantic_matcher, "_canonical_section_phrase",
-        lambda heading, entities: "Canton Tower",
+        lambda heading, entities, parent_heading="": "Canton Tower",
     )
     return {"md": md, "results": results, "ref_url": "https://src/page",
             "img_url": "https://img/tower.jpg", "img_alt": "Canton Tower",
@@ -218,7 +218,7 @@ def test_candidate_dropped_event_remains_compatible(
     )
     monkeypatch.setattr(
         pp.semantic_matcher, "_canonical_section_phrase",
-        lambda heading, entities: "DIFFERENT SECTION",
+        lambda heading, entities, parent_heading="": "DIFFERENT SECTION",
     )
     with patch.object(pp, "ImageStore") as store_mock:
         store_mock.return_value.persist.return_value = {}
