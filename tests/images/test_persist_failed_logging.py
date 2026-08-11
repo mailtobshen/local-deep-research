@@ -63,7 +63,8 @@ def test_rewrite_markdown_drops_url_without_route():
 
 
 def test_rewrite_markdown_keeps_route_replacement():
-    """Successful persist → URL is replaced with the local route."""
+    """Successful persist → URL is replaced with the local route inside a
+    <figure class="ldr-img"> block."""
     from local_deep_research.images.store import ImageStore
 
     md = "![ok](https://x/ok.jpg)"
@@ -72,7 +73,9 @@ def test_rewrite_markdown_keeps_route_replacement():
     store = ImageStore(research_id="r1", db_session=None, firecrawl_client=None)
     out = store.rewrite_markdown(md, url_to_route)
 
-    assert "![ok](/images/abc123.jpg)" in out
+    assert '<figure class="ldr-img">' in out
+    assert 'src="/images/abc123.jpg"' in out
+    assert "<figcaption>ok</figcaption>" in out
     assert "https://x/ok.jpg" not in out
 
 

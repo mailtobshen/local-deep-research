@@ -3136,3 +3136,14 @@ input[type="number"].ldr-form-control::-webkit-inner-spin-button {
         scroll-behavior: auto !important;
     }
 }
+
+/* Image figures with captions (inserted by images.store.rewrite_markdown).
+   Renders in WebUI AND WeasyPrint PDF export. */
+.ldr-img { margin: 1em auto; text-align: center; }
+.ldr-img img { max-width: 100%; height: auto; }
+.ldr-img figcaption {
+    font-size: 0.85em;
+    color: #666;
+    margin-top: 0.3em;
+    text-align: center;
+}

@@ -432,16 +432,18 @@ class ImageStore:
     ) -> str:
         """Replace remote image URLs with local routes.
 
-        Every persisted image becomes a standard markdown
-        ``![alt](route)`` link — no ``<img>`` HTML is emitted, even for
-        oversized images that exceed ``_MAX_DISPLAY_PX`` on their long
-        side. Markdown has no syntax for explicit display-size, and
-        callers want the report body to stay pure markdown, so the
-        long-side cap is no longer enforced here. WebUI renderers can
-        apply a CSS ``max-width`` rule on ``img`` inside the markdown
-        container if a display-size cap is still needed downstream.
+        Every persisted image becomes a ``<figure class="ldr-img">``
+        block containing an ``<img>`` and a ``<figcaption>`` showing the
+        alt text as a caption. The figure renders in both WebUI and
+        WeasyPrint PDF export (see ``.ldr-img`` rules in styles.css).
+        When the post-resize size is known, the ``<img>`` carries
+        ``width``/``height`` attributes for stable layout; when the size
+        is unknown (PIL probe failed) those attributes are omitted.
 
-        Unknown size (PIL probe failed) → native ``![alt](route)``.
+        Images whose URL has no local route (download failed all
+        retries) are dropped entirely — returning ``""`` removes the
+        whole ``![alt](url)`` match so no remote URL leaks into the
+        final report.
         """
         sizes = url_to_size if url_to_size is not None else getattr(
             self, "_last_url_to_size", {}
@@ -482,6 +484,7 @@ class ImageStore:
                     f"reason=no_local_route"
                 )
                 return ""
+            # Determine size + emit the appropriate KEEP/RESIZE event.
             if size is None:
                 unknown += 1
                 logger.info(
@@ -492,54 +495,51 @@ class ImageStore:
                     f"cite_num=- ref_url={ref_url} "
                     f"route={route} size=unknown"
                 )
-                return f"![{alt}]({route})"
-            w, h = size
-            long_side = max(w, h)
-            if long_side <= _MAX_DISPLAY_PX:
-                under += 1
-                logger.info(
-                    f"[IMG-TRACE] REWRITE_KEEP research={self.research_id} "
-                    f"img_alt={(alt or '')[:200]!r} "
-                    f"img_url={url} "
-                    f"img_source_url={img_source_url} "
-                    f"cite_num=- ref_url={ref_url} "
-                    f"route={route} size={w}x{h}"
-                )
-                return f"![{alt}]({route})"
-            resized += 1
-            # Per-image RESIZE event: schema matches the other stages
-            # so a log consumer can union them. ``kept_after_resize=1``
-            # is implicit in REWRITE_KEEP; we only emit RESIZE when the
-            # image was actually over the cap.
-            logger.info(
-                f"[IMG-TRACE] RESIZE research={self.research_id} "
-                f"img_alt={(alt or '')[:200]!r} "
-                f"img_url={url} "
-                f"img_source_url={img_source_url} "
-                f"cite_num=- ref_url={ref_url} "
-                f"route={route} size={w}x{h} max_px={_MAX_DISPLAY_PX}"
-            )
-            logger.info(
-                f"[IMG-TRACE] REWRITE_KEEP research={self.research_id} "
-                f"img_alt={(alt or '')[:200]!r} "
-                f"img_url={url} "
-                f"img_source_url={img_source_url} "
-                f"cite_num=- ref_url={ref_url} "
-                f"route={route} size={w}x{h} max_px={_MAX_DISPLAY_PX}"
-            )
-            # Oversized image. Markdown has no syntax for explicit
-            # display-size, so the previous implementation emitted
-            # `<img src=… width=… height=… loading=lazy />` HTML to
-            # enforce a 600px long-side cap. That made the report body
-            # contain raw HTML in the middle of otherwise pure markdown
-            # — readers (and humans reading the .md file) saw it as
-            # stray HTML pollution. We accept the loss of the size cap:
-            # oversized images now render at native size, and the
-            # markdown stays clean. WebUI CSS can apply a global
-            # `max-width:600px` rule to `img` inside `.ldr-markdown-content`
-            # if display-size control is needed downstream.
+                size_attrs = ""
+            else:
+                w, h = size
+                long_side = max(w, h)
+                if long_side <= _MAX_DISPLAY_PX:
+                    under += 1
+                    logger.info(
+                        f"[IMG-TRACE] REWRITE_KEEP research={self.research_id} "
+                        f"img_alt={(alt or '')[:200]!r} "
+                        f"img_url={url} "
+                        f"img_source_url={img_source_url} "
+                        f"cite_num=- ref_url={ref_url} "
+                        f"route={route} size={w}x{h}"
+                    )
+                else:
+                    resized += 1
+                    logger.info(
+                        f"[IMG-TRACE] RESIZE research={self.research_id} "
+                        f"img_alt={(alt or '')[:200]!r} "
+                        f"img_url={url} "
+                        f"img_source_url={img_source_url} "
+                        f"cite_num=- ref_url={ref_url} "
+                        f"route={route} size={w}x{h} max_px={_MAX_DISPLAY_PX}"
+                    )
+                    logger.info(
+                        f"[IMG-TRACE] REWRITE_KEEP research={self.research_id} "
+                        f"img_alt={(alt or '')[:200]!r} "
+                        f"img_url={url} "
+                        f"img_source_url={img_source_url} "
+                        f"cite_num=- ref_url={ref_url} "
+                        f"route={route} size={w}x{h} max_px={_MAX_DISPLAY_PX}"
+                    )
+                size_attrs = f' width="{w}" height="{h}"'
+            # Unified HTML figure output (WebUI + WeasyPrint PDF). Every
+            # persisted image becomes <figure class="ldr-img"> with the
+            # alt text shown as a <figcaption> caption. ``safe_alt`` is
+            # reused for the alt attribute AND the caption text so they
+            # never diverge; html.escape(quote=True) covers <, >, &, ".
             safe_alt = html.escape(alt, quote=True)
-            return f"![{safe_alt}]({route})"
+            return (
+                f'<figure class="ldr-img">'
+                f'<img src="{route}" alt="{safe_alt}"{size_attrs} loading="lazy" />'
+                f'<figcaption>{safe_alt}</figcaption>'
+                f'</figure>'
+            )
 
         result = _IMG_RE.sub(repl, markdown)
         logger.info(

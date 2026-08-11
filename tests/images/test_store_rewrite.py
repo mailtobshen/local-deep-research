@@ -11,12 +11,10 @@ def _store() -> ImageStore:
 
 
 def test_rewrite_keeps_markdown_for_oversized():
-    """Oversized images stay as standard markdown `![alt](route)`.
-
-    The earlier implementation emitted `<img width=600 height=300>` HTML
-    to enforce a 600px long-side cap; we dropped that so the report
-    body stays pure markdown. WebUI CSS handles display-size capping
-    downstream (see styles.css `.ldr-markdown-content img`).
+    """Oversized images are wrapped in <figure class="ldr-img"> with the
+    alt text as a <figcaption> caption. width/height attributes reflect
+    the post-resize size. WebUI CSS handles display-size capping
+    downstream (see styles.css `.ldr-img img`).
     """
     md = "![长隆](https://example.com/big.jpg)"
     sizes = {"https://example.com/big.jpg": (2000, 1000)}
@@ -24,8 +22,11 @@ def test_rewrite_keeps_markdown_for_oversized():
 
     out = _store().rewrite_markdown(md, routes, sizes)
 
-    assert out == "![长隆](/images/abc.jpg)"
-    assert "<img" not in out
+    assert '<figure class="ldr-img">' in out
+    assert 'src="/images/abc.jpg"' in out
+    assert 'alt="长隆"' in out
+    assert "<figcaption>长隆</figcaption>" in out
+    assert 'width="2000"' in out and 'height="1000"' in out
 
 
 def test_rewrite_keeps_markdown_for_small_or_unknown():
@@ -35,7 +36,9 @@ def test_rewrite_keeps_markdown_for_small_or_unknown():
 
     out = _store().rewrite_markdown(md, routes, sizes)
 
-    assert out == "![small](/images/small.jpg)"
+    assert '<figure class="ldr-img">' in out
+    assert 'src="/images/small.jpg"' in out
+    assert "<figcaption>small</figcaption>" in out
 
 
 def test_rewrite_drops_unpersisted_image_entirely():
