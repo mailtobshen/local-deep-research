@@ -215,6 +215,40 @@ def _normalize_url(url: str) -> str:
     return (url or "").strip().rstrip("/")
 
 
+def _canonicalize_url(url: str) -> str:
+    """URL same-origin canonicalization — DIAGNOSTIC PROBE USE ONLY.
+
+    Performs only transforms that NEVER change page content:
+      strip / rstrip("/") / scheme lowercase / http→https /
+      host lowercase / drop "www." / drop fragment.
+    Query is preserved VERBATIM (no param dropped/reordered) so
+    ``?id=1`` and ``?id=2`` never canonicalize equal.
+
+    Returns "" for empty input; returns the stripped original on any
+    parse error (fail-closed: prefer no-match over wrong-match).
+    """
+    if not url:
+        return ""
+    u = url.strip()
+    try:
+        from urllib.parse import urlsplit, urlunsplit
+        p = urlsplit(u)
+        if not p.netloc:
+            # garbage (no host) — fail closed, return stripped original
+            return u
+        scheme = (p.scheme or "https").lower()
+        if scheme == "http":
+            scheme = "https"
+        host = (p.netloc or "").lower()
+        if host.startswith("www."):
+            host = host[4:]
+        path = p.path.rstrip("/") or ""
+        # query preserved as-is; fragment dropped
+        return urlunsplit((scheme, host, path, p.query, ""))
+    except Exception:
+        return u
+
+
 # Structural no-image domains: these sites' HTML contains no extractable
 # static <img> (posts/videos are JS-injected; document previews are
 # Flash/JS-rendered). This is an inherent property of the site class,
