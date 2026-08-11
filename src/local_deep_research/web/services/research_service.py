@@ -486,6 +486,34 @@ def _split_cited_urls(
     return covered, gap
 
 
+def _classify_url_diff(a: str, b: str) -> str:
+    """Classify how two URLs that canonicalize equal differ in raw form.
+    Single-factor priority; 'combined' when multiple; 'other' fallback.
+    For the ATTACH_NEAR_MATCH probe only.
+    """
+    from urllib.parse import urlsplit
+    pa, pb = urlsplit(a), urlsplit(b)
+    diffs: list[str] = []
+    sa, sb = (pa.scheme or "").lower(), (pb.scheme or "").lower()
+    if sa != sb and {sa, sb} <= {"http", "https"}:
+        diffs.append("scheme")
+    ha, hb = (pa.netloc or "").lower(), (pb.netloc or "").lower()
+    ha_n = ha[4:] if ha.startswith("www.") else ha
+    hb_n = hb[4:] if hb.startswith("www.") else hb
+    if ha_n == hb_n and ha != hb:
+        diffs.append("www")
+    pa_q, pb_q = (pa.path or ""), (pb.path or "")
+    if pa_q.rstrip("/") == pb_q.rstrip("/") and pa_q != pb_q:
+        diffs.append("trailing_slash")
+    if (pa.fragment or "") != (pb.fragment or "") and (
+        pa._replace(fragment="") == pb._replace(fragment="")
+    ):
+        diffs.append("fragment")
+    if not diffs:
+        return "other"
+    return diffs[0] if len(diffs) == 1 else "combined"
+
+
 def _deferred_image_fill(
     research_id: str,
     *,
@@ -764,6 +792,34 @@ def _deferred_image_fill(
                 f"findings_scanned={findings_scanned} "
                 f"all_links_scanned={all_links_scanned}"
             )
+            # Diagnostic probe: was there a canonical near-match in the
+            # records? Observes only — does NOT set attached or change
+            # filled. Gathers evidence for future URL-normalization rules.
+            from ...images.relevance import _canonicalize_url
+            ref_canon = _canonicalize_url(url)
+            near_match: str | None = None
+            if ref_canon:
+                for finding in results.get("findings", []) or []:
+                    for sr in finding.get("search_results", []) or []:
+                        cand = sr.get("url") or sr.get("link") or ""
+                        if cand and cand != url and _canonicalize_url(cand) == ref_canon:
+                            near_match = cand
+                            break
+                    if near_match:
+                        break
+                if near_match is None:
+                    for record in results.get("all_links_of_system") or []:
+                        cand = record.get("link") or record.get("url") or ""
+                        if cand and cand != url and _canonicalize_url(cand) == ref_canon:
+                            near_match = cand
+                            break
+            if near_match is not None:
+                via = _classify_url_diff(url, near_match)
+                logger.info(
+                    f"[IMG-TRACE] ATTACH_NEAR_MATCH research={research_id} "
+                    f"cite_num={cite_num_for_url} ref_url={url} "
+                    f"canonical_match_url={near_match} via={via}"
+                )
         if attached:
             filled += 1
             # Summary event — carries the full four-field vocabulary

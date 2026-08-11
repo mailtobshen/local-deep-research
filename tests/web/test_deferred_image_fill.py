@@ -9,6 +9,7 @@ image fetch is a single post-finalise pass done by
 ``enhance_report_with_images`` runs.
 """
 
+import logging
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -757,3 +758,70 @@ def test_multilabel_blocklist_entry_matched_via_host_suffix(monkeypatch):
         "and is a real image source (anti-over-block red line)"
     )
     assert other in fetched_urls
+
+
+# ---------- observability: ATTACH_NEAR_MATCH probe (observe-only) -----------
+
+
+def test_attach_near_match_emitted_on_trailing_slash(loguru_caplog):
+    """A miss where the record side has the same URL with a trailing
+    slash must announce the canonical near-match with via=trailing_slash.
+    Does NOT change attach outcome (still a miss) — observe only.
+    """
+    cited = "https://example.org/page"           # ref_url, no slash
+    record_url = "https://example.org/page/"     # record side, slash
+    markdown = (
+        "## S\n\n"
+        f"x [[7]]({cited})。\n\n"
+        "## Sources\n\n"
+        "[7] Ex\n"
+        f"   URL: {cited}\n"
+    )
+    results = {
+        "findings": [{"search_results": [{"link": record_url}]}],
+        "all_links_of_system": [],
+    }
+    fetched = {cited: {"text": "t", "images": [_extracted_image(
+        url="https://img/x.jpg", alt="x", source_url=cited)]}}
+    with patch(
+        "local_deep_research.research_library.downloaders.extraction."
+        "pipeline.fetch_content_with_images", return_value=fetched
+    ):
+        with loguru_caplog.at_level(logging.INFO):
+            filled = _deferred_image_fill(
+                "res-near", final_markdown=markdown, results=results,
+                settings_snapshot={"report.enable_images": True},
+            )
+    text = "\n".join(r.getMessage() for r in loguru_caplog.records)
+    assert filled == 0                                # still a miss
+    assert "ATTACH_NEAR_MATCH" in text
+    assert cited in text
+    assert record_url in text
+    assert "via=trailing_slash" in text
+
+
+def test_no_attach_near_match_when_query_differs(loguru_caplog):
+    """Different query values (?id=1 vs ?id=2) must NOT produce a
+    near-match — anti-mismatch red line."""
+    cited = "https://example.org/p?id=1"
+    record_url = "https://example.org/p?id=2"
+    markdown = (
+        "## S\n\n"
+        f"x [[7]]({cited})。\n\n"
+        "## Sources\n\n[7] Ex\n   URL: {cited}\n"
+    ).format(cited=cited)
+    results = {"findings": [{"search_results": [{"link": record_url}]}],
+               "all_links_of_system": []}
+    fetched = {cited: {"text": "t", "images": [_extracted_image(
+        url="https://img/x.jpg", alt="x", source_url=cited)]}}
+    with patch(
+        "local_deep_research.research_library.downloaders.extraction."
+        "pipeline.fetch_content_with_images", return_value=fetched
+    ):
+        with loguru_caplog.at_level(logging.INFO):
+            _deferred_image_fill(
+                "res-near2", final_markdown=markdown, results=results,
+                settings_snapshot={"report.enable_images": True},
+            )
+    text = "\n".join(r.getMessage() for r in loguru_caplog.records)
+    assert "ATTACH_NEAR_MATCH" not in text
