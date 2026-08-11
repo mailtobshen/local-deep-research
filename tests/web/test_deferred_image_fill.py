@@ -716,3 +716,44 @@ def test_structural_no_image_domain_skipped_from_fetch(monkeypatch, loguru_caplo
     assert "instagram.com" in text, (
         f"instagram.com must appear in the STRUCTURAL_SKIP line; got: {text!r}"
     )
+
+
+def test_multilabel_blocklist_entry_matched_via_host_suffix(monkeypatch):
+    """wenku.baidu.com is a multi-label blocklist entry that tldextract
+    collapses to baidu.com (eTLD+1), so the eTLD+1 check alone misses it.
+    The host-suffix fallback must still filter it — AND must NOT filter
+    baike.baidu.com (sibling subdomain, NOT in the list, real image source).
+    """
+    from local_deep_research.web.services import research_service
+    fetched_urls: list[str] = []
+    def _fake_fetch(urls, **kwargs):
+        fetched_urls.extend(urls)
+        return {u: {"text": "t", "images": []} for u in urls}
+    monkeypatch.setattr(
+        "local_deep_research.research_library.downloaders.extraction."
+        "pipeline.fetch_content_with_images", _fake_fetch
+    )
+    wenku = "https://wenku.baidu.com/view/abc.html"
+    baike = "https://baike.baidu.com/item/东方明珠/123"
+    other = "https://www.example.org/article"
+    markdown = (
+        "## S\n\n"
+        f"x [[1]]({wenku}) [[2]]({baike}) [[3]]({other})。\n\n"
+        "## Sources\n\n"
+        f"[1] W\n   URL: {wenku}\n"
+        f"[2] B\n   URL: {baike}\n"
+        f"[3] O\n   URL: {other}\n"
+    )
+    results = {"findings": [], "all_links_of_system": []}
+    research_service._deferred_image_fill(
+        "res-multilabel", final_markdown=markdown, results=results,
+        settings_snapshot={"report.enable_images": True},
+    )
+    assert wenku not in fetched_urls, (
+        "wenku.baidu.com (multi-label entry) must be filtered via host-suffix"
+    )
+    assert baike in fetched_urls, (
+        "baike.baidu.com must NOT be filtered — it is not in the blocklist "
+        "and is a real image source (anti-over-block red line)"
+    )
+    assert other in fetched_urls

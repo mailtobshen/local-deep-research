@@ -623,10 +623,27 @@ def _deferred_image_fill(
     )
     structural_skipped: dict[str, list[str]] = {}
     filtered: list[str] = []
+    from urllib.parse import urlsplit
     for u in urls_to_fetch:
         dom = _extract_registered_domain(u)
+        host = urlsplit(u).netloc.lower()
+        matched_entry = None
         if dom in STRUCTURAL_NO_IMAGE_DOMAINS:
-            structural_skipped.setdefault(dom, []).append(u)
+            matched_entry = dom
+        else:
+            # Multi-label entries (e.g. wenku.baidu.com) collapse under
+            # eTLD+1 (→ baidu.com) and never match the eTLD+1 check.
+            # Match them by host-suffix on a dot boundary so the entry
+            # is honored without over-blocking sibling subdomains that
+            # are NOT in the list (e.g. baike.baidu.com stays fetched).
+            for entry in STRUCTURAL_NO_IMAGE_DOMAINS:
+                if entry.count(".") >= 1 and (
+                    host == entry or host.endswith("." + entry)
+                ):
+                    matched_entry = entry
+                    break
+        if matched_entry:
+            structural_skipped.setdefault(matched_entry, []).append(u)
         else:
             filtered.append(u)
     if structural_skipped:
