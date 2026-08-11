@@ -12,7 +12,7 @@ from ....security.safe_requests import safe_get, safe_post
 from ....web_search_engines.rate_limiting import RateLimitError
 
 DEFAULT_API_URL = "http://localhost:3002"
-DEFAULT_TIMEOUT = 30
+DEFAULT_TIMEOUT = 15
 
 
 class FirecrawlClient:

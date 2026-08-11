@@ -1,5 +1,8 @@
 from unittest.mock import patch, MagicMock
 
+from local_deep_research.research_library.downloaders.extraction import (
+    firecrawl_client,
+)
 from local_deep_research.research_library.downloaders.extraction.firecrawl_client import (
     FirecrawlClient,
 )
@@ -170,3 +173,7 @@ def test_localhost_bypasses_proxy():
         client.scrape("https://example.com")
     _, kwargs = mock_post.call_args
     assert kwargs.get("allow_private_ips") is True
+
+
+def test_default_timeout_is_15():
+    assert firecrawl_client.DEFAULT_TIMEOUT == 15
