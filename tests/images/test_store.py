@@ -142,11 +142,11 @@ def test_probe_size_logs_at_debug_level_on_failure(loguru_caplog):
 def test_persist_stashes_url_to_size(tmp_path):
     store = ImageStore("rid", MagicMock(), base_dir=tmp_path)
     with patch.object(store, "_download") as dl:
-        # 1200x800 — over threshold
+        # 1200x800 — over threshold, resized to 600x400 on persist
         dl.return_value = (_png_bytes(1200, 800), "image/png")
         store.persist(["https://x/big.jpg"])
     sizes = getattr(store, "_last_url_to_size", {})
-    assert sizes.get("https://x/big.jpg") == (1200, 800)
+    assert sizes.get("https://x/big.jpg") == (600, 400)
 
 
 def test_rewrite_markdown_keeps_markdown_for_landscape_oversize(tmp_path):

@@ -80,6 +80,57 @@ def _probe_size(data: bytes, url: Optional[str] = None) -> Optional[Tuple[int, i
         return None
 
 
+def _probe_and_resize(
+    data: bytes, url: Optional[str] = None
+) -> Tuple[bytes, Optional[Tuple[int, int]], bool]:
+    """Probe image dimensions and resize if the long side exceeds
+    ``_MAX_DISPLAY_PX``.
+
+    Returns ``(saved_bytes, size, resized)``:
+    - ``saved_bytes``: original bytes (under cap / decode failure) or
+      JPEG q85 bytes of the resized image.
+    - ``size``: (w, h) of the returned bytes, or ``None`` if PIL could
+      not decode (caller writes original bytes, size unknown).
+    - ``resized``: True iff the bytes were re-encoded to JPEG at a
+      smaller size. Caller uses this to override content-type/ext so
+      the file extension matches the actual byte format.
+
+    Resizing happens HERE (at persist time, before the bytes hit disk)
+    so the saved file IS the reduced image and ``url_to_size`` reflects
+    the saved dimensions. Previously the cap was half-disabled: RESIZE
+    events were logged but original bytes were written, so oversized
+    images rendered at native size (PDF export has no CSS max-width).
+    """
+    try:
+        from io import BytesIO
+        from PIL import Image as PILImage
+        with PILImage.open(BytesIO(data)) as im:
+            w, h = im.size
+            long_side = max(w, h)
+            if long_side <= _MAX_DISPLAY_PX:
+                return data, (w, h), False
+            scale = _MAX_DISPLAY_PX / long_side
+            new_size = (round(w * scale), round(h * scale))
+            im_resized = im.convert("RGB").resize(
+                new_size, PILImage.LANCZOS
+            )
+            buf = BytesIO()
+            im_resized.save(buf, format="JPEG", quality=85)
+            resized_bytes = buf.getvalue()
+            logger.info(
+                f"[IMG-TRACE] PERSIST_RESIZE url={url or '<unknown>'} "
+                f"from={w}x{h} to={new_size[0]}x{new_size[1]} "
+                f"max_px={_MAX_DISPLAY_PX}"
+            )
+            return resized_bytes, new_size, True
+    except Exception as e:
+        logger.debug(
+            f"[IMG-TRACE] PROBE_SIZE_FAIL url={url or '<unknown>'} "
+            f"reason={type(e).__name__}: {e}"
+        )
+    return data, None, False
+
+
 class ImageStore:
     def __init__(
         self,
@@ -294,6 +345,16 @@ class ImageStore:
                         raise last_exc
                     continue
                 data, ctype = result
+                # Probe dimensions and resize if oversized (long side >
+                # _MAX_DISPLAY_PX). PIL is opened exactly once here; the
+                # returned bytes are what get written to disk, so the
+                # saved file IS the reduced image and url_to_size holds
+                # the saved (post-resize) dimensions. PIL decode failure
+                # → original bytes written, size unknown. A resize also
+                # re-encodes to JPEG, so override ctype/ext to match.
+                data, size, resized = _probe_and_resize(data, url=url)
+                if resized:
+                    ctype = "image/jpeg"
                 digest = hashlib.sha1(data).hexdigest()
                 ext = self._ext_for(ctype)
                 rel = f"{self._safe_id}/{digest}{ext}"
@@ -307,9 +368,6 @@ class ImageStore:
                     f"sha1={digest} route={route} "
                     f"ext={ext} bytes={len(data)}"
                 )
-                # Probe real dimensions for downstream display-size capping.
-                # PIL may fail (corrupt bytes, non-image MIME) → skip resize.
-                size = _probe_size(data, url=url)
                 if size is not None:
                     url_to_size[url] = size
                 src = url_to_source.get(url)
