@@ -405,6 +405,12 @@ class IntegratedReportGenerator:
             "specific point.*' over filling the section with meta-commentary.\n"
             "4. The reader does not need a methodology recap or a warning "
             "about AI-generated text. Just deliver the answer.\n"
+            "5. Do NOT include ASCII art, box-drawing diagrams, "
+            "character-based schematics, or any hand-drawn-style "
+            "layout using symbols (┌─┐│◄►▼├└┘═║ etc.). These render "
+            "poorly across viewers and waste space. Describe spatial "
+            "or structural relationships in prose or a table instead "
+            "— never draw them with text characters.\n"
             "=== END OF OUTPUT RULES ===\n\n"
         )
 
