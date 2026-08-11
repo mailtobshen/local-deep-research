@@ -27,6 +27,42 @@ from .serialize import loads_images
 from .store import ImageStore, _IMG_RE
 
 
+SECTION_IMAGE_CAP = 3  # max images adopted per section, by score
+
+
+def _build_placements(
+    binding: dict,
+    bank_by_url: dict,
+    cap: int = SECTION_IMAGE_CAP,
+) -> list[tuple[int, str, str]]:
+    """Build (sidx, url, alt) placements, capped at ``cap`` per section.
+
+    Within each section, keeps the top-``cap`` images by binding score
+    (desc). Emits a SECTION_CAP IMG-TRACE per over-cap section. Caller
+    must hold the research_id logger context.
+    """
+    # Gather per-section candidates with scores.
+    by_sec: dict[int, list[tuple[float, str]]] = {}
+    for url, pairs in binding.items():
+        if url not in bank_by_url:
+            continue
+        for _num, sidx, score in pairs:
+            by_sec.setdefault(sidx, []).append((score, url))
+    placements: list[tuple[int, str, str]] = []
+    for sidx, cands in by_sec.items():
+        cands_sorted = sorted(cands, key=lambda sc: sc[0], reverse=True)
+        dropped = max(0, len(cands_sorted) - cap)
+        if dropped:
+            logger.info(
+                f"[IMG-TRACE] SECTION_CAP sec={sidx} "
+                f"candidates={len(cands_sorted)} kept={cap} dropped={dropped}"
+            )
+        for _score, url in cands_sorted[:cap]:
+            placements.append((sidx, url, bank_by_url[url].alt))
+    placements.sort(key=lambda p: (p[0], p[1]))
+    return placements
+
+
 def _dedupe_images(markdown: str) -> tuple[str, int, int]:
     """Collapse duplicate ``![alt](url)`` occurrences to first-only.
 
@@ -300,7 +336,7 @@ def enhance_report_with_images(
         # (instead of collapsing at this stage) gives the insertion
         # phase a chance to place the image next to every section
         # that actually cites its source page.
-        binding: dict[str, list[tuple[str, int]]] = {}
+        binding: dict[str, list[tuple[int, int, float]]] = {}
 
         # Stage 2: extract images from each cited source, single-section
         # semantic gate against the citation's section.
@@ -444,7 +480,7 @@ def enhance_report_with_images(
                         # whose relevance-gate happened to clear
                         # independently.
                         binding.setdefault(img.url, []).append(
-                            (num, sidx)
+                            (num, sidx, score)
                         )
                         # Event 7 kept-side: per-image decision + reason.
                         logger.info(
@@ -527,30 +563,23 @@ def enhance_report_with_images(
 
         # Stage 3: deterministic insert at each image's bound section.
         # ImageEnhancer is intentionally NOT called (paused).
-        # Build placements from binding (url -> list[(num, sec)]) —
-        # multi-bind semantics: a single image URL can bind to several
+        # Build placements from binding (url -> list[(num, sec, score)])
+        # — multi-bind semantics: a single image URL can bind to several
         # sections if its source page is cited in each. We emit one
-        # placement per (url, sec) pair, sorted by section index for
-        # stable in-section ordering. The post-insert dedup pass
+        # placement per (url, sec) pair, capped at SECTION_IMAGE_CAP per
+        # section by score desc, sorted by section index for stable
+        # in-section ordering. The post-insert dedup pass
         # (``_dedupe_images`` below) collapses any duplicate
         # ``![alt](url)`` instances produced by the multi-bind,
         # keeping the FIRST occurrence in document order.
         bank_by_url = {img.url: img for img in bank.candidates_with_alt()}
-        placements = sorted(
-            (
-                (sidx, url, bank_by_url[url].alt)
-                for url, pairs in binding.items()
-                if url in bank_by_url
-                for _num, sidx in pairs
-            ),
-            key=lambda p: (p[0], p[1]),
-        )
+        placements = _build_placements(binding, bank_by_url)
         for sidx, p_url, p_alt in placements:
             # Find the (num, sec) pair for this placement. If the
             # URL is bound to multiple (num, sec), pick the one that
             # matches this placement's section.
             matching = [
-                (n, sec) for n, sec in binding.get(p_url, [])
+                (n, sec) for n, sec, _score in binding.get(p_url, [])
                 if sec == sidx
             ]
             p_num = matching[0][0] if matching else None
@@ -636,11 +665,11 @@ def enhance_report_with_images(
             img = chosen_img_by_url.get(url)
             if img is None:
                 continue
-            # binding[url] is a list of (num, sidx) pairs. Pick the
-            # FIRST pair (matches dedup_images' keep-first semantic
-            # for the displayed image — the persisted image is the
-            # one whose citation the reader saw in the body).
-            pairs = binding.get(url) or [(None, None)]
+            # binding[url] is a list of (num, sidx, score) triples. Pick
+            # the FIRST pair (matches dedup_images' keep-first semantic
+            # for the displayed image — the persisted image is the one
+            # whose citation the reader saw in the body).
+            pairs = binding.get(url) or [(None, None, None)]
             num = pairs[0][0]
             route = mapping.get(url) or ""
             # ``local_path`` is best-effort: the real ImageStore
