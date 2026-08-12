@@ -39,6 +39,13 @@ _BACKOFF_BASE_S = 1.5
 # 600 px matches the typical GitHub README content width.
 _MAX_DISPLAY_PX = 600
 
+# Undersize floor: images whose pixel AREA is below this are upscaled at
+# persist time so both sides reach ``_MIN_DISPLAY_SIDE``, aspect preserved.
+# 40,000 = 200² catches thumbnails/icons (150×200=30k upscaled) while
+# leaving modestly small but readable images (250×200=50k) untouched.
+_MIN_DISPLAY_AREA = 40_000
+_MIN_DISPLAY_SIDE = 300
+
 # Suffix-based hostname allowlist for image persistence. Each suffix
 # is matched against the URL's hostname (exact or ".suffix" sub-match)
 # so that public CDNs whose IP-block check returns False for unrelated
@@ -107,10 +114,21 @@ def _probe_and_resize(
         with PILImage.open(BytesIO(data)) as im:
             w, h = im.size
             long_side = max(w, h)
-            if long_side <= _MAX_DISPLAY_PX:
+            if long_side > _MAX_DISPLAY_PX:
+                # Oversized: downscale long side to _MAX_DISPLAY_PX.
+                scale = _MAX_DISPLAY_PX / long_side
+                new_size = (round(w * scale), round(h * scale))
+                reason = "downscale"
+            elif w * h < _MIN_DISPLAY_AREA:
+                # Undersized: upscale so BOTH sides reach
+                # _MIN_DISPLAY_SIDE, aspect preserved. Scale by the
+                # smaller side so the floor is met exactly there and
+                # the larger side exceeds it.
+                scale = _MIN_DISPLAY_SIDE / min(w, h)
+                new_size = (round(w * scale), round(h * scale))
+                reason = "upscale"
+            else:
                 return data, (w, h), False
-            scale = _MAX_DISPLAY_PX / long_side
-            new_size = (round(w * scale), round(h * scale))
             im_resized = im.convert("RGB").resize(
                 new_size, PILImage.LANCZOS
             )
@@ -120,7 +138,9 @@ def _probe_and_resize(
             logger.info(
                 f"[IMG-TRACE] PERSIST_RESIZE url={url or '<unknown>'} "
                 f"from={w}x{h} to={new_size[0]}x{new_size[1]} "
-                f"max_px={_MAX_DISPLAY_PX}"
+                f"reason={reason} "
+                f"max_px={_MAX_DISPLAY_PX} "
+                f"min_area={_MIN_DISPLAY_AREA} min_side={_MIN_DISPLAY_SIDE}"
             )
             return resized_bytes, new_size, True
     except Exception as e:
