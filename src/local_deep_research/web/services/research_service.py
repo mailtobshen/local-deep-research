@@ -757,6 +757,7 @@ def _deferred_image_fill(
                 f"cite_num={cite_num_for_url} "
                 f"ref_url={url}"
             )
+        canonical_hit: str | None = None
         attached = False
         findings_scanned = 0
         for finding in results.get("findings", []) or []:
@@ -782,6 +783,33 @@ def _deferred_image_fill(
             record["html_content"] = payload
             attached = True
         if not attached:
+            # Canonical pass: promote same-origin detection (previously
+            # observe-only NEAR_MATCH) to an attach criterion. Only runs
+            # when no exact match was found. First canonical-equal record
+            # wins; ``filled`` still counts this citation at most once
+            # because ``attached`` gates the ``filled += 1`` below.
+            from ...images.relevance import _canonicalize_url
+            ref_canon = _canonicalize_url(url)
+            if ref_canon:
+                for finding in results.get("findings", []) or []:
+                    for sr in finding.get("search_results", []) or []:
+                        cand = sr.get("url") or sr.get("link") or ""
+                        if cand and cand != url and _canonicalize_url(cand) == ref_canon:
+                            sr["html_content"] = payload
+                            canonical_hit = cand
+                            attached = True
+                            break
+                    if canonical_hit:
+                        break
+                if canonical_hit is None:
+                    for record in results.get("all_links_of_system") or []:
+                        cand = record.get("link") or record.get("url") or ""
+                        if cand and cand != url and _canonicalize_url(cand) == ref_canon:
+                            record["html_content"] = payload
+                            canonical_hit = cand
+                            attached = True
+                            break
+        if not attached:
             # Fetched images with nowhere to put them. Records the
             # candidate-set sizes so a reader can tell "no records at
             # all" from "records present but no URL matched".
@@ -792,9 +820,10 @@ def _deferred_image_fill(
                 f"findings_scanned={findings_scanned} "
                 f"all_links_scanned={all_links_scanned}"
             )
-            # Diagnostic probe: was there a canonical near-match in the
-            # records? Observes only — does NOT set attached or change
-            # filled. Gathers evidence for future URL-normalization rules.
+            # Observe-only diagnostic: was there a canonical
+            # near-neighbor the canonical pass still refused? Under the
+            # new same-origin-attach semantics this fires only for
+            # exotic drifts the canonical rule does not cover.
             from ...images.relevance import _canonicalize_url
             ref_canon = _canonicalize_url(url)
             near_match: str | None = None
@@ -822,6 +851,17 @@ def _deferred_image_fill(
                 )
         if attached:
             filled += 1
+            if canonical_hit is not None:
+                # Same-origin attach via canonical equality (exact match
+                # found nothing). Records the record-side URL and the
+                # classified raw difference so a reader can see why the
+                # exact pass missed.
+                via = _classify_url_diff(url, canonical_hit)
+                logger.info(
+                    f"[IMG-TRACE] ATTACH_CANONICAL research={research_id} "
+                    f"cite_num={cite_num_for_url} ref_url={url} "
+                    f"record_url={canonical_hit} via={via}"
+                )
             # Summary event — carries the full four-field vocabulary
             # the user asked for (cite_num, ref_url, img_source_url,
             # img_alt) so a single grep ``DEFERRED_FILLED`` line tells
