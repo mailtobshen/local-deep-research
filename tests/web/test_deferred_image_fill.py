@@ -763,10 +763,13 @@ def test_multilabel_blocklist_entry_matched_via_host_suffix(monkeypatch):
 # ---------- observability: ATTACH_NEAR_MATCH probe (observe-only) -----------
 
 
-def test_attach_near_match_emitted_on_trailing_slash(loguru_caplog):
-    """A miss where the record side has the same URL with a trailing
-    slash must announce the canonical near-match with via=trailing_slash.
-    Does NOT change attach outcome (still a miss) — observe only.
+def test_canonical_attach_on_trailing_slash(loguru_caplog):
+    """A cited URL whose only record differs by a trailing slash must
+    attach via canonical equality and announce ATTACH_CANONICAL with
+    via=trailing_slash — no longer an observe-only near-match.
+
+    Regression for the 2026-08-12 run c325e2a0: 17 trailing-slash
+    citations were ATTACH_MISS despite successful fetches.
     """
     cited = "https://example.org/page"           # ref_url, no slash
     record_url = "https://example.org/page/"     # record side, slash
@@ -789,15 +792,27 @@ def test_attach_near_match_emitted_on_trailing_slash(loguru_caplog):
     ):
         with loguru_caplog.at_level(logging.INFO):
             filled = _deferred_image_fill(
-                "res-near", final_markdown=markdown, results=results,
+                "res-canon", final_markdown=markdown, results=results,
                 settings_snapshot={"report.enable_images": True},
             )
     text = "\n".join(r.getMessage() for r in loguru_caplog.records)
-    assert filled == 0                                # still a miss
-    assert "ATTACH_NEAR_MATCH" in text
+    assert filled == 1, (
+        "trailing-slash record must attach via canonical equality"
+    )
+    assert results["findings"][0]["search_results"][0].get("html_content"), (
+        "html_content must be written onto the trailing-slash record"
+    )
+    assert "ATTACH_CANONICAL" in text
     assert cited in text
     assert record_url in text
     assert "via=trailing_slash" in text
+    assert "ATTACH_MISS" not in text, (
+        "a successfully-attached citation must not also emit ATTACH_MISS"
+    )
+    assert "ATTACH_NEAR_MATCH" not in text, (
+        "a successfully-attached citation must not also emit the "
+        "observe-only near-match probe"
+    )
 
 
 def test_no_attach_near_match_when_query_differs(loguru_caplog):
@@ -825,3 +840,152 @@ def test_no_attach_near_match_when_query_differs(loguru_caplog):
             )
     text = "\n".join(r.getMessage() for r in loguru_caplog.records)
     assert "ATTACH_NEAR_MATCH" not in text
+
+
+def test_canonical_attach_steam_question_mark(loguru_caplog):
+    """Steam's filedetails?id=<n> vs filedetails/?id=<n> (slash before
+    the query separator) is canonical-equal and must attach.
+
+    Regression for 2026-08-12 run c325e2a0: 5 Steam Workshop citations
+    (cite_num 30/40/111/112/166-equivalent) were ATTACH_MISS via=trailing_slash.
+    """
+    cited = "https://steamcommunity.com/sharedfiles/filedetails?id=3506925216"
+    record_url = "https://steamcommunity.com/sharedfiles/filedetails/?id=3506925216"
+    markdown = (
+        "## S\n\n"
+        f"x [[7]]({cited})。\n\n"
+        "## Sources\n\n"
+        "[7] Ex\n"
+        f"   URL: {cited}\n"
+    )
+    results = {
+        "findings": [{"search_results": [{"link": record_url}]}],
+        "all_links_of_system": [],
+    }
+    fetched = {cited: {"text": "t", "images": [_extracted_image(
+        url="https://img/x.jpg", alt="x", source_url=cited)]}}
+    with patch(
+        "local_deep_research.research_library.downloaders.extraction."
+        "pipeline.fetch_content_with_images", return_value=fetched
+    ):
+        with loguru_caplog.at_level(logging.INFO):
+            filled = _deferred_image_fill(
+                "res-steam", final_markdown=markdown, results=results,
+                settings_snapshot={"report.enable_images": True},
+            )
+    text = "\n".join(r.getMessage() for r in loguru_caplog.records)
+    assert filled == 1
+    assert results["findings"][0]["search_results"][0].get("html_content")
+    assert "ATTACH_CANONICAL" in text
+    assert record_url in text
+    assert "via=trailing_slash" in text
+    assert "ATTACH_MISS" not in text
+
+
+def test_exact_match_takes_precedence_over_canonical(loguru_caplog):
+    """When records contain BOTH an exact match and a canonical
+    near-neighbor, the exact record is written and ATTACH_CANONICAL
+    does NOT fire. Exact wins; filled counts once.
+    """
+    cited = "https://example.org/page"
+    exact_record = {"link": cited}
+    slash_record = {"link": "https://example.org/page/"}
+    markdown = (
+        "## S\n\n"
+        f"x [[7]]({cited})。\n\n"
+        "## Sources\n\n"
+        "[7] Ex\n"
+        f"   URL: {cited}\n"
+    )
+    # Put the slash record first to prove precedence is not just
+    # "first record wins" — exact must win regardless of order.
+    results = {
+        "findings": [{"search_results": [slash_record, exact_record]}],
+        "all_links_of_system": [],
+    }
+    fetched = {cited: {"text": "t", "images": [_extracted_image(
+        url="https://img/x.jpg", alt="x", source_url=cited)]}}
+    with patch(
+        "local_deep_research.research_library.downloaders.extraction."
+        "pipeline.fetch_content_with_images", return_value=fetched
+    ):
+        with loguru_caplog.at_level(logging.INFO):
+            filled = _deferred_image_fill(
+                "res-prec", final_markdown=markdown, results=results,
+                settings_snapshot={"report.enable_images": True},
+            )
+    text = "\n".join(r.getMessage() for r in loguru_caplog.records)
+    assert filled == 1
+    assert exact_record.get("html_content"), (
+        "the exact-match record must receive html_content"
+    )
+    assert "ATTACH_CANONICAL" not in text, (
+        "exact match must not trigger the canonical-attach probe"
+    )
+
+
+def test_attach_canonical_carries_five_key_fields(loguru_caplog):
+    """ATTACH_CANONICAL must carry cite_num and ref_url (the five-key
+    IMG-TRACE vocabulary), so a single grep reconstructs provenance —
+    same audit pattern as tests/images/test_img_trace_audit_events.py.
+    """
+    cited = "https://example.org/page"
+    markdown = (
+        "## S\n\n"
+        f"x [[42]]({cited})。\n\n"
+        "## Sources\n\n"
+        "[42] Ex\n"
+        f"   URL: {cited}\n"
+    )
+    results = {
+        "findings": [{"search_results": [{"link": "https://example.org/page/"}]}],
+        "all_links_of_system": [],
+    }
+    fetched = {cited: {"text": "t", "images": [_extracted_image(
+        url="https://img/x.jpg", alt="x", source_url=cited)]}}
+    with patch(
+        "local_deep_research.research_library.downloaders.extraction."
+        "pipeline.fetch_content_with_images", return_value=fetched
+    ):
+        with loguru_caplog.at_level(logging.INFO):
+            _deferred_image_fill(
+                "res-fields", final_markdown=markdown, results=results,
+                settings_snapshot={"report.enable_images": True},
+            )
+    text = "\n".join(r.getMessage() for r in loguru_caplog.records)
+    canon_lines = [l for l in text.splitlines() if "ATTACH_CANONICAL" in l]
+    assert canon_lines, "expected an ATTACH_CANONICAL line"
+    line = canon_lines[0]
+    assert "cite_num=42" in line
+    assert f"ref_url={cited}" in line
+
+
+def test_attach_miss_still_fires_with_no_near_neighbor(loguru_caplog):
+    """A cited URL with no record at all — neither exact nor canonical —
+    must still emit ATTACH_MISS. Guards that the canonical pass did not
+    accidentally swallow the genuine-miss path.
+    """
+    cited = "https://orphan.example/never-in-results"
+    markdown = (
+        "## S\n\n"
+        f"x [[7]]({cited})。\n\n"
+        "## Sources\n\n"
+        "[7] Ex\n"
+        f"   URL: {cited}\n"
+    )
+    results = {"findings": [], "all_links_of_system": []}
+    fetched = {cited: {"text": "t", "images": [_extracted_image(
+        url="https://img/o.jpg", alt="orphan", source_url=cited)]}}
+    with patch(
+        "local_deep_research.research_library.downloaders.extraction."
+        "pipeline.fetch_content_with_images", return_value=fetched
+    ):
+        with loguru_caplog.at_level(logging.INFO):
+            filled = _deferred_image_fill(
+                "res-miss2", final_markdown=markdown, results=results,
+                settings_snapshot={"report.enable_images": True},
+            )
+    text = "\n".join(r.getMessage() for r in loguru_caplog.records)
+    assert filled == 0
+    assert "ATTACH_MISS" in text
+    assert "ATTACH_CANONICAL" not in text
