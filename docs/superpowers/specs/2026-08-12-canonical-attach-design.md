@@ -103,39 +103,59 @@ drops from ~25 toward ~3 (the genuine-noise citations); a new
 
 ## Testing
 
-All new tests append to `tests/web/test_deferred_image_fill.py`, reusing the
-file's existing conventions: the `_extracted_image` helper, patching
+Tests live in `tests/web/test_deferred_image_fill.py`, reusing the file's
+existing conventions: the `_extracted_image` helper, patching
 `local_deep_research.research_library.downloaders.extraction.pipeline.fetch_content_with_images`,
 `settings_snapshot={"report.enable_images": True}`, and the `loguru_caplog`
-fixture (`tests/conftest.py:604`) joined exactly as
-`test_attach_miss_event_emitted_when_no_record_matches` does.
+fixture (`tests/conftest.py:604`) wrapped in
+`with loguru_caplog.at_level(logging.INFO):` exactly as the file's other
+probe-asserting tests do.
 
-1. **`test_canonical_attach_on_trailing_slash`** — cite `.../disneyland`,
-   record `.../disneyland/`. Assert `filled == 1`, the record gained
-   `html_content`, and the log carries `ATTACH_CANONICAL ... via=trailing_slash`.
-   *Fails against current `main` (today it yields `filled == 0`)* — reproduces
-   Mode A.
-2. **`test_canonical_attach_steam_question_mark`** — cite
+**Two existing tests already encode this area and must be handled, not
+duplicated:**
+
+- `test_attach_near_match_emitted_on_trailing_slash` (line 766) currently
+  locks in the observe-only behavior (`filled == 0` + `ATTACH_NEAR_MATCH`).
+  Under the fix its expectation **flips**. It is renamed to
+  `test_canonical_attach_on_trailing_slash` and re-asserted as a hit.
+- `test_no_attach_near_match_when_query_differs` (line 803) is the
+  anti-mismatch red line (`?id=1` vs `?id=2` must not merge). It stays
+  **valid and unchanged** — query is preserved verbatim by
+  `_canonicalize_url`, so distinct queries never canonicalize equal.
+
+**Net test change: 1 flipped + 4 added + 1 pre-existing-unchanged.**
+
+1. **`test_canonical_attach_on_trailing_slash`** *(flip of the 766 test)* —
+   cite `.../page`, record `.../page/`. Assert `filled == 1`, the record
+   gained `html_content`, and the log carries
+   `ATTACH_CANONICAL ... via=trailing_slash`. Assert `ATTACH_MISS` and
+   `ATTACH_NEAR_MATCH` do NOT fire. *Fails against current `main` (today it
+   yields `filled == 0`)* — reproduces Mode A.
+2. **`test_canonical_attach_steam_question_mark`** *(new)* — cite
    `.../filedetails?id=3506925216`, record `.../filedetails/?id=3506925216`.
    Same assertions, `via=trailing_slash`. Covers Mode B.
-3. **`test_exact_match_takes_precedence_over_canonical`** — records contain
-   BOTH an exact match and a canonical near-neighbor. Assert `filled == 1`,
-   the exact record was the one written, and **no** `ATTACH_CANONICAL` event
-   fires. Pins "exact precedence".
-4. **`test_canonical_never_merges_distinct_query`** — cite `?id=1`, record
-   `?id=2`. Assert `filled == 0`, `ATTACH_MISS` fires, **no**
-   `ATTACH_CANONICAL`. Pins "query preserved → distinct pages never merge".
-5. **`test_attach_canonical_carries_five_key_fields`** — assert the
+3. **`test_exact_match_takes_precedence_over_canonical`** *(new)* — records
+   contain BOTH an exact match and a canonical near-neighbor (slash record
+   placed FIRST, to prove precedence is not just "first record wins").
+   Assert `filled == 1`, the exact record was the one written, and **no**
+   `ATTACH_CANONICAL` event fires. Pins "exact precedence".
+4. **`test_attach_canonical_carries_five_key_fields`** *(new)* — assert the
    `ATTACH_CANONICAL` line contains both `cite_num` and `ref_url`, aligning
    with the five-key IMG-TRACE schema audit pattern in
    `tests/images/test_img_trace_audit_events.py`.
+5. **`test_attach_miss_still_fires_with_no_near_neighbor`** *(new)* — a cited
+   URL with no record at all (neither exact nor canonical) must still emit
+   `ATTACH_MISS` and not emit `ATTACH_CANONICAL`. Guards that the canonical
+   pass did not swallow the genuine-miss path.
+
+The query-anti-mismatch case is already covered by the pre-existing
+`test_no_attach_near_match_when_query_differs` (line 803) — no new test
+needed for it.
 
 **Regression:** existing `test_attach_miss_event_emitted_when_no_record_matches`
-must still pass — under the new semantics it still represents the "genuine
-no-match" path (its fixture uses a URL with no record at all, which is
-neither exact nor canonical). If the fixture's URL happens to canonicalize
-to something present, adjust the fixture to a truly-unmatched URL (the test
-intent is unchanged). Full gate:
+(line 634) must still pass — its fixture uses a URL with no record at all,
+which is neither exact nor canonical, so it still represents the genuine
+no-match path. Full gate:
 `LDR_BOOTSTRAP_ALLOW_UNENCRYPTED=true .venv/bin/python -m pytest tests/web/ tests/images/ -q`
 must be green.
 
