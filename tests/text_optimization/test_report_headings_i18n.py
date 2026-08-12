@@ -6,12 +6,12 @@ ignoring ``report.language``. With the default ``zh-CN`` a Chinese
 user got a Chinese body but English chapter scaffolding. These tests
 assert the chapter scaffolding renders in the user's chosen language.
 
-Note: the report summary block has historically been DISCARDED by the
-per-section renumber rebuild in ``_format_final_report`` (see the
-pre-existing ``report_parts[1:1]`` slice in that file). That
-pre-existing rendering bug is out of scope here — we only assert what
-the user actually sees in the report: the TOC heading and the
-``## Sources`` heading.
+Note: the report summary block (heading + body lines) IS rendered into
+the final report content by ``_format_final_report`` — the per-section
+renumber rebuild preserves it via ``report_parts[1:6]``. Both the
+heading and the two body lines are localized together via
+``_get_chapter_headings`` so a zh-CN report shows Chinese summary text
+throughout, not a Chinese heading over English body lines.
 """
 
 from __future__ import annotations
@@ -67,11 +67,24 @@ class TestReportHeadingsLocalizedToZhCN:
 
     def test_research_summary_constant_is_chinese(self):
         """The localized Summary heading constant must be available in
-        Chinese for zh-CN. The block is historically dropped by the
-        rebuild (pre-existing bug, out of scope) — we only check the
-        helper's return value here."""
+        Chinese for zh-CN."""
         gen = _make_generator()
-        assert gen._get_chapter_headings()["summary"] == "# 研究摘要"
+        headings = gen._get_chapter_headings()
+        assert headings["summary"] == "# 研究摘要"
+
+    def test_research_summary_body_is_chinese(self):
+        """The summary body lines (under the # 研究摘要 heading) must
+        render in Chinese for zh-CN, not the historical hard-coded
+        English. Regression for the zh-CN heading + English body split."""
+        gen = _make_generator()
+        report = gen._format_final_report(
+            _basic_sections(), _basic_structure(), "示例查询"
+        )
+        content = report["content"]
+        assert "本报告使用高级搜索系统完成研究。" in content
+        assert "研究过程中针对每个章节与子小节进行了定向检索。" in content
+        assert "advanced search system" not in content
+        assert "Research included targeted searches" not in content
 
     def test_sources_heading_is_chinese(self):
         gen = _make_generator()
@@ -107,3 +120,16 @@ class TestReportHeadingsEnglishWhenLanguageIsEn:
         content = report["content"]
         assert "## Sources" in content
         assert "## 参考文献" not in content
+
+    def test_research_summary_body_is_english(self):
+        """Non-zh-CN locales get the English summary body verbatim
+        (fall-through contract preserved — no behavior change for
+        English/unknown locales)."""
+        gen = _make_generator(settings_snapshot={"report.language": "en"})
+        report = gen._format_final_report(
+            _basic_sections(), _basic_structure(), "example"
+        )
+        content = report["content"]
+        assert "This report was researched using an advanced search system." in content
+        assert "Research included targeted searches for each section and subsection." in content
+        assert "本报告使用高级搜索系统完成研究。" not in content

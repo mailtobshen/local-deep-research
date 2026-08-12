@@ -120,7 +120,8 @@ class IntegratedReportGenerator:
         unknown locales fall through to English so we never emit
         broken headings.
 
-        Returns a dict with keys ``toc``, ``summary``, ``sources``.
+        Returns a dict with keys ``toc``, ``summary``, ``sources``,
+        ``summary_lines``.
         """
         # Defensive against test/legacy callers that build the
         # generator via ``__new__`` and skip ``__init__`` — the
@@ -135,12 +136,24 @@ class IntegratedReportGenerator:
             settings_snapshot=snapshot,
         )
         localized = {
-            "zh-CN": {"toc": "# 目录", "summary": "# 研究摘要", "sources": "## 参考文献"},
+            "zh-CN": {
+                "toc": "# 目录",
+                "summary": "# 研究摘要",
+                "sources": "## 参考文献",
+                "summary_lines": [
+                    "本报告使用高级搜索系统完成研究。",
+                    "研究过程中针对每个章节与子小节进行了定向检索。",
+                ],
+            },
         }.get(lang)
         return localized or {
             "toc": "# Table of Contents",
             "summary": "# Research Summary",
             "sources": "## Sources",
+            "summary_lines": [
+                "This report was researched using an advanced search system.",
+                "Research included targeted searches for each section and subsection.",
+            ],
         }
 
     def close(self) -> None:
@@ -725,12 +738,7 @@ class IntegratedReportGenerator:
 
         # Add a summary of the research
         report_parts.append(headings["summary"])
-        report_parts.append(
-            "This report was researched using an advanced search system."
-        )
-        report_parts.append(
-            "Research included targeted searches for each section and subsection."
-        )
+        report_parts.extend(headings["summary_lines"])
         report_parts.append("\n---\n")
 
         # Add each section's content
