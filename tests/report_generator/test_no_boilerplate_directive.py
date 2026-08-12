@@ -33,3 +33,33 @@ def test_output_rules_ban_ascii_diagrams():
     assert "┌" in directive or "diagram" in lower, (
         "directive must show a forbidden box-drawing example or the word diagram"
     )
+
+
+def test_output_rules_ban_arrow_and_connector_diagrams():
+    """The directive must ALSO forbid arrows/connectors (→ ↓ ──) and
+    name the content shapes that use them — route maps, distribution
+    diagrams, flow charts — not just box-drawing characters.
+
+    Regression: run dfa00057 rendered '经典拍摄路线: 外滩源 → 外白渡桥 → ...'
+    and '商业业态分布图' with ↓/──→ columns, because the original ASCII
+    ban only listed box-drawing chars (┌─┐│├└┘═║) and the model routed
+    around it using arrows instead. Arrows, connectors, and the named
+    content shapes must all be explicitly banned now.
+    """
+    directive = (
+        IntegratedReportGenerator._build_no_boilerplate_directive(object())
+    )
+    lower = directive.lower()
+    # An arrow character must appear in the banned list.
+    assert any(ch in directive for ch in ("→", "←", "↑", "↓")), (
+        "directive must list at least one arrow character as banned"
+    )
+    # Routes / flows / distributions must be named so the model knows
+    # these content shapes are banned, not just the box-drawing chars.
+    assert "route" in lower or "flow" in lower, (
+        "directive must name route/flow as a banned diagram shape"
+    )
+    # And the replacement must be prose/table/ordered-list, not silence.
+    assert "table" in lower or "list" in lower or "prose" in lower, (
+        "directive must offer prose/table/list as the replacement"
+    )
