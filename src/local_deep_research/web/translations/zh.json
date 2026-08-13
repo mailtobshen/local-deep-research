@@ -2904,6 +2904,8 @@
   "OpenAI-Compatible (llama.cpp, vLLM, LM Studio, etc.)": "OpenAI 兼容 (llama.cpp、vLLM、LM Studio 等)",
   "Vision Endpoint URL": "视觉模型 API 地址",
   "Vision API Key": "视觉模型 API 密钥",
+  "Image alt-section similarity threshold": "图片 alt 与章节相似度阈值",
+  "Minimum cosine similarity (0–1) between an image's alt text and its section heading+content required for the image to be kept in the report. Lower = more images but more mismatches; higher = fewer, more precise images. Clamped to a floor of 0.45. Default 0.6.": "图片 alt 文本与其所在「章节标题 + 章节内容」的余弦相似度达到该值（0–1）才会被采纳进报告。调低 = 收录更多图片但误配增多；调高 = 图片更少更精准。下限 0.45（低于此值会被钳制到 0.45）。默认 0.6。",
   "OpenAI-Compatible Model (llama.cpp, vLLM, LM Studio, etc.)": "OpenAI 兼容模型 (llama.cpp、vLLM、LM Studio 等)",
   "Test Connection": "测试连接",
   "Vision connected (%sms)": "视觉模型连接成功（%s 毫秒）",
