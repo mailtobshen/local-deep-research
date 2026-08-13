@@ -497,7 +497,7 @@ class ImageStore:
                 dropped += 1
                 logger.info(
                     f"[IMG-TRACE] REWRITE_DROP research={self.research_id} "
-                    f"img_alt={(alt or '')[:200]!r} "
+                    f"img_alt={(alt or '')!r} "
                     f"img_url={url} "
                     f"img_source_url={img_source_url} "
                     f"cite_num=- ref_url={ref_url} "
@@ -509,7 +509,7 @@ class ImageStore:
                 unknown += 1
                 logger.info(
                     f"[IMG-TRACE] REWRITE_KEEP research={self.research_id} "
-                    f"img_alt={(alt or '')[:200]!r} "
+                    f"img_alt={(alt or '')!r} "
                     f"img_url={url} "
                     f"img_source_url={img_source_url} "
                     f"cite_num=- ref_url={ref_url} "
@@ -523,7 +523,7 @@ class ImageStore:
                     under += 1
                     logger.info(
                         f"[IMG-TRACE] REWRITE_KEEP research={self.research_id} "
-                        f"img_alt={(alt or '')[:200]!r} "
+                        f"img_alt={(alt or '')!r} "
                         f"img_url={url} "
                         f"img_source_url={img_source_url} "
                         f"cite_num=- ref_url={ref_url} "
@@ -533,7 +533,7 @@ class ImageStore:
                     resized += 1
                     logger.info(
                         f"[IMG-TRACE] RESIZE research={self.research_id} "
-                        f"img_alt={(alt or '')[:200]!r} "
+                        f"img_alt={(alt or '')!r} "
                         f"img_url={url} "
                         f"img_source_url={img_source_url} "
                         f"cite_num=- ref_url={ref_url} "
@@ -541,7 +541,7 @@ class ImageStore:
                     )
                     logger.info(
                         f"[IMG-TRACE] REWRITE_KEEP research={self.research_id} "
-                        f"img_alt={(alt or '')[:200]!r} "
+                        f"img_alt={(alt or '')!r} "
                         f"img_url={url} "
                         f"img_source_url={img_source_url} "
                         f"cite_num=- ref_url={ref_url} "

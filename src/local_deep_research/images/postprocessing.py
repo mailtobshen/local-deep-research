@@ -100,14 +100,14 @@ def _dedupe_images(markdown: str) -> tuple[str, int, int]:
             # runs of blank lines, which we squeeze below.
             dropped_count += 1
             logger.info(
-                f"[IMG-TRACE] DEDUPE_DROP alt={alt[:200]!r} "
+                f"[IMG-TRACE] DEDUPE_DROP alt={alt!r} "
                 f"img_url={url}"
             )
         else:
             seen.add(url)
             parts.append(m.group(0))
             logger.info(
-                f"[IMG-TRACE] DEDUPE_KEEP alt={alt[:200]!r} "
+                f"[IMG-TRACE] DEDUPE_KEEP alt={alt!r} "
                 f"img_url={url}"
             )
         last_end = m.end()
@@ -378,7 +378,7 @@ def enhance_report_with_images(
                         # CANDIDATE_NO_ALT event below records it.
                         continue
                     cand_lines.append(
-                        f"img_alt={(cand.alt or '')[:120]!r} "
+                        f"img_alt={(cand.alt or '')!r} "
                         f"img_url={cand.url} "
                         f"img_source_url={cand.source_url}"
                     )
@@ -387,7 +387,7 @@ def enhance_report_with_images(
                 # but operators could not link kept_alts back to the
                 # section. This event records cand_count + sample_alts.
                 kept_alts = [
-                    (cand.alt or "")[:120]
+                    (cand.alt or "")
                     for cand in imgs
                     if cand.alt and cand.alt.strip()
                 ]
@@ -430,7 +430,7 @@ def enhance_report_with_images(
                     # compact.
                     logger.info(
                         f"[IMG-TRACE] CANDIDATE_SCORED research={research_id} "
-                        f"img_alt={(img.alt or '')[:200]!r} "
+                        f"img_alt={(img.alt or '')!r} "
                         f"img_url={img.url} "
                         f"img_source_url={img.source_url} "
                         f"cite_num={num} ref_url={url} sec={sidx} "
@@ -462,7 +462,7 @@ def enhance_report_with_images(
                         #                   explicit)
                         logger.info(
                             f"[IMG-TRACE] CANDIDATE_KEPT research={research_id} "
-                            f"img_alt={(img.alt or '')[:200]!r} "
+                            f"img_alt={(img.alt or '')!r} "
                             f"img_url={img.url} "
                             f"img_source_url={img.source_url} "
                             f"cite_num={num} "
@@ -486,7 +486,7 @@ def enhance_report_with_images(
                         logger.info(
                             f"[IMG-TRACE] CANDIDATE_SCORED_DETAIL research={research_id} "
                             f"sec={sidx} cite_num={num} ref_url={url} "
-                            f"img_alt={(img.alt or '')[:120]!r} img_url={img.url} "
+                            f"img_alt={(img.alt or '')!r} img_url={img.url} "
                             f"score={score:.3f} decision=keep reason=phrase_similarity"
                         )
                         # Event 8 (closes G4): BIND_ADOPTED —
@@ -501,7 +501,7 @@ def enhance_report_with_images(
                         logger.info(
                             f"[IMG-TRACE] BIND_ADOPTED research={research_id} "
                             f"sec={sidx} cite_num={num} ref_url={url} "
-                            f"img_alt={(img.alt or '')[:200]!r} "
+                            f"img_alt={(img.alt or '')!r} "
                             f"img_url={img.url} "
                             f"img_source_url={img.source_url} "
                             f"action=attach reason=kept_by_threshold"
@@ -516,7 +516,7 @@ def enhance_report_with_images(
                         # happened.
                         logger.debug(
                             f"[IMG-TRACE] CANDIDATE_DROPPED research={research_id} "
-                            f"img_alt={(img.alt or '')[:200]!r} "
+                            f"img_alt={(img.alt or '')!r} "
                             f"img_url={img.url} "
                             f"img_source_url={img.source_url} "
                             f"cite_num={num} "
@@ -530,7 +530,7 @@ def enhance_report_with_images(
                         logger.info(
                             f"[IMG-TRACE] CANDIDATE_SCORED_DETAIL research={research_id} "
                             f"sec={sidx} cite_num={num} ref_url={url} "
-                            f"img_alt={(img.alt or '')[:120]!r} img_url={img.url} "
+                            f"img_alt={(img.alt or '')!r} img_url={img.url} "
                             f"score={score:.3f} decision=drop reason=below_threshold"
                         )
                         dropped_low += 1
@@ -591,7 +591,7 @@ def enhance_report_with_images(
             # the user asked for on the mandatory path.
             logger.info(
                 f"[IMG-TRACE] PLACEMENT research={research_id} "
-                f"img_alt={(p_alt or '')[:200]!r} "
+                f"img_alt={(p_alt or '')!r} "
                 f"img_url={p_url} "
                 f"img_source_url={p_src} "
                 f"cite_num={p_num} "
@@ -689,7 +689,7 @@ def enhance_report_with_images(
                     local_path = ""
             logger.info(
                 f"[IMG-TRACE] PERSISTED_IMG research={research_id} "
-                f"img_alt={(img.alt or '')[:200]!r} "
+                f"img_alt={(img.alt or '')!r} "
                 f"img_url={img.url} "
                 f"img_source_url={img.source_url} "
                 f"cite_num={num} "

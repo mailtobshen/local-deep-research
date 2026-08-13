@@ -770,7 +770,7 @@ def _deferred_image_fill(
         for img in images:
             logger.info(
                 f"[IMG-TRACE] DEFERRED_FETCHED_IMG research={research_id} "
-                f"img_alt={(getattr(img, 'alt', '') or '')[:200]!r} "
+                f"img_alt={(getattr(img, 'alt', '') or '')!r} "
                 f"img_url={getattr(img, 'url', '')} "
                 f"img_source_url={getattr(img, 'source_url', '')} "
                 f"cite_num={cite_num_for_url} "
@@ -890,7 +890,7 @@ def _deferred_image_fill(
             # lines above carry the same fields one image at a time;
             # this is the at-a-glance summary.
             alts_repr = ", ".join(
-                repr((getattr(img, "alt", "") or "")[:200])
+                repr((getattr(img, "alt", "") or ""))
                 for img in images
             )
             src_url = (
