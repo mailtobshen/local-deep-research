@@ -174,6 +174,73 @@ def test_filename_alt_decodes_percent_encoding():
     ) == "Jane Doe"
 
 
+def test_filename_alt_rejects_pure_hash():
+    """A bare hex/content-hash filename (Baidu BOS, CDN hashes) is NOT a
+    named entity — it must yield '' so we don't synthesize a garbage alt."""
+    assert _filename_alt_only(
+        "https://bkimg.cdn.bcebos.com/smart/838ba61ea8d3fd1f41340279351c321f95cad1c8f16c"
+    ) == ""
+    assert _filename_alt_only(
+        "https://example.com/d41d8cd98f00b204e9800998ecf8427e.png"
+    ) == ""
+
+
+def test_baike_alt_from_title_span():
+    """Baidu Baike lemma picture: the <img> has no alt/figcaption, but the
+    enclosing picture div has a .titleSpan whose text is the caption. The
+    alt fallback chain must pick it up (Baike domain only)."""
+    html = (
+        '<div class="lemmaPicture_Slljq" data-single-image="{&quot;title&quot;:&quot;远眺陆家嘴&quot;}">'
+        '  <a class="imageLink_tqZJ_" href="/pic/x" target="_blank" title="远眺陆家嘴">'
+        '    <img src="https://bkimg.cdn.bcebos.com/smart/838ba61ea8d3fd1f41340279351c321f95cad1c8f16c"'
+        '         class="picture_cDlsk" width="599" height="250">'
+        '  </a>'
+        '  <span class="titleSpan_UqY5D richTest_rbLrd"><span>远眺陆家嘴</span></span>'
+        '</div>'
+    )
+    imgs = extract_images(html, "https://baike.baidu.com/item/陆家嘴", "陆家嘴")
+    assert len(imgs) == 1
+    assert imgs[0].alt == "远眺陆家嘴"
+
+
+def test_baike_alt_falls_back_to_anchor_title_when_no_title_span():
+    """When .titleSpan is absent but the wrapping <a> has title, use it."""
+    html = (
+        '<div class="lemmaPicture_Slljq">'
+        '  <a class="imageLink_tqZJ_" href="/pic/x" title="东方明珠塔夜景">'
+        '    <img src="https://bkimg.cdn.bcebos.com/pic/abc123.jpg" width="300">'
+        '  </a>'
+        '</div>'
+    )
+    imgs = extract_images(html, "https://baike.baidu.com/item/东方明珠", "东方明珠")
+    assert imgs[0].alt == "东方明珠塔夜景"
+
+
+def test_baike_alt_falls_back_to_data_single_image_json():
+    """When neither .titleSpan nor <a title> exist, parse the
+    data-single-image JSON attribute's "title" field."""
+    html = (
+        '<div class="lemmaPicture_Slljq" '
+        '      data-single-image="{&quot;title&quot;:&quot;外滩全景&quot;,&quot;url&quot;:&quot;https://x/y.jpg&quot;}">'
+        '  <img src="https://bkimg.cdn.bcebos.com/pic/abc123.jpg" width="300">'
+        '</div>'
+    )
+    imgs = extract_images(html, "https://baike.baidu.com/item/外滩", "外滩")
+    assert imgs[0].alt == "外滩全景"
+
+
+def test_baike_alt_not_applied_off_baike_domain():
+    """The Baike structural fallback is scoped to baike.baidu.com — on
+    another domain, the same DOM does NOT trigger it (no spurious <a title>
+    capture from an unrelated site's hover tooltip)."""
+    html = (
+        '<div><a href="/x" title="some tooltip"><img src="https://example.com/a.jpg" width="200"></a></div>'
+    )
+    imgs = extract_images(html, "https://example.com/page", "p")
+    # example.com + nondescript filename a.jpg -> empty alt (no Baike fallback fired)
+    assert imgs[0].alt == ""
+
+
 # --- helpers used by the tests above -----------------------------
 from local_deep_research.images.extractor import _alt_from_filename  # noqa: E402
 

@@ -1,6 +1,7 @@
 """Extract real <img> from scraped HTML into a normalized list."""
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
 from typing import List, Optional, Sequence
@@ -125,19 +126,45 @@ def _alt_from_filename(url: str) -> str:
     words = [t for t in tokens if _WORD_RUN.fullmatch(t) and re.search(r"[A-Za-z]", t)]
     if not words:
         return ""
-    # Reject generic/non-descriptive single tokens.
-    generic = {"x", "img", "image", "images", "photo", "file", "pic", "picture", "1", "2", "3"}
-    if len(words) == 1 and words[0].lower() in generic:
+    # Reject generic/non-descriptive single tokens: a known generic word,
+    # or any single token <= 2 chars (e.g. x, a, 1) too ambiguous to be a
+    # meaningful alt on its own.
+    generic = {"img", "image", "images", "photo", "file", "pic", "picture"}
+    if len(words) == 1 and (words[0].lower() in generic or len(words[0]) <= 2):
+        return ""
+    # Reject content-hash tokens (Baidu BOS / CDN hashes): a long token
+    # whose chars are mostly [0-9a-f] is a hex digest, not a name.
+    words = [w for w in words if not _looks_like_hash(w)]
+    if not words:
         return ""
     return " ".join(words)
 
 
-def _resolve_alt(img, absolute_url: str) -> str:
+_HEX = set("0123456789abcdef")
+
+
+def _looks_like_hash(token: str) -> bool:
+    """True for bare content-hash filenames (Baidu BOS, CDN digests).
+
+    A token of >=12 chars whose lowercase chars are >=80% hex digits is
+    treated as a hash. Real words rarely run that long without vowels /
+    separators, and even hex-ish names like "deadbeef" are short enough
+    to be ambiguous — the length floor avoids false positives there.
+    """
+    s = token.lower()
+    if len(s) < 12:
+        return False
+    hex_frac = sum(1 for c in s if c in _HEX) / len(s)
+    return hex_frac >= 0.8
+
+
+def _resolve_alt(img, absolute_url: str, source_url: str = "") -> str:
     """Return the best available alt text for an <img>, with fallbacks.
 
     Order: explicit alt → sibling <figcaption> (inside the nearest <figure>
-    ancestor) → named entity parsed from the URL filename. Returns "" when
-    none yield a descriptive value (preserves the empty-alt contract).
+    ancestor) → Baidu Baike structural caption (scoped to baike.baidu.com)
+    → named entity parsed from the URL filename. Returns "" when none yield
+    a descriptive value (preserves the empty-alt contract).
     """
     alt = (img.get("alt") or "").strip()
     if alt:
@@ -150,8 +177,68 @@ def _resolve_alt(img, absolute_url: str) -> str:
             cap_text = cap.get_text(" ", strip=True)
             if cap_text:
                 return cap_text
-    # Fallback 2: named entity in the URL filename.
+    # Fallback 2: Baidu Baike lemma-picture caption (scoped to Baike).
+    baike = _baike_alt(img, source_url, absolute_url)
+    if baike:
+        return baike
+    # Fallback 3: named entity in the URL filename.
     return _alt_from_filename(absolute_url)
+
+
+_BAIKE_HOSTS = ("baike.baidu.com",)
+# Baidu BOS image CDN hosts the actual <img src>; used as a secondary
+# signal that the page is Baike even if source_url parsing is off.
+_BAIKE_IMG_HOSTS = ("bkimg.cdn.bcebos.com",)
+
+
+def _is_baike(source_url: str, img_url: str) -> bool:
+    host_src = (urlparse(source_url).hostname or "").lower()
+    host_img = (urlparse(img_url).hostname or "").lower()
+    return (
+        any(h in host_src for h in _BAIKE_HOSTS)
+        or any(h in host_img for h in _BAIKE_IMG_HOSTS)
+    )
+
+
+def _baike_alt(img, source_url: str, img_url: str) -> str:
+    """Baidu Baike lemma-picture caption, scoped to Baike pages.
+
+    Three sources tried in order: the picture div's .titleSpan text, the
+    wrapping <a title=...> attribute, and the data-single-image JSON's
+    "title" field. Returns "" off the Baike domain or when none yield text.
+    """
+    if not _is_baike(source_url, img_url):
+        return ""
+    # Walk up to the lemma-picture container so sibling lookups work.
+    container = img.find_parent(class_=re.compile(r"lemmaPicture"))
+    if container is None:
+        container = img.parent
+    # 1. .titleSpan text.
+    if container is not None:
+        span = container.find(class_=re.compile(r"titleSpan"))
+        if span is not None:
+            txt = span.get_text(" ", strip=True)
+            if txt:
+                return txt
+    # 2. wrapping <a title>.
+    anchor = img.find_parent("a")
+    if anchor is not None:
+        a_title = (anchor.get("title") or "").strip()
+        if a_title:
+            return a_title
+    # 3. data-single-image JSON "title".
+    if container is not None:
+        raw = container.get("data-single-image") or ""
+        if raw:
+            try:
+                payload = json.loads(raw)
+            except (ValueError, TypeError):
+                payload = None
+            if isinstance(payload, dict):
+                jt = (payload.get("title") or "").strip()
+                if jt:
+                    return jt
+    return ""
 
 
 def extract_images(
@@ -198,7 +285,7 @@ def extract_images(
         out.append(
             ExtractedImage(
                 url=absolute,
-                alt=_resolve_alt(img, absolute),
+                alt=_resolve_alt(img, absolute, source_url),
                 source_url=source_url,
                 source_title=source_title,
                 width=width,
