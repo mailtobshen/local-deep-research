@@ -284,6 +284,99 @@ def test_baike_alt_not_applied_off_baike_domain():
     assert imgs[0].alt == ""
 
 
+# --- ALT_RESOLVE observability probes ---------------------------------------
+import logging  # noqa: E402
+
+
+def _alt_resolve_lines(loguru_caplog):
+    """Return per-image [IMG-TRACE] ALT_RESOLVE lines (excludes the
+    ALT_RESOLVE_SUMMARY line, which is matched separately)."""
+    return [
+        r.getMessage()
+        for r in loguru_caplog.records
+        if r.getMessage().startswith("[IMG-TRACE] ALT_RESOLVE via=")
+    ]
+
+
+def test_alt_resolve_probe_fires_for_figcaption_fallback(loguru_caplog):
+    """A wikipedia figure that gets its alt from <figcaption> emits an
+    ALT_RESOLVE probe with via=figcaption from=figcaption and the alt text."""
+    html = (
+        '<figure><a href="/wiki/File:X">'
+        '  <img src="//upload.wikimedia.org/wikipedia/commons/a/ab/X.jpg" width="250" height="174">'
+        '</a><figcaption>第二代汇丰银行大楼</figcaption></figure>'
+    )
+    with loguru_caplog.at_level(logging.INFO):
+        extract_images(html, "https://zh.wikipedia.org/wiki/外滩", "外滩")
+    lines = _alt_resolve_lines(loguru_caplog)
+    assert len(lines) == 1, f"expected 1 ALT_RESOLVE, got {lines}"
+    msg = lines[0]
+    assert "ALT_RESOLVE" in msg and "via=figcaption" in msg
+    assert "from=figcaption" in msg
+    assert "第二代汇丰银行大楼" in msg
+    assert "upload.wikimedia.org" in msg
+
+
+def test_alt_resolve_probe_distinguishes_baike_subsources(loguru_caplog):
+    """Each Baike sub-source (titlespan / a_title / json) is tagged in the
+    `from=` field so a reader can see which path won."""
+    # titlespan wins (first in priority)
+    html_ts = (
+        '<div class="lemmaPicture_Slljq">'
+        '  <a class="imageLink_tqZJ_" href="/x" title="远眺陆家嘴">'
+        '    <img src="https://bkimg.cdn.bcebos.com/pic/abc.jpg" width="200">'
+        '  </a><span class="titleSpan_UqY5D"><span>远眺陆家嘴</span></span>'
+        '</div>'
+    )
+    with loguru_caplog.at_level(logging.INFO):
+        extract_images(html_ts, "https://baike.baidu.com/item/陆家嘴", "陆家嘴")
+    ts = [m for m in _alt_resolve_lines(loguru_caplog) if "via=baike" in m]
+    assert ts and "from=titlespan" in ts[0]
+
+
+def test_alt_resolve_probe_fires_for_filename_fallback(loguru_caplog):
+    """A filename-entity alt emits via=filename from=filename."""
+    html = '<img src="https://upload.wikimedia.org/x/Steven_Spielberg_(2023).jpg" width="200">'
+    with loguru_caplog.at_level(logging.INFO):
+        extract_images(html, "https://en.wikipedia.org/wiki/S", "S")
+    fn = [m for m in _alt_resolve_lines(loguru_caplog) if "via=filename" in m]
+    assert fn and "from=filename" in fn[0]
+    assert "Steven Spielberg" in fn[0]
+
+
+def test_alt_resolve_probe_not_fired_when_explicit_alt_present(loguru_caplog):
+    """An <img> that already has a real alt does NOT emit ALT_RESOLVE —
+    the probe tracks only the *supplemental* fallbacks."""
+    html = '<img src="https://example.com/a/tower.jpg" alt="explicit" width="200">'
+    with loguru_caplog.at_level(logging.INFO):
+        extract_images(html, "https://example.com", "t")
+    assert _alt_resolve_lines(loguru_caplog) == []
+
+
+def test_alt_resolve_summary_emitted_per_page(loguru_caplog):
+    """Each extract_images call emits one ALT_RESOLVE_SUMMARY with per-page
+    counts so a reader can tally fallback usage without per-image greps."""
+    html = (
+        # one figcaption (wiki), one explicit alt, one empty
+        '<figure><img src="//upload.wikimedia.org/wikipedia/commons/a/ab/A.jpg" width="200">'
+        '<figcaption>cap A</figcaption></figure>'
+        '<img src="https://upload.wikimedia.org/x/B.jpg" alt="explicit B" width="200">'
+        '<img src="https://upload.wikimedia.org/x/C.jpg" width="50">'  # tiny -> skipped
+    )
+    with loguru_caplog.at_level(logging.INFO):
+        extract_images(html, "https://en.wikipedia.org/wiki/X", "X")
+    summaries = [
+        r.getMessage() for r in loguru_caplog.records
+        if "ALT_RESOLVE_SUMMARY" in r.getMessage()
+    ]
+    assert len(summaries) == 1
+    s = summaries[0]
+    assert "via_figcaption=1" in s
+    assert "via_baike=0" in s
+    assert "via_filename=0" in s
+    assert "had_alt=1" in s
+
+
 # --- helpers used by the tests above -----------------------------
 from local_deep_research.images.extractor import _alt_from_filename  # noqa: E402
 
@@ -291,3 +384,4 @@ from local_deep_research.images.extractor import _alt_from_filename  # noqa: E40
 def _filename_alt_only(url: str) -> str:
     """Expose the filename->alt transform in isolation for unit tests."""
     return _alt_from_filename(url)
+

@@ -8,6 +8,7 @@ from typing import List, Optional, Sequence
 from urllib.parse import unquote, urljoin, urlparse
 
 from bs4 import BeautifulSoup
+from loguru import logger
 
 # URL substrings that almost always indicate non-content images.
 _BLACKLIST_KEYWORDS = (
@@ -158,17 +159,25 @@ def _looks_like_hash(token: str) -> bool:
     return hex_frac >= 0.8
 
 
-def _resolve_alt(img, absolute_url: str, source_url: str = "") -> str:
-    """Return the best available alt text for an <img>, with fallbacks.
+def _resolve_alt(
+    img, absolute_url: str, source_url: str = ""
+) -> tuple[str, Optional[str], Optional[str]]:
+    """Return (alt_text, via, from_label) for an <img>, with fallbacks.
 
     Order: explicit alt → sibling <figcaption> (inside the nearest <figure>
-    ancestor) → Baidu Baike structural caption (scoped to baike.baidu.com)
-    → named entity parsed from the URL filename. Returns "" when none yield
-    a descriptive value (preserves the empty-alt contract).
+    ancestor, Wikipedia-scoped) → Baidu Baike structural caption (Baike-
+    scoped) → named entity parsed from the URL filename.
+
+    ``via`` is None when an explicit alt was present (not a fallback) or
+    when nothing yielded a non-empty value; otherwise it names the
+    fallback that won: "figcaption" | "baike" | "filename". ``from_label``
+    is the sub-source (figcaption | titlespan | a_title | json | filename),
+    used by the ALT_RESOLVE probe. The alt_text itself is "" when nothing
+    yielded a value (preserves the empty-alt contract).
     """
     alt = (img.get("alt") or "").strip()
     if alt:
-        return alt
+        return (alt, None, None)
     # Fallback 1: <figcaption> inside the enclosing <figure>, scoped to
     # Wikipedia/Wikimedia (the structure we tuned this for). Off-wiki, a
     # <figcaption> is not assumed to be a usable alt.
@@ -179,13 +188,16 @@ def _resolve_alt(img, absolute_url: str, source_url: str = "") -> str:
             if cap is not None:
                 cap_text = cap.get_text(" ", strip=True)
                 if cap_text:
-                    return cap_text
+                    return (cap_text, "figcaption", "figcaption")
     # Fallback 2: Baidu Baike lemma-picture caption (scoped to Baike).
-    baike = _baike_alt(img, source_url, absolute_url)
-    if baike:
-        return baike
+    baike_text, baike_from = _baike_alt(img, source_url, absolute_url)
+    if baike_text:
+        return (baike_text, "baike", baike_from)
     # Fallback 3: named entity in the URL filename.
-    return _alt_from_filename(absolute_url)
+    fn = _alt_from_filename(absolute_url)
+    if fn:
+        return (fn, "filename", "filename")
+    return ("", None, None)
 
 
 _BAIKE_HOSTS = ("baike.baidu.com",)
@@ -217,15 +229,17 @@ def _is_wiki(source_url: str, img_url: str) -> bool:
     )
 
 
-def _baike_alt(img, source_url: str, img_url: str) -> str:
+def _baike_alt(img, source_url: str, img_url: str) -> tuple[str, str]:
     """Baidu Baike lemma-picture caption, scoped to Baike pages.
 
     Three sources tried in order: the picture div's .titleSpan text, the
     wrapping <a title=...> attribute, and the data-single-image JSON's
-    "title" field. Returns "" off the Baike domain or when none yield text.
+    "title" field. Returns (text, from_label) where from_label ∈
+    {"titlespan","a_title","json"}; ("","") off the Baike domain or when
+    none yield text.
     """
     if not _is_baike(source_url, img_url):
-        return ""
+        return ("", "")
     # Walk up to the lemma-picture container so sibling lookups work.
     container = img.find_parent(class_=re.compile(r"lemmaPicture"))
     if container is None:
@@ -236,13 +250,13 @@ def _baike_alt(img, source_url: str, img_url: str) -> str:
         if span is not None:
             txt = span.get_text(" ", strip=True)
             if txt:
-                return txt
+                return (txt, "titlespan")
     # 2. wrapping <a title>.
     anchor = img.find_parent("a")
     if anchor is not None:
         a_title = (anchor.get("title") or "").strip()
         if a_title:
-            return a_title
+            return (a_title, "a_title")
     # 3. data-single-image JSON "title".
     if container is not None:
         raw = container.get("data-single-image") or ""
@@ -254,8 +268,8 @@ def _baike_alt(img, source_url: str, img_url: str) -> str:
             if isinstance(payload, dict):
                 jt = (payload.get("title") or "").strip()
                 if jt:
-                    return jt
-    return ""
+                    return (jt, "json")
+    return ("", "")
 
 
 def extract_images(
@@ -280,6 +294,10 @@ def extract_images(
     else:
         scope = soup
     out: List[ExtractedImage] = []
+    # Per-page ALT_RESOLVE tallies for the summary probe.
+    via_counts = {"figcaption": 0, "baike": 0, "filename": 0}
+    had_alt = 0  # <img> already had a descriptive alt (no fallback needed)
+    empty_alt = 0  # nothing yielded an alt (explicit empty + no fallback)
     for img in scope.find_all("img"):
         src = img.get("src") or ""
         if not src:
@@ -299,14 +317,38 @@ def extract_images(
             continue
         if height is not None and height < _MIN_DIM:
             continue
+        alt_text, via, from_label = _resolve_alt(img, absolute, source_url)
+        if via is None:
+            if alt_text:
+                had_alt += 1
+            else:
+                empty_alt += 1
+        else:
+            via_counts[via] = via_counts.get(via, 0) + 1
+            # Per-image probe: fires only when a *supplemental* fallback
+            # filled a non-empty alt (the wiki/baike/filename paths). The
+            # explicit-alt and empty cases are covered by the summary's
+            # had_alt/empty counts and by downstream CANDIDATE_NO_ALT.
+            logger.info(
+                f"[IMG-TRACE] ALT_RESOLVE via={via} from={from_label} "
+                f"img_url={absolute} source_url={source_url} alt={alt_text!r}"
+            )
         out.append(
             ExtractedImage(
                 url=absolute,
-                alt=_resolve_alt(img, absolute, source_url),
+                alt=alt_text,
                 source_url=source_url,
                 source_title=source_title,
                 width=width,
                 height=height,
             )
         )
+    logger.info(
+        f"[IMG-TRACE] ALT_RESOLVE_SUMMARY source_url={source_url} "
+        f"images={len(out)} had_alt={had_alt} "
+        f"via_figcaption={via_counts['figcaption']} "
+        f"via_baike={via_counts['baike']} "
+        f"via_filename={via_counts['filename']} "
+        f"empty={empty_alt}"
+    )
     return out
