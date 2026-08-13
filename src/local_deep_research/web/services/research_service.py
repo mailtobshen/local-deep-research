@@ -424,6 +424,24 @@ def _open_image_enhancer_session(username, settings_snapshot):
             exc_info=True,
         )
 
+    alt_similarity_threshold = get_setting_from_snapshot(
+        "report.image_alt_similarity_threshold", 0.6,
+        settings_snapshot=settings_snapshot,
+    )
+    # Hard floor: below 0.45 the matcher admits too many unrelated
+    # images (cross-lingual alt/section pairs bottom out ~0.44).
+    # Clamp at the read site so every caller is protected even if the
+    # per-user DB value was set below the floor by an older client.
+    _ALT_SIMILARITY_FLOOR = 0.45
+    if alt_similarity_threshold < _ALT_SIMILARITY_FLOOR:
+        logger.info(
+            f"[IMG-TRACE] SETTING_CLAMP "
+            f"report.image_alt_similarity_threshold "
+            f"requested={alt_similarity_threshold} "
+            f"floor={_ALT_SIMILARITY_FLOOR}"
+        )
+        alt_similarity_threshold = _ALT_SIMILARITY_FLOOR
+
     args = dict(
         vision_model=vision_model,
         vision_url=vision_url or None,
@@ -432,6 +450,7 @@ def _open_image_enhancer_session(username, settings_snapshot):
         vision_cap=vision_cap,
         firecrawl_client=firecrawl_client,
         enable_images=enable_images,
+        alt_similarity_threshold=alt_similarity_threshold,
     )
     with get_user_db_session(username) as db_session:
         yield args, db_session

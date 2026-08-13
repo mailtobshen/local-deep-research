@@ -59,3 +59,67 @@ def test_zh_translation_present_for_name_and_description():
     assert zh[name_en] != zh[desc_en], "name and description translations must differ"
     assert any("一" <= ch <= "鿿" for ch in zh[name_en]), \
         "name translation must contain Chinese characters"
+
+
+from local_deep_research.web.services import research_service
+
+
+def _open_args(snapshot):
+    """Drive _open_image_enhancer_session (a @contextmanager) and return
+    its args dict. get_user_db_session is mocked so no real DB is opened."""
+    import contextlib
+
+    @contextlib.contextmanager
+    def _fake_db(_username):
+        yield object()  # dummy session
+
+    saved = research_service.get_user_db_session
+    research_service.get_user_db_session = _fake_db
+    try:
+        with research_service._open_image_enhancer_session(
+            "testuser", settings_snapshot=snapshot
+        ) as (args, _session):
+            return args
+    finally:
+        research_service.get_user_db_session = saved
+
+
+def test_threshold_defaults_to_0_6_when_unset():
+    # No report.image_alt_similarity_threshold key in the snapshot.
+    args = _open_args({"report.enable_images": True})
+    assert args["alt_similarity_threshold"] == 0.6
+
+
+def test_threshold_read_from_setting():
+    args = _open_args({
+        "report.enable_images": True,
+        "report.image_alt_similarity_threshold": 0.5,
+    })
+    assert args["alt_similarity_threshold"] == 0.5
+
+
+def test_threshold_clamped_to_floor(loguru_caplog):
+    import logging
+
+    with loguru_caplog.at_level(logging.INFO):
+        args = _open_args({
+            "report.enable_images": True,
+            "report.image_alt_similarity_threshold": 0.3,
+        })
+    # Clamped to the 0.45 floor even though 0.3 was requested.
+    assert args["alt_similarity_threshold"] == 0.45
+    # A SETTING_CLAMP trace line is emitted.
+    assert any(
+        "SETTING_CLAMP" in rec.getMessage()
+        and "report.image_alt_similarity_threshold" in rec.getMessage()
+        for rec in loguru_caplog.records
+    ), "expected a SETTING_CLAMP log when the value is below the floor"
+
+
+def test_threshold_at_floor_is_not_clamped():
+    # Exactly 0.45 must NOT clamp (the gate is < floor, not <= floor).
+    args = _open_args({
+        "report.enable_images": True,
+        "report.image_alt_similarity_threshold": 0.45,
+    })
+    assert args["alt_similarity_threshold"] == 0.45
