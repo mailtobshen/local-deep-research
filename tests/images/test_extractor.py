@@ -472,3 +472,63 @@ def test_summary_carries_research_and_page_scope(loguru_caplog):
     assert "wiki_page=true" in msg
     assert "baike_page=false" in msg
     assert "via_figcaption=1" in msg
+
+
+# --- ALT_CHANNEL_COVERAGE accumulator ----------------------------------------
+from local_deep_research.images.extractor import (  # noqa: E402
+    pop_channel_coverage,
+)
+
+
+def test_coverage_distinguishes_unexercised_from_declined_channel():
+    """The whole point of the coverage rollup: a channel with zero hits
+    because no page of its domain ever reached extraction (baike_pages=0)
+    must be distinguishable from one that ran and declined.
+    """
+    rid = _research_id_for_test()
+    # Every extract_images() call in this file tallies under "-" (no
+    # research context), so drain first for isolation. In production each
+    # research has a distinct id and cannot collide this way.
+    pop_channel_coverage(rid)
+    # Two wikipedia pages reach extraction; no baike page ever does.
+    extract_images(
+        '<figure><img src="//upload.wikimedia.org/wikipedia/commons/a/ab/X.jpg"'
+        ' width="250"><figcaption>外滩夜景</figcaption></figure>',
+        "https://zh.wikipedia.org/wiki/外滩",
+        "外滩",
+    )
+    extract_images(
+        '<div><img src="https://example.com/a/tower.jpg" width="250"></div>',
+        "https://example.com/page",
+        "p",
+    )
+    cov = pop_channel_coverage(rid)
+    assert cov is not None
+    assert cov["pages"] == 2
+    assert cov["wiki_pages"] == 1
+    # baike never ran at all — not "ran and found nothing".
+    assert cov["baike_pages"] == 0
+    assert cov["baike_hits"] == 0
+    assert cov["wiki_hits"] == 1
+    assert cov["filename_hits"] == 1  # tower.jpg -> "tower"
+
+
+def test_coverage_is_popped_so_it_cannot_leak_across_runs():
+    """pop_channel_coverage drains the entry; a second pop returns None.
+    Guards the long-lived-process memory contract.
+    """
+    rid = _research_id_for_test()
+    pop_channel_coverage(rid)
+    extract_images(
+        '<div><img src="https://example.com/a/tower.jpg" width="250"></div>',
+        "https://example.com/page",
+        "p",
+    )
+    assert pop_channel_coverage(rid) is not None
+    assert pop_channel_coverage(rid) is None
+
+
+def _research_id_for_test() -> str:
+    """The id extract_images will tally under when no research context is
+    set — "-" per _research_id()."""
+    return "-"

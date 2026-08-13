@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 from dataclasses import dataclass
 from typing import List, Optional, Sequence
 from urllib.parse import unquote, urljoin, urlparse
@@ -38,6 +39,35 @@ def _clip_alt(text: str) -> str:
     if len(text) <= _ALT_LOG_MAX:
         return text
     return text[:_ALT_LOG_MAX] + "…"
+
+
+# Per-research channel-coverage tallies, accumulated across every
+# extract_images() call and drained once at the end of the run by
+# ``pop_channel_coverage``. This exists to answer a question the
+# per-page summary cannot: a channel showing zero hits may have been
+# *exercised and declined*, or may have *never run at all* because no
+# page from its domain ever reached extraction (e.g. every
+# baike.baidu.com fetch returned HTTP 403). Those two look identical in
+# via_* counts and mean opposite things about a fix.
+_CHANNEL_LOCK = threading.Lock()
+_CHANNEL_STATS: dict = {}
+
+
+def _bump_channel_stats(rid: str, **counts: int) -> None:
+    with _CHANNEL_LOCK:
+        page = _CHANNEL_STATS.setdefault(rid, {})
+        for key, value in counts.items():
+            page[key] = page.get(key, 0) + value
+
+
+def pop_channel_coverage(research_id: str) -> Optional[dict]:
+    """Remove and return the channel tallies for a research, or None.
+
+    Popping (rather than reading) keeps the module-level dict from
+    growing across runs in a long-lived process.
+    """
+    with _CHANNEL_LOCK:
+        return _CHANNEL_STATS.pop(research_id, None)
 
 # URL substrings that almost always indicate non-content images.
 _BLACKLIST_KEYWORDS = (
@@ -437,12 +467,26 @@ def extract_images(
     # source_url alone (the page's own domain); an individual image can
     # still be eligible via its image host, which the per-image ALT_MISS
     # lines report exactly.
+    wiki_page = _is_wiki(source_url, "")
+    baike_page = _is_baike(source_url, "")
+    _bump_channel_stats(
+        rid,
+        pages=1,
+        wiki_pages=1 if wiki_page else 0,
+        baike_pages=1 if baike_page else 0,
+        images=len(out),
+        had_alt=had_alt,
+        wiki_hits=via_counts["figcaption"],
+        baike_hits=via_counts["baike"],
+        filename_hits=via_counts["filename"],
+        unresolved=empty_alt,
+    )
     logger.info(
         f"[IMG-TRACE] ALT_RESOLVE_SUMMARY research={rid} "
         f"source_url={source_url} "
         f"host={(urlparse(source_url).hostname or '-').lower()} "
-        f"wiki_page={str(_is_wiki(source_url, '')).lower()} "
-        f"baike_page={str(_is_baike(source_url, '')).lower()} "
+        f"wiki_page={str(wiki_page).lower()} "
+        f"baike_page={str(baike_page).lower()} "
         f"images={len(out)} had_alt={had_alt} "
         f"via_figcaption={via_counts['figcaption']} "
         f"via_baike={via_counts['baike']} "

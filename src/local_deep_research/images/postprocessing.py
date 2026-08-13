@@ -25,6 +25,35 @@ from .semantic_matcher import (
 from . import semantic_matcher
 from .serialize import loads_images
 from .store import ImageStore, _IMG_RE
+from .extractor import pop_channel_coverage
+
+
+def _log_end(research_id: str, status: str) -> None:
+    """Emit END plus the run's alt-channel coverage rollup.
+
+    Coverage is drained here (and on every exit path) so the extractor's
+    per-research tallies never accumulate in a long-lived process.
+    ``*_pages`` counts pages that actually reached extraction, which is
+    what distinguishes "channel ran and declined" from "channel never
+    ran" — a domain-gated fallback whose pages all failed to fetch shows
+    zero hits either way.
+    """
+    cov = pop_channel_coverage(research_id) or {}
+    logger.info(f"[IMG-TRACE] END research={research_id} status={status}")
+    pages = cov.get("pages", 0)
+    logger.info(
+        f"[IMG-TRACE] ALT_CHANNEL_COVERAGE research={research_id} "
+        f"pages={pages} "
+        f"wiki_pages={cov.get('wiki_pages', 0)} "
+        f"baike_pages={cov.get('baike_pages', 0)} "
+        f"other_pages={pages - cov.get('wiki_pages', 0) - cov.get('baike_pages', 0)} "
+        f"images={cov.get('images', 0)} "
+        f"had_alt={cov.get('had_alt', 0)} "
+        f"wiki_hits={cov.get('wiki_hits', 0)} "
+        f"baike_hits={cov.get('baike_hits', 0)} "
+        f"filename_hits={cov.get('filename_hits', 0)} "
+        f"unresolved={cov.get('unresolved', 0)}"
+    )
 
 
 SECTION_IMAGE_CAP = 3  # max images adopted per section, by score
@@ -285,9 +314,7 @@ def enhance_report_with_images(
                 f"[IMG-TRACE] BANK_EMPTY research={research_id} "
                 f"reason=no_citations_or_html"
             )
-            logger.info(
-                f"[IMG-TRACE] END research={research_id} status=empty"
-            )
+            _log_end(research_id, "empty")
             return clean_markdown
 
         # Per-section entity pool + embeddings for the semantic gate.
@@ -318,9 +345,7 @@ def enhance_report_with_images(
                 f"[IMG-TRACE] SEMANTIC_MATCH_FAILED research={research_id} "
                 f"reason={type(exc).__name__}: {exc}"
             )
-            logger.info(
-                f"[IMG-TRACE] END research={research_id} status=empty"
-            )
+            _log_end(research_id, "empty")
             return clean_markdown
 
         threshold = alt_similarity_threshold
@@ -544,9 +569,7 @@ def enhance_report_with_images(
             logger.info(
                 f"[IMG-TRACE] ELIGIBLE_BANK research={research_id} total=0"
             )
-            logger.info(
-                f"[IMG-TRACE] END research={research_id} status=empty"
-            )
+            _log_end(research_id, "empty")
             return clean_markdown
 
         bank_with_alt = len(bank.candidates_with_alt())
@@ -697,15 +720,11 @@ def enhance_report_with_images(
                 f"local_route={route} "
                 f"local_path={local_path}"
             )
-        logger.info(
-            f"[IMG-TRACE] END research={research_id} status=ok"
-        )
+        _log_end(research_id, "ok")
         return enhanced
     except Exception:
         logger.exception(
             "Image post-processing failed; returning clean markdown"
         )
-        logger.info(
-            f"[IMG-TRACE] END research={research_id} status=error"
-        )
+        _log_end(research_id, "error")
         return clean_markdown
