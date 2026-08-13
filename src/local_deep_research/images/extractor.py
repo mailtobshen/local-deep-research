@@ -10,6 +10,35 @@ from urllib.parse import unquote, urljoin, urlparse
 from bs4 import BeautifulSoup
 from loguru import logger
 
+from ..utilities.thread_context import get_search_context
+
+# Longest alt echoed into an IMG-TRACE line. Baike/wiki captions can run
+# to several hundred chars; the probe only needs enough to eyeball that
+# the right caption won.
+_ALT_LOG_MAX = 120
+
+
+def _research_id() -> str:
+    """Current research id from the thread context, or "-" if unavailable.
+
+    ``extract_images`` runs inside the research thread, so the ContextVar
+    set by the research entrypoint is visible here. Returns "-" in
+    programmatic/test use where no context was set, which keeps the probe
+    greppable rather than raising.
+    """
+    try:
+        context = get_search_context() or {}
+    except Exception:  # pragma: no cover - context lookup must never break extraction
+        return "-"
+    return str(context.get("research_id") or "-")
+
+
+def _clip_alt(text: str) -> str:
+    """Trim an alt for logging so one page cannot flood the log."""
+    if len(text) <= _ALT_LOG_MAX:
+        return text
+    return text[:_ALT_LOG_MAX] + "…"
+
 # URL substrings that almost always indicate non-content images.
 _BLACKLIST_KEYWORDS = (
     "logo",
@@ -91,6 +120,21 @@ _LEADING_CODE = re.compile(r"^[A-Za-z0-9]*\d[A-Za-z0-9]*[_\-]+")
 def _alt_from_filename(url: str) -> str:
     """Derive a human-readable alt from an image URL's filename.
 
+    Thin wrapper over :func:`_alt_from_filename_detail` keeping the plain
+    ``str`` contract used by callers and tests.
+    """
+    return _alt_from_filename_detail(url)[0]
+
+
+def _alt_from_filename_detail(url: str) -> tuple[str, str]:
+    """Return (alt, miss_reason) for the URL-filename fallback.
+
+    ``miss_reason`` is "" on success, otherwise names the rule that
+    rejected the filename so the ALT_MISS probe can distinguish "the
+    hash-filename guard fired" from "there was no entity to find":
+    ``no_filename`` | ``no_word_run`` | ``generic_token`` |
+    ``hash_rejected``.
+
     Only filenames that carry a recognizable named entity yield a non-empty
     alt; generic/non-descriptive filenames (x.jpg, img.jpg, 1.png) return ""
     so we never synthesize a meaningless alt. Pipeline:
@@ -108,7 +152,7 @@ def _alt_from_filename(url: str) -> str:
     path = urlparse(url).path
     name = path.rsplit("/", 1)[-1]
     if not name:
-        return ""
+        return ("", "no_filename")
     name = unquote(name)
     # Strip extension.
     name = name.rsplit(".", 1)[0] if "." in name else name
@@ -126,19 +170,19 @@ def _alt_from_filename(url: str) -> str:
     tokens = [t for t in re.split(r"[_\-]+", name) if t]
     words = [t for t in tokens if _WORD_RUN.fullmatch(t) and re.search(r"[A-Za-z]", t)]
     if not words:
-        return ""
+        return ("", "no_word_run")
     # Reject generic/non-descriptive single tokens: a known generic word,
     # or any single token <= 2 chars (e.g. x, a, 1) too ambiguous to be a
     # meaningful alt on its own.
     generic = {"img", "image", "images", "photo", "file", "pic", "picture"}
     if len(words) == 1 and (words[0].lower() in generic or len(words[0]) <= 2):
-        return ""
+        return ("", "generic_token")
     # Reject content-hash tokens (Baidu BOS / CDN hashes): a long token
     # whose chars are mostly [0-9a-f] is a hex digest, not a name.
     words = [w for w in words if not _looks_like_hash(w)]
     if not words:
-        return ""
-    return " ".join(words)
+        return ("", "hash_rejected")
+    return (" ".join(words), "")
 
 
 _HEX = set("0123456789abcdef")
@@ -161,8 +205,8 @@ def _looks_like_hash(token: str) -> bool:
 
 def _resolve_alt(
     img, absolute_url: str, source_url: str = ""
-) -> tuple[str, Optional[str], Optional[str]]:
-    """Return (alt_text, via, from_label) for an <img>, with fallbacks.
+) -> tuple[str, Optional[str], Optional[str], Optional[dict]]:
+    """Return (alt_text, via, from_label, miss) for an <img>, with fallbacks.
 
     Order: explicit alt → sibling <figcaption> (inside the nearest <figure>
     ancestor, Wikipedia-scoped) → Baidu Baike structural caption (Baike-
@@ -174,30 +218,58 @@ def _resolve_alt(
     is the sub-source (figcaption | titlespan | a_title | json | filename),
     used by the ALT_RESOLVE probe. The alt_text itself is "" when nothing
     yielded a value (preserves the empty-alt contract).
+
+    ``miss`` is None unless every channel came up empty; then it carries
+    the per-channel diagnosis for the ALT_MISS probe — which channels were
+    even eligible for this image, and where each one stopped. That is what
+    separates "the fallback correctly declined" from "the fallback is
+    broken", which the hit-only probe cannot distinguish.
     """
     alt = (img.get("alt") or "").strip()
     if alt:
-        return (alt, None, None)
+        return (alt, None, None, None)
+    wiki_eligible = _is_wiki(source_url, absolute_url)
+    baike_eligible = _is_baike(source_url, absolute_url)
+    wiki_stop = "-"
     # Fallback 1: <figcaption> inside the enclosing <figure>, scoped to
     # Wikipedia/Wikimedia (the structure we tuned this for). Off-wiki, a
     # <figcaption> is not assumed to be a usable alt.
-    if _is_wiki(source_url, absolute_url):
+    if wiki_eligible:
         figure = img.find_parent("figure")
-        if figure is not None:
+        if figure is None:
+            wiki_stop = "no_figure"
+        else:
             cap = figure.find("figcaption")
-            if cap is not None:
+            if cap is None:
+                wiki_stop = "no_figcaption"
+            else:
                 cap_text = cap.get_text(" ", strip=True)
                 if cap_text:
-                    return (cap_text, "figcaption", "figcaption")
+                    return (cap_text, "figcaption", "figcaption", None)
+                wiki_stop = "figcaption_empty"
+    else:
+        wiki_stop = "not_eligible"
     # Fallback 2: Baidu Baike lemma-picture caption (scoped to Baike).
     baike_text, baike_from = _baike_alt(img, source_url, absolute_url)
     if baike_text:
-        return (baike_text, "baike", baike_from)
+        return (baike_text, "baike", baike_from, None)
+    baike_stop = "no_match" if baike_eligible else "not_eligible"
     # Fallback 3: named entity in the URL filename.
-    fn = _alt_from_filename(absolute_url)
+    fn, fn_stop = _alt_from_filename_detail(absolute_url)
     if fn:
-        return (fn, "filename", "filename")
-    return ("", None, None)
+        return (fn, "filename", "filename", None)
+    return (
+        "",
+        None,
+        None,
+        {
+            "wiki_eligible": wiki_eligible,
+            "baike_eligible": baike_eligible,
+            "wiki_stop": wiki_stop,
+            "baike_stop": baike_stop,
+            "reason": fn_stop,
+        },
+    )
 
 
 _BAIKE_HOSTS = ("baike.baidu.com",)
@@ -295,6 +367,7 @@ def extract_images(
         scope = soup
     out: List[ExtractedImage] = []
     # Per-page ALT_RESOLVE tallies for the summary probe.
+    rid = _research_id()
     via_counts = {"figcaption": 0, "baike": 0, "filename": 0}
     had_alt = 0  # <img> already had a descriptive alt (no fallback needed)
     empty_alt = 0  # nothing yielded an alt (explicit empty + no fallback)
@@ -317,12 +390,27 @@ def extract_images(
             continue
         if height is not None and height < _MIN_DIM:
             continue
-        alt_text, via, from_label = _resolve_alt(img, absolute, source_url)
+        alt_text, via, from_label, miss = _resolve_alt(img, absolute, source_url)
         if via is None:
             if alt_text:
                 had_alt += 1
             else:
                 empty_alt += 1
+                # Per-image miss probe: every fallback channel declined.
+                # ``*_eligible`` says whether the channel was even open for
+                # this image (domain scoping), ``*_stop`` says where an open
+                # channel gave up, and ``reason`` is the terminal filename
+                # verdict. Together these separate "correctly declined" from
+                # "scoping bug closed the channel".
+                logger.info(
+                    f"[IMG-TRACE] ALT_MISS research={rid} "
+                    f"reason={miss['reason']} "
+                    f"wiki_eligible={str(miss['wiki_eligible']).lower()} "
+                    f"baike_eligible={str(miss['baike_eligible']).lower()} "
+                    f"wiki_stop={miss['wiki_stop']} "
+                    f"baike_stop={miss['baike_stop']} "
+                    f"img_url={absolute} source_url={source_url}"
+                )
         else:
             via_counts[via] = via_counts.get(via, 0) + 1
             # Per-image probe: fires only when a *supplemental* fallback
@@ -330,8 +418,10 @@ def extract_images(
             # explicit-alt and empty cases are covered by the summary's
             # had_alt/empty counts and by downstream CANDIDATE_NO_ALT.
             logger.info(
-                f"[IMG-TRACE] ALT_RESOLVE via={via} from={from_label} "
-                f"img_url={absolute} source_url={source_url} alt={alt_text!r}"
+                f"[IMG-TRACE] ALT_RESOLVE research={rid} via={via} "
+                f"from={from_label} "
+                f"img_url={absolute} source_url={source_url} "
+                f"alt={_clip_alt(alt_text)!r}"
             )
         out.append(
             ExtractedImage(
@@ -343,8 +433,16 @@ def extract_images(
                 height=height,
             )
         )
+    # Page-level summary. ``wiki_page``/``baike_page`` are computed from
+    # source_url alone (the page's own domain); an individual image can
+    # still be eligible via its image host, which the per-image ALT_MISS
+    # lines report exactly.
     logger.info(
-        f"[IMG-TRACE] ALT_RESOLVE_SUMMARY source_url={source_url} "
+        f"[IMG-TRACE] ALT_RESOLVE_SUMMARY research={rid} "
+        f"source_url={source_url} "
+        f"host={(urlparse(source_url).hostname or '-').lower()} "
+        f"wiki_page={str(_is_wiki(source_url, '')).lower()} "
+        f"baike_page={str(_is_baike(source_url, '')).lower()} "
         f"images={len(out)} had_alt={had_alt} "
         f"via_figcaption={via_counts['figcaption']} "
         f"via_baike={via_counts['baike']} "

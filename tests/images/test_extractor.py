@@ -294,7 +294,7 @@ def _alt_resolve_lines(loguru_caplog):
     return [
         r.getMessage()
         for r in loguru_caplog.records
-        if r.getMessage().startswith("[IMG-TRACE] ALT_RESOLVE via=")
+        if r.getMessage().startswith("[IMG-TRACE] ALT_RESOLVE research=")
     ]
 
 
@@ -385,3 +385,90 @@ def _filename_alt_only(url: str) -> str:
     """Expose the filename->alt transform in isolation for unit tests."""
     return _alt_from_filename(url)
 
+
+
+# --- ALT_MISS observability probes -------------------------------------------
+
+
+def _alt_miss_lines(loguru_caplog):
+    """Return per-image [IMG-TRACE] ALT_MISS lines."""
+    return [
+        r.getMessage()
+        for r in loguru_caplog.records
+        if r.getMessage().startswith("[IMG-TRACE] ALT_MISS ")
+    ]
+
+
+def test_alt_miss_reports_wiki_channel_open_but_no_figure(loguru_caplog):
+    """A wikimedia-hosted image with no <figure> ancestor and an
+    undescriptive filename must report the wiki channel as *eligible* but
+    stopped at no_figure. This is what separates "page genuinely had no
+    caption" from "scoping closed the channel".
+    """
+    html = (
+        '<div><img src="//upload.wikimedia.org/wikipedia/commons/a/ab/x.jpg"'
+        ' width="250" height="174"></div>'
+    )
+    with loguru_caplog.at_level(logging.INFO):
+        extract_images(html, "https://zh.wikipedia.org/wiki/外滩", "外滩")
+    lines = _alt_miss_lines(loguru_caplog)
+    assert len(lines) == 1, f"expected 1 ALT_MISS, got {lines}"
+    msg = lines[0]
+    assert "wiki_eligible=true" in msg
+    assert "wiki_stop=no_figure" in msg
+    assert "baike_eligible=false" in msg
+    assert "baike_stop=not_eligible" in msg
+
+
+def test_alt_miss_reports_hash_filename_rejection(loguru_caplog):
+    """The hash-filename guard must be visible as reason=hash_rejected, so
+    the rule can be verified as firing (and not over-firing) from logs.
+    """
+    html = (
+        '<div><img src="https://bkimg.cdn.bcebos.com/pic/'
+        '0eb30f2442a7d933c895d1d8a44bd11373f00128.jpg" width="300"></div>'
+    )
+    with loguru_caplog.at_level(logging.INFO):
+        extract_images(html, "https://example.com/page", "p")
+    lines = _alt_miss_lines(loguru_caplog)
+    assert len(lines) == 1, f"expected 1 ALT_MISS, got {lines}"
+    assert "reason=hash_rejected" in lines[0]
+
+
+def test_alt_miss_not_emitted_when_a_fallback_succeeds(loguru_caplog):
+    """A successful fallback emits ALT_RESOLVE and no ALT_MISS — the two
+    probes must be mutually exclusive or counts stop reconciling.
+    """
+    html = (
+        '<figure><img src="//upload.wikimedia.org/wikipedia/commons/a/ab/X.jpg"'
+        ' width="250"><figcaption>外滩夜景</figcaption></figure>'
+    )
+    with loguru_caplog.at_level(logging.INFO):
+        extract_images(html, "https://zh.wikipedia.org/wiki/外滩", "外滩")
+    assert _alt_miss_lines(loguru_caplog) == []
+    assert len(_alt_resolve_lines(loguru_caplog)) == 1
+
+
+def test_summary_carries_research_and_page_scope(loguru_caplog):
+    """The summary must be joinable to one research task and state the
+    page-level scope decision for both domain-gated channels.
+    """
+    html = (
+        '<figure><img src="//upload.wikimedia.org/wikipedia/commons/a/ab/X.jpg"'
+        ' width="250"><figcaption>外滩夜景</figcaption></figure>'
+    )
+    with loguru_caplog.at_level(logging.INFO):
+        extract_images(html, "https://zh.wikipedia.org/wiki/外滩", "外滩")
+    summary = [
+        r.getMessage()
+        for r in loguru_caplog.records
+        if "ALT_RESOLVE_SUMMARY" in r.getMessage()
+    ]
+    assert len(summary) == 1
+    msg = summary[0]
+    # research= present (value is "-" outside a research thread).
+    assert "research=" in msg
+    assert "host=zh.wikipedia.org" in msg
+    assert "wiki_page=true" in msg
+    assert "baike_page=false" in msg
+    assert "via_figcaption=1" in msg
