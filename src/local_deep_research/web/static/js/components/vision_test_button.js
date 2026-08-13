@@ -65,19 +65,38 @@
         const parent = urlInput.parentElement;
         if (!parent) return;
 
-        // Idempotency: remove any previously injected button + status
-        // in this setting item. renderSettingsByTab fires on every
-        // tab switch and would otherwise stack buttons / statuses.
+        // Idempotency: remove any previously injected button, status,
+        // AND wrapper from this setting item. renderSettingsByTab fires
+        // on every tab switch and would otherwise stack them.
         parent
-            .querySelectorAll(".vision-test-btn, .vision-test-status")
+            .querySelectorAll(".vision-test-btn, .vision-test-status, .vision-url-row")
             .forEach((el) => el.remove());
+
+        // Layout: put the URL input + Test Connection button on one row.
+        // Wrap them in a flex container so the (now half-width) input
+        // sits on the left and the button on its right with a gap. The
+        // wrapper is inserted where the input currently lives, and the
+        // input is moved into it — preserving its DOM position relative
+        // to the surrounding label/help-text rendered by settings.js.
+        const row = document.createElement("div");
+        row.className = "vision-url-row";
+        row.style.display = "flex";
+        row.style.alignItems = "center";
+        row.style.gap = "0.75rem";
+        row.style.width = "100%";
+        parent.insertBefore(row, urlInput);
+        row.appendChild(urlInput);
+
+        // Halve the input width so the button fits beside it on the row.
+        urlInput.style.width = "calc(50% - 0.375rem)";
+        urlInput.style.flex = "0 0 auto";
 
         const btn = document.createElement("button");
         btn.type = "button";
         btn.className = "btn btn-secondary btn-sm vision-test-btn";
         btn.textContent = "连接测试";
-        btn.style.marginLeft = "0.5rem";
-        parent.appendChild(btn);
+        btn.style.flexShrink = "0";
+        row.appendChild(btn);
 
         const status = getStatusEl(btn);
 
