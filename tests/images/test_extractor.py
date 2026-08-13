@@ -101,3 +101,83 @@ def test_roots_chain_falls_back_to_full_page_when_all_empty():
     # Falls back to full-page extraction since none of the default roots
     # actually contain an <img>.
     assert [i.url for i in imgs] == ["https://example.com/c/x.jpg"]
+
+
+def test_alt_falls_back_to_figcaption_when_img_has_no_alt():
+    """Wikipedia-style <figure><img><figcaption>: when the <img> has no
+    alt, the sibling <figcaption> text is used as alt (it is the author's
+    description of the image)."""
+    html = (
+        '<figure class="mw-default-size">'
+        '  <a href="/wiki/File:The_HSBC_Building.jpg">'
+        '    <img src="//upload.wikimedia.org/wikipedia/commons/thumb/4/41/The_HSBC_Building.jpg/250px-The_HSBC_Building.jpg"'
+        '         width="250" height="174">'
+        '  </a>'
+        '  <figcaption>第二代汇丰银行大楼以及建造中的江海关大楼</figcaption>'
+        '</figure>'
+    )
+    imgs = extract_images(html, "https://zh.wikipedia.org/wiki/外滩", "外滩")
+    assert len(imgs) == 1
+    assert imgs[0].alt == "第二代汇丰银行大楼以及建造中的江海关大楼"
+
+
+def test_explicit_alt_wins_over_figcaption():
+    """When both an explicit alt AND a figcaption exist, the explicit alt wins
+    (figcaption is only a fallback)."""
+    html = (
+        '<figure><img src="https://example.com/a/x.jpg" alt="explicit alt" width="200">'
+        '<figcaption>caption text</figcaption></figure>'
+    )
+    imgs = extract_images(html, "https://example.com", "t")
+    assert imgs[0].alt == "explicit alt"
+
+
+def test_alt_falls_back_to_filename_entity_when_no_alt_no_figcaption():
+    """A filename carrying a named entity (e.g. a person's name) yields a
+    human-readable alt when the <img> has neither alt nor figcaption.
+    Steven_Spielberg_(Berlinale_2023).jpg -> "Steven Spielberg"."""
+    html = (
+        '<a href="/wiki/File:MKr25402_Steven_Spielberg_(Berlinale_2023).jpg">'
+        '  <img src="//upload.wikimedia.org/wikipedia/commons/thumb/4/4d/'
+        'MKr25402_Steven_Spielberg_%28Berlinale_2023%29.jpg/250px-'
+        'MKr25402_Steven_Spielberg_%28Berlinale_2023%29.jpg"'
+        '       width="225" height="337">'
+        '</a>'
+    )
+    imgs = extract_images(html, "https://en.wikipedia.org/wiki/Steven_Spielberg", "t")
+    assert len(imgs) == 1
+    assert imgs[0].alt == "Steven Spielberg"
+
+
+def test_filename_alt_strips_pure_numeric_prefix_and_brackets():
+    """Filename MKr25402_<name>(...).jpg: the leading all-digit/alnum code
+    and the parenthesized clause are removed, leaving the name."""
+    html = '<img src="https://upload.wikimedia.org/x/ABC12345_Statue_of_Liberty_(daytime).jpg" width="200">'
+    imgs = extract_images(html, "https://example.com", "t")
+    assert imgs[0].alt == "Statue of Liberty"
+
+
+def test_generic_filename_yields_empty_alt():
+    """A filename with no recognizable entity (x.jpg, img.jpg, 1.jpg) does NOT
+    synthesize a meaningless alt — it stays empty, preserving the
+    'empty alt preserved' contract for non-descriptive filenames."""
+    assert _filename_alt_only("https://example.com/x.jpg") == ""
+    assert _filename_alt_only("https://example.com/img/1.png") == ""
+    assert _filename_alt_only("https://example.com/image.jpg") == ""
+
+
+def test_filename_alt_decodes_percent_encoding():
+    """Spaces encoded as %20 / %28 / %29 in URLs decode to their characters
+    before entity extraction."""
+    assert _filename_alt_only(
+        "https://example.com/Jane_Doe_%282023%29.jpg"
+    ) == "Jane Doe"
+
+
+# --- helpers used by the tests above -----------------------------
+from local_deep_research.images.extractor import _alt_from_filename  # noqa: E402
+
+
+def _filename_alt_only(url: str) -> str:
+    """Expose the filename->alt transform in isolation for unit tests."""
+    return _alt_from_filename(url)
