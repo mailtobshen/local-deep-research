@@ -48,6 +48,9 @@ from .relevance import (
 # ---------------------------------------------------------------------------
 
 DEFAULT_MODEL = "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
+# Function-level default. The report path overrides this via the
+# report.image_alt_similarity_threshold user setting (read in
+# _open_image_enhancer_session); non-report callers still get 0.6.
 DEFAULT_THRESHOLD = 0.6
 DEFAULT_MIN_MARGIN = 0.05
 DEFAULT_DEVICE = "cpu"
