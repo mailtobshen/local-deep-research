@@ -169,14 +169,17 @@ def _resolve_alt(img, absolute_url: str, source_url: str = "") -> str:
     alt = (img.get("alt") or "").strip()
     if alt:
         return alt
-    # Fallback 1: <figcaption> inside the enclosing <figure>.
-    figure = img.find_parent("figure")
-    if figure is not None:
-        cap = figure.find("figcaption")
-        if cap is not None:
-            cap_text = cap.get_text(" ", strip=True)
-            if cap_text:
-                return cap_text
+    # Fallback 1: <figcaption> inside the enclosing <figure>, scoped to
+    # Wikipedia/Wikimedia (the structure we tuned this for). Off-wiki, a
+    # <figcaption> is not assumed to be a usable alt.
+    if _is_wiki(source_url, absolute_url):
+        figure = img.find_parent("figure")
+        if figure is not None:
+            cap = figure.find("figcaption")
+            if cap is not None:
+                cap_text = cap.get_text(" ", strip=True)
+                if cap_text:
+                    return cap_text
     # Fallback 2: Baidu Baike lemma-picture caption (scoped to Baike).
     baike = _baike_alt(img, source_url, absolute_url)
     if baike:
@@ -190,6 +193,10 @@ _BAIKE_HOSTS = ("baike.baidu.com",)
 # signal that the page is Baike even if source_url parsing is off.
 _BAIKE_IMG_HOSTS = ("bkimg.cdn.bcebos.com",)
 
+# Wikipedia/Wikimedia scope for the <figure>/<figcaption> alt fallback.
+_WIKI_HOSTS = ("wikipedia.org",)
+_WIKI_IMG_HOSTS = ("upload.wikimedia.org",)
+
 
 def _is_baike(source_url: str, img_url: str) -> bool:
     host_src = (urlparse(source_url).hostname or "").lower()
@@ -197,6 +204,16 @@ def _is_baike(source_url: str, img_url: str) -> bool:
     return (
         any(h in host_src for h in _BAIKE_HOSTS)
         or any(h in host_img for h in _BAIKE_IMG_HOSTS)
+    )
+
+
+def _is_wiki(source_url: str, img_url: str) -> bool:
+    """True when the page or the image host is Wikipedia/Wikimedia."""
+    host_src = (urlparse(source_url).hostname or "").lower()
+    host_img = (urlparse(img_url).hostname or "").lower()
+    return (
+        any(h in host_src for h in _WIKI_HOSTS)
+        or any(h in host_img for h in _WIKI_IMG_HOSTS)
     )
 
 

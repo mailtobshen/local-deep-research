@@ -128,8 +128,51 @@ def test_explicit_alt_wins_over_figcaption():
         '<figure><img src="https://example.com/a/x.jpg" alt="explicit alt" width="200">'
         '<figcaption>caption text</figcaption></figure>'
     )
-    imgs = extract_images(html, "https://example.com", "t")
+    imgs = extract_images(html, "https://zh.wikipedia.org/wiki/x", "t")
     assert imgs[0].alt == "explicit alt"
+
+
+def test_figcaption_fallback_scoped_to_wikipedia_only():
+    """The <figure>/<figcaption> fallback is scoped to wikipedia.org pages —
+    on an unrelated domain, a <figcaption> must NOT be mined for alt (it is
+    the author's description only in the wiki/media context we tuned for)."""
+    html = (
+        '<figure>'
+        '  <img src="https://example.com/a/tower.jpg" width="250" height="174">'
+        '  <figcaption>some caption text</figcaption>'
+        '</figure>'
+    )
+    imgs = extract_images(html, "https://example.com/article", "Article")
+    assert len(imgs) == 1
+    # Non-wikipedia: figcaption is NOT used. The filename "tower" carries an
+    # entity, so the filename fallback yields it (proving we skipped figcaption
+    # but the rest of the chain is intact).
+    assert imgs[0].alt == "tower"
+
+
+def test_figcaption_fallback_works_on_wikipedia_source():
+    """Same DOM on wikipedia.org DOES use the figcaption."""
+    html = (
+        '<figure>'
+        '  <img src="//upload.wikimedia.org/wikipedia/commons/a/ab/Tower.jpg" width="250" height="174">'
+        '  <figcaption>A famous tower</figcaption>'
+        '</figure>'
+    )
+    imgs = extract_images(html, "https://en.wikipedia.org/wiki/Tower", "Tower")
+    assert imgs[0].alt == "A famous tower"
+
+
+def test_figcaption_fallback_works_on_wikimedia_img_host():
+    """The figcaption fallback also fires when the <img> is served from
+    upload.wikimedia.org even if source_url parsing is ambiguous."""
+    html = (
+        '<figure>'
+        '  <img src="https://upload.wikimedia.org/wikipedia/commons/a/ab/Tower.jpg" width="250" height="174">'
+        '  <figcaption>wikimedia caption</figcaption>'
+        '</figure>'
+    )
+    imgs = extract_images(html, "https://example.com/unknown", "u")
+    assert imgs[0].alt == "wikimedia caption"
 
 
 def test_alt_falls_back_to_filename_entity_when_no_alt_no_figcaption():
