@@ -65,7 +65,12 @@ _IMAGE_URL_TRUSTED_HOST_SUFFIXES: Tuple[str, ...] = (
     "digitaloceanspaces.com",  # self-hosted CDN used by fsholidays.my etc.
 )
 
-_IMG_RE = re.compile(r"!\[([^\]]*)\]\((https?://[^)]+)\)")
+# The URL part allows balanced ``(...)`` pairs so filenames like
+# ``szdd (41).jpg`` match in full. A plain ``[^)]+`` stops at the first
+# ``)`` inside the filename, which truncates the captured URL (the
+# download then 404s) and leaves a stranded ``.jpg)`` in the report when
+# the image is dropped.
+_IMG_RE = re.compile(r"!\[([^\]]*)\]\((https?://(?:[^()]|\([^()]*\))+)\)")
 
 
 def _probe_size(data: bytes, url: Optional[str] = None) -> Optional[Tuple[int, int]]:

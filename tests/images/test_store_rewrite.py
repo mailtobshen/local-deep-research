@@ -97,6 +97,50 @@ def test_rewrite_preserves_body_text_drops_only_image_marker():
     assert "门票便宜，推荐前往。" in out
 
 
+def test_rewrite_drops_paren_url_image_without_residue():
+    """An image URL containing parentheses (e.g. a ``szdd (41).jpg``
+    filename) must be matched in full. Regression: the URL pattern used
+    ``[^)]+``, which stopped at the first ``)`` inside the filename, so
+    dropping the image removed only ``![alt](...szdd (41)`` and left a
+    bare ``.jpg)`` stranded in the report body.
+
+    Observed in research 06faf928 (南京路美食 section), which showed two
+    orphan ``.jpg)`` lines.
+    """
+    url = (
+        "https://www.mhsz.com/zb_users/plugin/ezarticleimgauto/"
+        "imgs/mhms/szdd (41).jpg"
+    )
+    md = f"美食章节开头。\n\n![南京路美食第1张]({url})\n\n后续正文。"
+
+    # No route → download failed → image must be dropped entirely.
+    out = _store().rewrite_markdown(md, {}, {})
+
+    assert ".jpg)" not in out, f"orphan markdown residue left: {out!r}"
+    assert "szdd" not in out
+    assert "![南京路美食第1张]" not in out
+    assert "美食章节开头。" in out
+    assert "后续正文。" in out
+
+
+def test_rewrite_keeps_paren_url_image_with_full_url():
+    """The same parenthesised URL, when it *does* persist, must be looked
+    up by its complete URL — a truncated capture would miss the route and
+    silently drop an image that downloaded fine.
+    """
+    url = (
+        "https://www.mhsz.com/zb_users/plugin/ezarticleimgauto/"
+        "imgs/mhms/szdd (41).jpg"
+    )
+    md = f"![南京路美食]({url})"
+
+    out = _store().rewrite_markdown(md, {url: "/images/szdd.jpg"}, {url: (800, 600)})
+
+    assert 'src="/images/szdd.jpg"' in out
+    assert "<figcaption>南京路美食</figcaption>" in out
+    assert ".jpg)" not in out
+
+
 def test_persist_retries_on_requests_timeout(tmp_path):
     """A requests.exceptions.ReadTimeout (the real type safe_get raises on
     read timeout) must be retried up to _MAX_ATTEMPTS, not fail on the
