@@ -953,6 +953,20 @@
         "value": 10,
         "visible": true
     },
+    "report.image_alt_similarity_threshold": {
+        "category": "report_parameters",
+        "description": "Minimum cosine similarity (0–1) between an image's alt text and its section heading+content required for the image to be kept in the report. Lower = more images but more mismatches; higher = fewer, more precise images. Clamped to a floor of 0.45. Default 0.6.",
+        "editable": true,
+        "max_value": 1.0,
+        "min_value": 0.45,
+        "name": "Image alt-section similarity threshold",
+        "options": null,
+        "step": 0.05,
+        "type": "REPORT",
+        "ui_element": "number",
+        "value": 0.6,
+        "visible": true
+    },
     "report.enable_file_backup": {
         "category": "report_parameters",
         "description": "Also save reports as files on disk for external access (reports are always stored in the database regardless). Enable this if you need to access reports from outside the web interface.",
