@@ -6,17 +6,75 @@ Wraps requests library to add SSRF protection and security best practices.
 
 import datetime
 import email.utils
+import ssl
 import time
 from typing import Any, Optional
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 import requests
 from loguru import logger
+from requests.adapters import HTTPAdapter
 
 from . import ssrf_validator
 from .proxy_config import get_proxy_settings, should_bypass_proxy
 from ..constants import USER_AGENT
 from ..utilities.resource_utils import safe_close
+
+
+# Hosts whose bot gate rejects a ClientHello carrying an ALPN extension.
+# Baidu Baike answers such requests with a "百度安全验证" challenge page
+# and HTTP 403; with ALPN absent the same request (same IP, UA, headers
+# and TLS version) returns the real page. Isolated by single-variable
+# probe, reproducible across repeated alternating rounds.
+#
+# Matching is on a domain boundary, so "notbaidu.com" does not match.
+# Keep this list minimal: suppressing ALPN also forgoes HTTP/2, so it is
+# only worth doing for hosts observed to require it.
+_NO_ALPN_HOST_SUFFIXES = ("baidu.com",)
+
+
+def _needs_no_alpn(url: str) -> bool:
+    """True when ``url``'s host is on the ALPN-suppression whitelist."""
+    host = (urlparse(url).hostname or "").lower()
+    if not host:
+        return False
+    return any(
+        host == suffix or host.endswith("." + suffix)
+        for suffix in _NO_ALPN_HOST_SUFFIXES
+    )
+
+
+class _NoALPNContext(ssl.SSLContext):
+    """SSLContext that refuses to advertise ALPN.
+
+    urllib3 calls ``set_alpn_protocols(ALPN_PROTOCOLS)`` unconditionally
+    inside ``ssl_wrap_socket`` — after the caller's ssl_context has been
+    chosen — so simply passing a plain context does not keep ALPN out of
+    the ClientHello. Swallowing the call here is what actually does it.
+    """
+
+    def set_alpn_protocols(self, protocols):  # noqa: D102 - see class docstring
+        return None
+
+
+class NoALPNAdapter(HTTPAdapter):
+    """Transport adapter whose TLS handshake omits the ALPN extension."""
+
+    def _context(self) -> ssl.SSLContext:
+        # PROTOCOL_TLS_CLIENT already implies check_hostname=True and
+        # verify_mode=CERT_REQUIRED; requests still drives the actual CA
+        # material through ca_certs, which urllib3 loads into this context.
+        context = _NoALPNContext(ssl.PROTOCOL_TLS_CLIENT)
+        context.load_default_certs(ssl.Purpose.SERVER_AUTH)
+        return context
+
+    def init_poolmanager(self, *args, **kwargs):
+        kwargs["ssl_context"] = self._context()
+        return super().init_poolmanager(*args, **kwargs)
+
+    def proxy_manager_for(self, *args, **kwargs):
+        kwargs["ssl_context"] = self._context()
+        return super().proxy_manager_for(*args, **kwargs)
 
 
 def _inject_proxy_kwargs(url: str, kwargs: dict) -> None:
@@ -523,6 +581,23 @@ class SafeSession(requests.Session):
         self.max_redirects = _MAX_REDIRECTS
         self.allow_localhost = allow_localhost
         self.allow_private_ips = allow_private_ips
+        # Built lazily: most sessions never touch a whitelisted host, and
+        # constructing an SSLContext loads the CA bundle.
+        self._no_alpn_adapter: Optional[NoALPNAdapter] = None
+
+    def get_adapter(self, url: str) -> requests.adapters.BaseAdapter:  # type: ignore[override]
+        """Return the ALPN-free adapter for whitelisted hosts.
+
+        Overriding here rather than ``mount()``-ing prefixes keeps the
+        match on the parsed hostname, so it holds for any path/port and
+        cannot be fooled by a lookalike prefix such as
+        ``https://baidu.com.evil.test/``.
+        """
+        if _needs_no_alpn(url):
+            if self._no_alpn_adapter is None:
+                self._no_alpn_adapter = NoALPNAdapter()
+            return self._no_alpn_adapter
+        return super().get_adapter(url)
 
     def request(self, method: str, url: str, **kwargs) -> requests.Response:  # type: ignore[override]
         """Override request method to add SSRF validation."""
