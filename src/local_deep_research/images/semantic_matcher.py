@@ -31,6 +31,7 @@ from __future__ import annotations
 import functools
 import re
 import threading
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Iterable
 
 from loguru import logger
@@ -53,6 +54,25 @@ DEFAULT_MODEL = "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
 # _open_image_enhancer_session); non-report callers still get 0.6.
 DEFAULT_THRESHOLD = 0.6
 DEFAULT_MIN_MARGIN = 0.05
+
+# Cosine similarity between two short multilingual strings does not carry
+# meaningful resolution past the second decimal, so both the score and the
+# threshold are rounded before they are compared. Without this, a 0.003
+# shortfall (0.597 vs 0.600) silently decides keep/drop.
+#
+# Decimal HALF_UP rather than the built-in round(), which is banker's
+# rounding and would send an exact .xx5 toward even instead of up.
+SCORE_PRECISION = 2
+_SCORE_QUANTUM = Decimal(1).scaleb(-SCORE_PRECISION)
+
+
+def round_score(value: float) -> float:
+    """Round a similarity or threshold to ``SCORE_PRECISION`` decimals."""
+    return float(
+        Decimal(str(float(value))).quantize(
+            _SCORE_QUANTUM, rounding=ROUND_HALF_UP
+        )
+    )
 DEFAULT_DEVICE = "cpu"
 DEFAULT_BATCH_SIZE = 1
 DEFAULT_ENABLED = True
@@ -361,7 +381,7 @@ def semantic_match_filter(
         else:
             alt_vec = list(_raw)
         best_idx, best_score, second = _best_section_match(alt_vec, section_vectors)
-        if best_idx is None or best_score < threshold:
+        if best_idx is None or round_score(best_score) < round_score(threshold):
             out.append((c, best_score, best_idx, "low_similarity"))
             continue
         # PAUSED: ambiguous_match (min_margin) check. The new citation-

@@ -20,6 +20,7 @@ from .semantic_matcher import (
     DEFAULT_THRESHOLD as _DEFAULT_THRESHOLD,
     _cosine,
     _encode_phrase_cached,
+    round_score,
 )
 # Import the module for direct function access (needed for monkeypatching in tests)
 from . import semantic_matcher
@@ -461,8 +462,8 @@ def enhance_report_with_images(
                         f"cite_num={num} ref_url={url} sec={sidx} "
                         f"sec_phrase_text={sec_phrase_text!r}"
                     )
-                    score = _cosine(alt_vec, sec_vec)
-                    if score >= threshold:
+                    score = round_score(_cosine(alt_vec, sec_vec))
+                    if score >= round_score(threshold):
                         # Per-image trace on the mandatory path. We
                         # carry the four fields the user asks for
                         # verbatim so log parsers (and humans tailing
@@ -492,7 +493,7 @@ def enhance_report_with_images(
                             f"img_source_url={img.source_url} "
                             f"cite_num={num} "
                             f"ref_url={url} "
-                            f"sec={sidx} score={score:.3f}"
+                            f"sec={sidx} score={score:.2f}"
                         )
                         bank.add([img])
                         # Multi-bind: this image can be placed in
@@ -512,7 +513,7 @@ def enhance_report_with_images(
                             f"[IMG-TRACE] CANDIDATE_SCORED_DETAIL research={research_id} "
                             f"sec={sidx} cite_num={num} ref_url={url} "
                             f"img_alt={(img.alt or '')!r} img_url={img.url} "
-                            f"score={score:.3f} decision=keep reason=phrase_similarity"
+                            f"score={score:.2f} decision=keep reason=phrase_similarity"
                         )
                         # Event 8 (closes G4): BIND_ADOPTED —
                         # final-stage adoption trail. Aug 6 had no
@@ -546,7 +547,7 @@ def enhance_report_with_images(
                             f"img_source_url={img.source_url} "
                             f"cite_num={num} "
                             f"ref_url={url} "
-                            f"sec={sidx} score={score:.3f} "
+                            f"sec={sidx} score={score:.2f} "
                             f"reason=below_threshold"
                         )
                         # Event 7 (closes G4): CANDIDATE_SCORED_DETAIL
@@ -556,7 +557,7 @@ def enhance_report_with_images(
                             f"[IMG-TRACE] CANDIDATE_SCORED_DETAIL research={research_id} "
                             f"sec={sidx} cite_num={num} ref_url={url} "
                             f"img_alt={(img.alt or '')!r} img_url={img.url} "
-                            f"score={score:.3f} decision=drop reason=below_threshold"
+                            f"score={score:.2f} decision=drop reason=below_threshold"
                         )
                         dropped_low += 1
                 logger.info(
