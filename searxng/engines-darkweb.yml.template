@@ -1,0 +1,26 @@
+# 暗网检索引擎块 —— 合入 searxng/settings.yml 的 `engines:` 段落
+#
+# name 必须与 diagnostics/engine_health.py 的 DARKWEB_ENGINES 逐字一致,
+# 否则连接测试的 L2 级会误报"引擎未合入"。
+#
+# socks5h 的 h 表示由 Tor 做 DNS 解析 —— .onion 域名无法经普通 DNS 解析,
+# 用 socks5（无 h）会直接失败。
+  - name: ahmia
+    engine: ahmia
+    using_tor_proxy: true
+    timeout: 40.0
+    proxies:
+      all://: socks5h://ldr-tor:9050
+
+  - name: torch
+    engine: xpath
+    using_tor_proxy: true
+    timeout: 40.0
+    paging: true
+    proxies:
+      all://: socks5h://ldr-tor:9050
+    search_url: http://xmh57jrknzkhv6y3ls3ubitzfqnkrwxhopf5aygthi7d6rplyvk3noyd.onion/cgi-bin/omega/omega?P={query}&DEFAULTOP=and
+    results_xpath: //table//tr
+    url_xpath: ./td[2]/a
+    title_xpath: ./td[2]/b
+    content_xpath: ./td[2]/small

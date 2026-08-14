@@ -31,6 +31,7 @@ src/local_deep_research/web/static/css/themes.css
 !src/local_deep_research/defaults/.env.template
 !src/local_deep_research/notifications/templates/**/*.jinja2
 !unraid-templates/**/*.xml
+!searxng/*.template
 
 # Allow Python files everywhere except root
 !**/*.py
