@@ -161,6 +161,13 @@ ENGINE_REGISTRY: Dict[str, EngineEntry] = {
         module_path=".engines.meta_search_engine",
         class_name="MetaSearchEngine",
     ),
+    # --- Darkweb engine (SearXNG ahmia/torch via ldr-tor) ---
+    "darkweb": EngineEntry(
+        module_path=".engines.search_engine_searxng",
+        class_name="SearXNGSearchEngine",
+        full_search_module=".engines.full_search",
+        full_search_class="FullSearchResults",
+    ),
 }
 
 
