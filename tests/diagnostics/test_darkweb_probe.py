@@ -16,10 +16,26 @@ def test_darkweb_engines_are_ahmia_and_torch():
     assert DARKWEB_ENGINES == ("ahmia", "torch")
 
 
+def test_get_searxng_all_engines_exists_and_signature():
+    """新 helper 必须存在且签名匹配 `(instance_url, timeout=_PROBE_TIMEOUT)`。"""
+    import inspect
+
+    from local_deep_research.diagnostics import engine_health
+
+    assert hasattr(engine_health, "get_searxng_all_engines")
+    sig = inspect.signature(engine_health.get_searxng_all_engines)
+    params = list(sig.parameters.values())
+    assert params[0].name == "instance_url"
+    # timeout 必须有默认值
+    timeout_param = sig.parameters.get("timeout")
+    assert timeout_param is not None
+    assert timeout_param.default is not inspect.Parameter.empty
+
+
 def test_l1_searxng_unreachable():
     """SearXNG 本身没起来 —— 后三级无从谈起。"""
     with patch(
-        "local_deep_research.diagnostics.engine_health.get_searxng_engines",
+        "local_deep_research.diagnostics.engine_health.get_searxng_all_engines",
         side_effect=OSError("connection refused"),
     ):
         st = probe_darkweb()
@@ -32,7 +48,7 @@ def test_l1_searxng_unreachable():
 def test_l2_engine_block_not_merged():
     """SearXNG 活着但引擎列表里没有 ahmia/torch —— 模板未合入。"""
     with patch(
-        "local_deep_research.diagnostics.engine_health.get_searxng_engines",
+        "local_deep_research.diagnostics.engine_health.get_searxng_all_engines",
         return_value=["google", "wikipedia"],
     ):
         st = probe_darkweb()
@@ -46,7 +62,7 @@ def test_l3_no_onion_results():
     from local_deep_research.diagnostics.engine_health import EngineStatus
 
     with patch(
-        "local_deep_research.diagnostics.engine_health.get_searxng_engines",
+        "local_deep_research.diagnostics.engine_health.get_searxng_all_engines",
         return_value=["ahmia", "torch", "google"],
     ), patch(
         "local_deep_research.diagnostics.engine_health._darkweb_onion_hits",
@@ -62,7 +78,7 @@ def test_l4_ok_reports_hits_and_latency():
     from local_deep_research.diagnostics.engine_health import EngineStatus
 
     with patch(
-        "local_deep_research.diagnostics.engine_health.get_searxng_engines",
+        "local_deep_research.diagnostics.engine_health.get_searxng_all_engines",
         return_value=["ahmia", "torch"],
     ), patch(
         "local_deep_research.diagnostics.engine_health._darkweb_onion_hits",
@@ -77,7 +93,7 @@ def test_l4_ok_reports_hits_and_latency():
 def test_never_raises_on_unexpected_error():
     """preflight 依赖它绝不抛异常,否则会拖垮整个研究启动。"""
     with patch(
-        "local_deep_research.diagnostics.engine_health.get_searxng_engines",
+        "local_deep_research.diagnostics.engine_health.get_searxng_all_engines",
         side_effect=RuntimeError("boom"),
     ):
         st = probe_darkweb()

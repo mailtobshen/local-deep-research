@@ -149,6 +149,45 @@ def get_searxng_engines(
     return list(_FALLBACK_ENGINES)
 
 
+def get_searxng_all_engines(
+    instance_url: str, timeout: int = _PROBE_TIMEOUT
+) -> list[str]:
+    """Unfiltered /config enabled engines — for membership checks, not probing.
+
+    `get_searxng_engines` intersects with a 9-item allowlist tailored
+    for fast preflight probing. Some engines (notably darkweb: ahmia,
+    torch) are registered in SearXNG but excluded from the allowlist
+    because probing each is too slow or noisy. This helper returns
+    the full set so membership tests (e.g. probe_darkweb's L2) can
+    see engines that are correctly configured but not probed.
+
+    Uses ``requests`` directly (not ``safe_get``) for the same
+    DNS-robustness reason as :func:`get_searxng_engines`.
+    """
+    try:
+        resp = requests.get(
+            f"{instance_url}/config",
+            timeout=timeout,
+            headers=_BROWSER_HEADERS,
+        )
+        if resp.status_code != 200:
+            return []
+        engines = resp.json().get("engines", [])
+        if not isinstance(engines, list):
+            return []
+        names: list[str] = []
+        for e in engines:
+            if not (isinstance(e, dict) and e.get("enabled")):
+                continue
+            name = e.get("name")
+            if name:
+                names.append(name)
+        return names
+    except Exception as e:  # noqa: BLE001 — probe must not raise
+        logger.debug(f"SearXNG /config (all-engines) probe failed: {e}")
+        return []
+
+
 def probe_searxng_engine(
     instance_url: str, engine_name: str, timeout: int = _PROBE_TIMEOUT
 ) -> EngineStatus:
@@ -487,7 +526,7 @@ def probe_darkweb(
         instance_url = _get_searxng_url(settings_snapshot)
         # L1
         try:
-            available = get_searxng_engines(instance_url, timeout=timeout)
+            available = get_searxng_all_engines(instance_url, timeout=timeout)
         except Exception as e:  # noqa: BLE001
             return EngineStatus(
                 "darkweb",
