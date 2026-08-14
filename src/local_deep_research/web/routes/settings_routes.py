@@ -1089,6 +1089,22 @@ def api_test_darkweb():
     )
 
 
+@settings_bp.route("/api/darkweb-status", methods=["GET"])
+@login_required
+def api_darkweb_status():
+    """Report whether the darkweb engine is enabled (caller decides whether
+    to render the darkweb opt-in checkbox). Reachability is NOT probed here
+    — that's run_preflight_check()'s job (slower)."""
+    try:
+        sm = get_settings_manager()
+        enabled = sm.get_setting(
+            "search.engine.web.darkweb.enabled", False
+        )
+    except Exception:
+        enabled = False
+    return jsonify({"enabled": bool(enabled)})
+
+
 @settings_bp.route("/api/ui_elements", methods=["GET"])
 @login_required
 def api_get_ui_elements():
