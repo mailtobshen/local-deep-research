@@ -219,3 +219,22 @@ def probe_darkweb(settings_snapshot=None, timeout=60) -> EngineStatus
 
 此阶段风险最集中（触及硬编码 `\d+` 的引用系统与图片绑定），且只有前两阶段跑通
 后才有真实数据可验证。
+
+## 阶段一实测结论（2026-08-14）
+
+**实测命令**：绕过 get_searxng_engines 过滤层，直接调用 _darkweb_onion_hits("http://searxng-ldr:8080", timeout=60)。
+
+- 引擎注册：✅ ahmia 在 /config 281 个 enabled engines 中
+- 检索返回：164 条结果（ahmia + torch 合并）
+- .onion 命中：**20 条**（含 darkzzx4avcsuofgfez5zq75cqc4mprjvfqywo45dfcaxrwqg6qrlfid.onion 等真实地址）
+- 耗时：26.8s（探测层）/ 37s（含连接）
+- 结论：**阶段一通过**
+
+**否决权未触发**：L3 假象系 probe_darkweb 的 L2 检查 bug。get_searxng_engines 使用 _FALLBACK_ENGINES 9 项白名单过滤探测目标，ahmia/torch 不在内，所以即使 SearXNG 已正确注册它们，probe 仍误报 "L2: 引擎块未合入"。
+
+**遗留问题**（属于 L2 检查 bug，不是 Tor 链路问题）：
+- probe_darkweb 的 L2 应查询 SearXNG 完整 enabled 列表，而非探测过滤子集
+- 修复后 settings 页按钮与 preflight 才能正确显示 L4 ok
+- 修复属于阶段一自身的 bug，应在本阶段收尾前修
+
+**Tor 实际流量**：ldr-tor 心跳仍报 0 kB sent / 0 kB received，但下游 searxng-ldr 拿到了 .onion 结果。Tor 自身对经其中转的流量有延迟统计特性，该计数器不可作为 Tor 是否工作的判据。以"下游服务能否取到 .onion 结果"为准。
