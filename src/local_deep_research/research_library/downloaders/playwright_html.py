@@ -85,6 +85,10 @@ class PlaywrightHTMLDownloader(HTMLDownloader):
         # Plain Playwright fallback state
         self._playwright = None
         self._browser = None
+        # Tor-routed Playwright state (for .onion URLs); kept separate so
+        # the clearnet browser doesn't carry the SOCKS5 proxy config.
+        self._onion_playwright = None
+        self._onion_browser = None
 
     def _fetch_html(self, url: str) -> Optional[str]:
         """Fetch HTML with JS rendering.
@@ -209,6 +213,7 @@ class PlaywrightHTMLDownloader(HTMLDownloader):
         logger.debug(f"Playwright fetch: {url}")
         domain = urlparse(url).netloc
         engine_type = f"playwright_download_{domain}"
+        is_onion = domain.endswith(".onion") or domain == "onion"
 
         wait_time = self.rate_tracker.apply_rate_limit(engine_type)
 
@@ -222,20 +227,50 @@ class PlaywrightHTMLDownloader(HTMLDownloader):
             #   already includes it; this fallback path was missing it.
             # --disable-dev-shm-usage: Docker's default /dev/shm is 64 MB,
             #   which Chromium can blow through and OOM. Use /tmp instead.
-            if self._browser is None:
-                logger.debug("Playwright: launching Chromium browser")
-                pw = sync_playwright().start()
-                try:
-                    self._browser = pw.chromium.launch(
-                        headless=True,
-                        args=["--no-sandbox", "--disable-dev-shm-usage"],
+            #
+            # .onion URLs need a separate browser instance launched with a
+            # SOCKS5 proxy to ldr-tor:9050. Chromium's SOCKS5 implementation
+            # is remote-resolve (RFC 1928) so plain socks5:// works as the
+            # equivalent of curl's socks5h://. The onion browser is reused
+            # independently from the clearnet one.
+            if is_onion:
+                if self._onion_browser is None:
+                    logger.debug(
+                        "Playwright: launching Tor-routed Chromium for .onion"
                     )
-                except Exception:
-                    pw.stop()
-                    raise
-                self._playwright = pw
+                    pw = sync_playwright().start()
+                    try:
+                        self._onion_browser = pw.chromium.launch(
+                            headless=True,
+                            proxy={
+                                "server": "socks5://172.21.0.4:9050",
+                            },
+                            args=[
+                                "--no-sandbox",
+                                "--disable-dev-shm-usage",
+                            ],
+                        )
+                    except Exception:
+                        pw.stop()
+                        raise
+                    self._onion_playwright = pw
+                browser = self._onion_browser
+            else:
+                if self._browser is None:
+                    logger.debug("Playwright: launching Chromium browser")
+                    pw = sync_playwright().start()
+                    try:
+                        self._browser = pw.chromium.launch(
+                            headless=True,
+                            args=["--no-sandbox", "--disable-dev-shm-usage"],
+                        )
+                    except Exception:
+                        pw.stop()
+                        raise
+                    self._playwright = pw
+                browser = self._browser
 
-            page = self._browser.new_page(
+            page = browser.new_page(
                 user_agent=BROWSER_USER_AGENT,
             )
             try:
@@ -303,6 +338,22 @@ class PlaywrightHTMLDownloader(HTMLDownloader):
             except Exception:
                 logger.debug("Failed to stop Playwright", exc_info=True)
             self._playwright = None
+        if self._onion_browser:
+            try:
+                self._onion_browser.close()
+            except Exception:
+                logger.debug(
+                    "Failed to close onion Playwright browser", exc_info=True
+                )
+            self._onion_browser = None
+        if self._onion_playwright:
+            try:
+                self._onion_playwright.stop()
+            except Exception:
+                logger.debug(
+                    "Failed to stop onion Playwright", exc_info=True
+                )
+            self._onion_playwright = None
         super().close()
 
 
