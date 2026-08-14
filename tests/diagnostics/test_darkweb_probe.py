@@ -82,3 +82,53 @@ def test_never_raises_on_unexpected_error():
     ):
         st = probe_darkweb()
     assert st.status == "error"
+
+
+def test_preflight_skips_darkweb_when_disabled():
+    """开关关闭时不应付出 60 秒探测代价。"""
+    from local_deep_research.diagnostics.engine_health import (
+        run_preflight_check,
+    )
+
+    with patch(
+        "local_deep_research.diagnostics.engine_health.get_searxng_engines",
+        return_value=[],
+    ), patch(
+        "local_deep_research.diagnostics.engine_health.probe_proxy"
+    ), patch(
+        "local_deep_research.diagnostics.engine_health.probe_firecrawl"
+    ), patch(
+        "local_deep_research.diagnostics.engine_health.probe_darkweb"
+    ) as pd:
+        statuses = run_preflight_check(
+            {"search.engine.web.darkweb.enabled": {"value": False}}
+        )
+
+    pd.assert_not_called()
+    assert not [s for s in statuses if s.name == "darkweb"]
+
+
+def test_preflight_includes_darkweb_when_enabled():
+    from local_deep_research.diagnostics.engine_health import (
+        EngineStatus,
+        run_preflight_check,
+    )
+
+    with patch(
+        "local_deep_research.diagnostics.engine_health.get_searxng_engines",
+        return_value=[],
+    ), patch(
+        "local_deep_research.diagnostics.engine_health.probe_proxy"
+    ), patch(
+        "local_deep_research.diagnostics.engine_health.probe_firecrawl"
+    ), patch(
+        "local_deep_research.diagnostics.engine_health.probe_darkweb",
+        return_value=EngineStatus(
+            "darkweb", "ok", "L4: 取回 3 条 .onion 结果", kind="darkweb"
+        ),
+    ):
+        statuses = run_preflight_check(
+            {"search.engine.web.darkweb.enabled": {"value": True}}
+        )
+
+    assert [s for s in statuses if s.name == "darkweb"]

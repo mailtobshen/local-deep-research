@@ -558,6 +558,18 @@ def run_preflight_check(
         engine_futures = {pool.submit(_probe_engine, name): name for name in engines}
         # Firecrawl (in same pool)
         fc_future = pool.submit(probe_firecrawl, settings_snapshot)
+        # 暗网探测仅在开关开启时执行 —— 它的超时是 60s,远高于其他引擎,
+        # 关闭状态下不应让研究启动为此等待。
+        darkweb_enabled = get_bool_setting_from_snapshot(
+            "search.engine.web.darkweb.enabled",
+            default=False,
+            settings_snapshot=settings_snapshot,
+        )
+        darkweb_future = (
+            pool.submit(probe_darkweb, settings_snapshot)
+            if darkweb_enabled
+            else None
+        )
 
         for fut, name in engine_futures.items():
             try:
@@ -583,6 +595,22 @@ def run_preflight_check(
             statuses.append(
                 EngineStatus("firecrawl", "error", str(e)[:80], kind="firecrawl")
             )
+
+        if darkweb_future is not None:
+            try:
+                statuses.append(darkweb_future.result(timeout=_DARKWEB_TIMEOUT + 5))
+            except FutureTimeout:
+                statuses.append(
+                    EngineStatus(
+                        "darkweb", "timeout", "探测超时", kind="darkweb"
+                    )
+                )
+            except Exception as e:  # noqa: BLE001
+                statuses.append(
+                    EngineStatus(
+                        "darkweb", "error", str(e)[:80], kind="darkweb"
+                    )
+                )
 
         # Proxy status leads the report (prepended, not appended).
         try:

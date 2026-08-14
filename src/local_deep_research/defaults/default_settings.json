@@ -5265,6 +5265,20 @@
         "value": false,
         "visible": true
     },
+    "search.engine.web.darkweb.enabled": {
+        "category": "darkweb",
+        "description": "启用暗网检索（需先在 SearXNG 中合入 ahmia/torch 引擎块，见 docs/darkweb-searxng-setup.md）",
+        "editable": true,
+        "max_value": null,
+        "min_value": null,
+        "name": "启用暗网检索",
+        "options": null,
+        "step": null,
+        "type": "SEARCH",
+        "ui_element": "checkbox",
+        "value": false,
+        "visible": true
+    },
     "search.engine.web.exa.display_name": {
         "category": "exa",
         "description": "Display name to use in the U.I. for this search engine.",
