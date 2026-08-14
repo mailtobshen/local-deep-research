@@ -1433,6 +1433,43 @@ def run_research_process(research_id, query, mode, **kwargs):
         try:
             with _perf_stage(research_id, "analyze_topic"):
                 results = system.analyze_topic(query)
+            # === Darkweb merge (opt-in) ===
+            # When the user enabled the darkweb engine, run a second SearXNG
+            # query against ahmia/torch via the onions category and append
+            # the results to all_links_of_system so downstream _get_full_content
+            # picks them up. Full-content fetch routes .onion URLs through the
+            # Tor-routed Playwright browser (see playwright_html.py).
+            try:
+                from ...config.thread_settings import get_setting_from_snapshot
+                from ...web_search_engines.darkweb import (
+                    _make_darkweb_engine,
+                    tag_darkweb,
+                )
+
+                darkweb_enabled = bool(
+                    get_setting_from_snapshot(
+                        "search.engine.web.darkweb.enabled",
+                        False,
+                        settings_snapshot=settings_snapshot,
+                    )
+                )
+                if darkweb_enabled and isinstance(results, dict):
+                    with _perf_stage(research_id, "darkweb_search"):
+                        darkweb_engine = _make_darkweb_engine()
+                        darkweb_results = darkweb_engine.search(query) or []
+                    if darkweb_results:
+                        tagged = tag_darkweb(darkweb_results)
+                        existing = results.get("all_links_of_system") or []
+                        results["all_links_of_system"] = list(existing) + tagged
+                        logger.info(
+                            f"[DARKWEB] merged {len(tagged)} .onion results "
+                            f"into all_links_of_system"
+                        )
+            except Exception as dw_err:  # noqa: BLE001
+                # Darkweb merge must NEVER abort the main research.
+                logger.exception(
+                    f"Darkweb merge failed; continuing without: {dw_err}"
+                )
             if mode == "quick":
                 progress_callback(
                     "Search complete, preparing to generate summary...",
