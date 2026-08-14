@@ -102,6 +102,30 @@ def get_proxy_settings() -> Optional[Dict[str, str]]:
     return {"http": url, "https": url}
 
 
+ONION_PROXY_URL = "http://127.0.0.1:18080"
+
+
+def get_onion_proxies(url: str):
+    """Return the local CONNECT proxy only for ``.onion`` URLs.
+
+    Layered on top of ``get_proxy_settings()``: callers should use the
+    ``kwargs.setdefault("proxies", get_onion_proxies(url))`` pattern so
+    the existing app.network proxy (Privoxy) keeps handling clearnet.
+    Returns ``None`` for clearnet / malformed URLs — never raises.
+    """
+    from urllib.parse import urlparse
+
+    try:
+        host = (urlparse(url).hostname or "").lower()
+    except (ValueError, AttributeError):
+        return None
+    if not host:
+        return None
+    if host == "onion" or host.endswith(".onion"):
+        return {"http": ONION_PROXY_URL, "https": ONION_PROXY_URL}
+    return None
+
+
 def get_allow_insecure_tls() -> bool:
     """Whether the insecure-TLS fallback is enabled (env/DB)."""
     return _truthy(_get_setting(_ALLOW_INSECURE_TLS_KEY, False))
