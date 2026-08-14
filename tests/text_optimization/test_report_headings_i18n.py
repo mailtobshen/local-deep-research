@@ -133,3 +133,51 @@ class TestReportHeadingsEnglishWhenLanguageIsEn:
         assert "This report was researched using an advanced search system." in content
         assert "Research included targeted searches for each section and subsection." in content
         assert "本报告使用高级搜索系统完成研究。" not in content
+
+
+# --- empty-subsection placeholder localization -------------------------------
+
+
+def test_empty_subsection_placeholder_is_chinese_for_zh_cn():
+    """A subsection whose research produced nothing must not emit the
+    English "*Limited information was found for this subsection.*" into
+    a Chinese report body.
+    """
+    gen = _make_generator({"report.language": {"value": "zh-CN"}})
+    headings = gen._get_chapter_headings()
+
+    placeholder = headings["empty_subsection"]
+    assert "Limited information" not in placeholder
+    # No Latin letters at all — the body language must stay consistent.
+    assert not any("a" <= c.lower() <= "z" for c in placeholder)
+    assert "信息" in placeholder
+
+
+def test_empty_subsection_placeholder_is_english_for_en():
+    gen = _make_generator({"report.language": {"value": "en"}})
+    placeholder = gen._get_chapter_headings()["empty_subsection"]
+
+    assert "Limited information" in placeholder
+
+
+def test_empty_subsection_placeholder_falls_back_to_english():
+    """Unknown locale falls through to the English set, like the other
+    scaffolding keys — never a missing key.
+    """
+    gen = _make_generator({"report.language": {"value": "kl-KL"}})
+    placeholder = gen._get_chapter_headings()["empty_subsection"]
+
+    assert "Limited information" in placeholder
+
+
+def test_empty_subsection_placeholder_present_without_snapshot():
+    """Legacy callers build the generator via __new__ and skip __init__;
+    the key must still resolve (zh-CN default), not KeyError.
+    """
+    from local_deep_research.report_generator import IntegratedReportGenerator
+
+    gen = IntegratedReportGenerator.__new__(IntegratedReportGenerator)
+    headings = gen._get_chapter_headings()
+
+    assert "empty_subsection" in headings
+    assert "Limited information" not in headings["empty_subsection"]

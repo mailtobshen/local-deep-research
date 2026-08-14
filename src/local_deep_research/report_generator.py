@@ -140,6 +140,7 @@ class IntegratedReportGenerator:
                 "toc": "# 目录",
                 "summary": "# 研究摘要",
                 "sources": "## 参考文献",
+                "empty_subsection": "*本节暂未检索到足够信息。*\n",
                 "summary_lines": [
                     "本报告使用高级搜索系统完成研究。",
                     "研究过程中针对每个章节与子小节进行了定向检索。",
@@ -150,6 +151,9 @@ class IntegratedReportGenerator:
             "toc": "# Table of Contents",
             "summary": "# Research Summary",
             "sources": "## Sources",
+            "empty_subsection": (
+                "*Limited information was found for this subsection.*\n"
+            ),
             "summary_lines": [
                 "This report was researched using an advanced search system.",
                 "Research included targeted searches for each section and subsection.",
@@ -686,8 +690,11 @@ class IntegratedReportGenerator:
                         f"[{section['name']} > {subsection['name']}]\n{generated_content}"
                     )
                 else:
+                    # Localized so a zh-CN report never shows an English
+                    # notice in its body (same mechanism as the chapter
+                    # scaffolding, not a second hardcoded string).
                     section_content.append(
-                        "*Limited information was found for this subsection.*\n"
+                        self._get_chapter_headings()["empty_subsection"]
                     )
 
                 section_content.append("\n\n")
