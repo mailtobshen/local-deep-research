@@ -79,6 +79,7 @@ from ..utils.route_decorators import with_user_session
 from ..utils.templates import render_template_with_defaults
 
 
+from ...diagnostics.engine_health import probe_darkweb
 from ...security import safe_get
 from ..warning_checks import calculate_warnings
 
@@ -1069,6 +1070,23 @@ def api_get_types():
     except Exception:
         logger.exception("Error getting types")
         return jsonify({"error": "Failed to retrieve settings"}), 500
+
+
+@settings_bp.route("/api/test-darkweb", methods=["POST"])
+@login_required
+def api_test_darkweb():
+    """运行暗网连接四级探测并返回结构化结果。
+
+    探测失败仍返回 200：失败详情是要展示给用户的正常内容。
+    """
+    status = probe_darkweb()
+    return jsonify(
+        {
+            "status": status.status,
+            "detail": status.detail,
+            "latency_ms": status.latency_ms,
+        }
+    )
 
 
 @settings_bp.route("/api/ui_elements", methods=["GET"])
