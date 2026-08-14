@@ -434,6 +434,106 @@ def probe_proxy(
     )
 
 
+# 暗网引擎。名称必须与 searxng/settings.yml 中的 `name:` 完全一致。
+DARKWEB_ENGINES: tuple[str, ...] = ("ahmia", "torch")
+
+# Tor 首次建链常需数十秒,远慢于明网引擎。这不是故障。
+_DARKWEB_TIMEOUT = 60
+
+
+def _darkweb_onion_hits(
+    instance_url: str, timeout: int
+) -> tuple[int, EngineStatus]:
+    """发一次真实查询,返回 (.onion 结果数, 底层探测状态)。
+
+    单独成函数是为了让 L3 在测试中可被替换,而不必打桩整个 HTTP 层。
+    """
+    status = probe_searxng_engine(
+        instance_url, DARKWEB_ENGINES[0], timeout=timeout
+    )
+    if status.status != "ok":
+        return 0, status
+    params = {
+        "q": "market",
+        "engines": ",".join(DARKWEB_ENGINES),
+        "format": "json",
+        "categories": "onions",
+        "pageno": 1,
+    }
+    resp = requests.get(
+        f"{instance_url}/search", params=params, timeout=timeout
+    )
+    resp.raise_for_status()
+    results = resp.json().get("results") or []
+    hits = sum(
+        1
+        for r in results
+        if ".onion" in str(r.get("url") or "").lower()
+    )
+    return hits, status
+
+
+def probe_darkweb(
+    settings_snapshot: Optional[dict] = None,
+    timeout: int = _DARKWEB_TIMEOUT,
+) -> EngineStatus:
+    """四级下钻诊断暗网检索的前提条件。
+
+    L1 SearXNG 可达 → L2 引擎已合入 → L3 能取回 .onion → L4 记录耗时。
+    失败即返回,detail 前缀标明到达的级别,使症结一眼可辨。绝不抛异常。
+    """
+    start = time.monotonic()
+    try:
+        instance_url = _get_searxng_url(settings_snapshot)
+        # L1
+        try:
+            available = get_searxng_engines(instance_url, timeout=timeout)
+        except Exception as e:  # noqa: BLE001
+            return EngineStatus(
+                "darkweb",
+                "error",
+                f"L1: SearXNG 不可达 ({instance_url}) — {str(e)[:60]}",
+                kind="darkweb",
+            )
+        # L2
+        missing = [e for e in DARKWEB_ENGINES if e not in available]
+        if missing:
+            return EngineStatus(
+                "darkweb",
+                "error",
+                (
+                    f"L2: SearXNG 未启用 {'/'.join(missing)} — "
+                    "引擎块尚未合入 searxng/settings.yml"
+                ),
+                kind="darkweb",
+            )
+        # L3
+        hits, inner = _darkweb_onion_hits(instance_url, timeout)
+        if hits == 0:
+            return EngineStatus(
+                "darkweb",
+                "error",
+                (
+                    "L3: 未取回任何 .onion 结果 — "
+                    f"Tor 线路不通或引擎超时 ({inner.detail or inner.status})"
+                ),
+                kind="darkweb",
+            )
+        # L4
+        elapsed = int((time.monotonic() - start) * 1000)
+        return EngineStatus(
+            "darkweb",
+            "ok",
+            f"L4: 取回 {hits} 条 .onion 结果",
+            latency_ms=elapsed,
+            kind="darkweb",
+        )
+    except Exception as e:  # noqa: BLE001
+        return EngineStatus(
+            "darkweb", "error", f"探测异常: {str(e)[:70]}", kind="darkweb"
+        )
+
+
 def run_preflight_check(
     settings_snapshot: Optional[dict] = None,
 ) -> list[EngineStatus]:
