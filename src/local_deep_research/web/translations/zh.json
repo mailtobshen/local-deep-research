@@ -2918,5 +2918,7 @@
   "Vision alt-fill trigger (alt-bearing images ≤ N)": "Vision 补 alt 触发阈值（带 alt 的图片数 ≤ N 时启动）",
   "Vision alt-fill only runs when the image bank has at most this many alt-bearing candidates. Below this threshold the bank is too thin for a confident single-shot LLM prompt, so vision is invoked to fill the gap. Set to 0 to run whenever a vision model is configured; raise to skip vision on banks that already have substantial alt coverage.": "当图片库中带 alt 的候选图片不超过此阈值时才运行 vision 补 alt。低于该阈值时，图片库太薄、不足以支撑一次有把握的单轮 LLM 提示，因此调用 vision 填补空缺。设为 0 表示只要配置了 vision 模型就总是运行；调高则跳过已经覆盖足够 alt 的图片库。",
   "Vision alt-fill cap (max images described)": "Vision 补 alt 上限（最多描述图片数）",
-  "Hard cap on how many alt-less images the vision model will describe in a single research run. Caps vision cost per research.": "单次研究中 vision 模型最多为多少张无 alt 图片生成描述的上限。用于控制每次研究的 vision 调用成本。"
+  "Hard cap on how many alt-less images the vision model will describe in a single research run. Caps vision cost per research.": "单次研究中 vision 模型最多为多少张无 alt 图片生成描述的上限。用于控制每次研究的 vision 调用成本。",
+  "Enable darkweb search (Tor)": "启用暗网检索 (Tor)",
+  "Whether to add the darkweb (SearXNG ahmia/torch via Tor) engine to research runs. Off by default — opt in only when the SearXNG engines-darkweb.yml template has been merged into searxng/settings.yml and ldr-tor is reachable.": "是否在研究运行中加入暗网（SearXNG ahmia/torch 通过 Tor）引擎。默认关闭 —— 只有当 SearXNG 的 engines-darkweb.yml 模板已合入 searxng/settings.yml 且 ldr-tor 可达时才开启。"
 }

@@ -5490,5 +5490,70 @@
         "ui_element": "number",
         "value": 7,
         "visible": true
+    },
+    "search.engine.web.darkweb.enabled": {
+        "category": "search_engines",
+        "description": "Whether to add the darkweb (SearXNG ahmia/torch via Tor) engine to research runs. Off by default — opt in only when the SearXNG engines-darkweb.yml template has been merged into searxng/settings.yml and ldr-tor is reachable.",
+        "editable": true,
+        "max_value": null,
+        "min_value": null,
+        "name": "Enable darkweb search (Tor)",
+        "options": null,
+        "step": null,
+        "type": "SEARCH",
+        "ui_element": "checkbox",
+        "value": false,
+        "visible": true
+    },
+    "search.engine.web.darkweb.display_name": {
+        "category": "search_engines",
+        "description": "Display name to use in the U.I. for this search engine.",
+        "editable": false,
+        "max_value": null,
+        "min_value": null,
+        "name": "Display Name",
+        "options": null,
+        "step": null,
+        "type": "SEARCH",
+        "ui_element": "text",
+        "value": "暗网检索 (Tor)",
+        "visible": false
+    },
+    "search.engine.web.darkweb.reliability": {
+        "category": "search_engines",
+        "description": "Reliability score (0–1) used to rank this engine's results. Darkweb results are inherently less stable than clearnet engines.",
+        "editable": false,
+        "max_value": 1,
+        "min_value": 0,
+        "name": "Reliability",
+        "options": null,
+        "step": 0.1,
+        "type": "SEARCH",
+        "ui_element": "number",
+        "value": 0.3,
+        "visible": false
+    },
+    "search.engine.web.darkweb.default_params": {
+        "category": "search_engines",
+        "description": "Default parameters for the darkweb SearXNG client.",
+        "editable": false,
+        "max_value": null,
+        "min_value": null,
+        "name": "Default parameters",
+        "options": null,
+        "step": null,
+        "type": "SEARCH",
+        "ui_element": "textarea",
+        "value": {
+            "engines": [
+                "ahmia",
+                "torch"
+            ],
+            "categories": [
+                "onions"
+            ],
+            "max_results": 10
+        },
+        "visible": false
     }
 }
