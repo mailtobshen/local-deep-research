@@ -7,6 +7,7 @@ import re
 import time
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+from urllib.parse import urlparse, urlunparse
 
 from loguru import logger
 
@@ -45,6 +46,81 @@ _MAX_DISPLAY_PX = 600
 # leaving modestly small but readable images (250×200=50k) untouched.
 _MIN_DISPLAY_AREA = 40_000
 _MIN_DISPLAY_SIDE = 300
+
+# Wikimedia serves thumbnails at an arbitrary width encoded in the last
+# path segment (``/250px-NAME.jpg``). Wikipedia embeds 250px renditions,
+# which land near 250x170 — just above the _MIN_DISPLAY_AREA upscale
+# floor, so they were kept at 250px despite a short side well under
+# _MIN_DISPLAY_SIDE. Requesting a wider rendition yields real pixels
+# instead of interpolation. Widths above the source return HTTP 400, so
+# the caller must be able to fall back to the original URL.
+_WIKIMEDIA_THUMB_HOSTS = ("upload.wikimedia.org",)
+_WIKIMEDIA_THUMB_RE = re.compile(r"^(\d+)px-")
+
+
+def _wikimedia_larger_url(url: str) -> Optional[str]:
+    """Return the same Wikimedia thumbnail at _MAX_DISPLAY_PX wide.
+
+    ``None`` when the URL is not a Wikimedia thumbnail or is already at
+    least as wide as the display cap (nothing to gain).
+    """
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower()
+    if not any(
+        host == h or host.endswith("." + h) for h in _WIKIMEDIA_THUMB_HOSTS
+    ):
+        return None
+    head, sep, name = parsed.path.rpartition("/")
+    if not sep:
+        return None
+    match = _WIKIMEDIA_THUMB_RE.match(name)
+    if not match or int(match.group(1)) >= _MAX_DISPLAY_PX:
+        return None
+    new_name = _WIKIMEDIA_THUMB_RE.sub(f"{_MAX_DISPLAY_PX}px-", name, count=1)
+    return urlunparse(parsed._replace(path=f"{head}/{new_name}"))
+
+
+def _wikimedia_original_url(url: str) -> Optional[str]:
+    """Return the original file behind a Wikimedia thumbnail URL.
+
+    ``.../commons/thumb/4/41/NAME.jpg/250px-NAME.jpg``
+    → ``.../commons/4/41/NAME.jpg``
+    """
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower()
+    if not any(
+        host == h or host.endswith("." + h) for h in _WIKIMEDIA_THUMB_HOSTS
+    ):
+        return None
+    parts = parsed.path.split("/")
+    if "thumb" not in parts or len(parts) < 3:
+        return None
+    parts.remove("thumb")
+    # The rendition segment (``250px-NAME.jpg``) is dropped; what remains
+    # ends with the source filename.
+    return urlunparse(parsed._replace(path="/".join(parts[:-1]), query=""))
+
+
+def _wikimedia_candidates(url: str) -> List[str]:
+    """Higher-resolution renditions to try, best-bounded first.
+
+    Wikipedia embeds 250px thumbnails whose short side falls well under
+    ``_MIN_DISPLAY_SIDE``. Rather than interpolate them up, ask the CDN
+    for real pixels:
+
+    1. the ``_MAX_DISPLAY_PX``-wide thumbnail — bounded in size, and all
+       that is needed whenever the source is at least that wide;
+    2. the original file — only reached when step 1 returns HTTP 400,
+       which itself proves the source is narrower than
+       ``_MAX_DISPLAY_PX``, so this download is small by construction.
+
+    Empty for non-Wikimedia URLs, so other hosts cost no extra request.
+    """
+    candidates = []
+    for candidate in (_wikimedia_larger_url(url), _wikimedia_original_url(url)):
+        if candidate and candidate != url:
+            candidates.append(candidate)
+    return candidates
 
 # Suffix-based hostname allowlist for image persistence. Each suffix
 # is matched against the URL's hostname (exact or ".suffix" sub-match)
@@ -349,22 +425,50 @@ class ImageStore:
                 last_exc: Optional[BaseException] = None
                 src = url_to_source.get(url)
                 source_url = (src or (None, None))[0]
-                for attempt in range(1, _MAX_ATTEMPTS + 1):
+                # Prefer a wider Wikimedia rendition: real pixels beat
+                # interpolating the 250px thumbnail up. Single best-effort
+                # attempt — the CDN answers 400 when the requested width
+                # exceeds the source, and any failure simply leaves the
+                # original URL to the retry loop below. url_to_route /
+                # url_to_size stay keyed by the original URL, which is what
+                # the report markdown references.
+                for candidate in _wikimedia_candidates(url):
                     try:
-                        result = self._download(url, source_url=source_url)
-                        break
-                    except _RETRIABLE as e:
-                        last_exc = e
-                        if attempt == _MAX_ATTEMPTS:
-                            raise
-                        sleep_s = _BACKOFF_BASE_S * (2 ** (attempt - 1))
-                        logger.info(
-                            f"[IMG-TRACE] PERSIST_RETRY url={url} "
-                            f"attempt={attempt}/{_MAX_ATTEMPTS} "
-                            f"reason={type(e).__name__}: {e} "
-                            f"sleep={sleep_s:.1f}s"
+                        result = self._download(
+                            candidate, source_url=source_url
                         )
-                        time.sleep(sleep_s)
+                        logger.info(
+                            f"[IMG-TRACE] HIRES_OK research={self.research_id} "
+                            f"img_url={url} hi_res_url={candidate}"
+                        )
+                        break
+                    except Exception as e:
+                        logger.info(
+                            f"[IMG-TRACE] HIRES_FALLBACK "
+                            f"research={self.research_id} "
+                            f"img_url={url} hi_res_url={candidate} "
+                            f"reason={type(e).__name__}: {e}"
+                        )
+                        result = None
+                if result is None:
+                    for attempt in range(1, _MAX_ATTEMPTS + 1):
+                        try:
+                            result = self._download(
+                                url, source_url=source_url
+                            )
+                            break
+                        except _RETRIABLE as e:
+                            last_exc = e
+                            if attempt == _MAX_ATTEMPTS:
+                                raise
+                            sleep_s = _BACKOFF_BASE_S * (2 ** (attempt - 1))
+                            logger.info(
+                                f"[IMG-TRACE] PERSIST_RETRY url={url} "
+                                f"attempt={attempt}/{_MAX_ATTEMPTS} "
+                                f"reason={type(e).__name__}: {e} "
+                                f"sleep={sleep_s:.1f}s"
+                            )
+                            time.sleep(sleep_s)
                 if result is None:
                     if last_exc is not None:
                         raise last_exc
