@@ -51,7 +51,7 @@ def tag_darkweb(results: list[dict]) -> list[dict]:
     ----------
     results : list[dict]
         Raw SearXNG result dicts from
-        ``_make_darkweb_engine().search()``.
+        ``_make_darkweb_engine().results(query)``.
 
     Returns
     -------

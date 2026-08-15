@@ -1456,7 +1456,7 @@ def run_research_process(research_id, query, mode, **kwargs):
                 if darkweb_enabled and isinstance(results, dict):
                     with _perf_stage(research_id, "darkweb_search"):
                         darkweb_engine = _make_darkweb_engine()
-                        darkweb_results = darkweb_engine.search(query) or []
+                        darkweb_results = darkweb_engine.results(query) or []
                     if darkweb_results:
                         tagged = tag_darkweb(darkweb_results)
                         existing = results.get("all_links_of_system") or []
