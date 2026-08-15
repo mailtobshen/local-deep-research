@@ -18,7 +18,8 @@ ARG DEBIAN_FRONTEND=noninteractive
 # so the released image is bit-identical to the one tested.
 # Install system dependencies for SQLCipher and Node.js for frontend build
 # Using Acquire::Retries to handle transient Debian mirror errors during CI
-RUN apt-get update -o Acquire::Retries=3 && apt-get upgrade -y -o Acquire::Retries=3 \
+RUN sed -i "s|deb.debian.org|mirrors.aliyun.com|g; s|security.debian.org|mirrors.aliyun.com|g" /etc/apt/sources.list.d/debian.sources 2>/dev/null || true \
+    && apt-get update -o Acquire::Retries=3 && apt-get upgrade -y -o Acquire::Retries=3 \
     && apt-get install -y --no-install-recommends -o Acquire::Retries=3 \
     libsqlcipher-dev \
     sqlcipher \
@@ -63,8 +64,16 @@ RUN apt-get update -o Acquire::Retries=3 && apt-get upgrade -y -o Acquire::Retri
 # already verified, and we re-pin to a CVE-fixed version immediately. The
 # three resulting Scorecard alerts (#7740, #7741, #7742) are dismissed as
 # won't-fix; revisit if a stable hash-locking workflow becomes available.
+ENV PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple PIP_DISABLE_PIP_VERSION_CHECK=1
 RUN pip3 install --no-cache-dir pip==26.1 \
     && pip install --no-cache-dir pdm==2.26.2 "hishel<1.0.0" playwright==1.58.0 "wheel>=0.46.2"
+# Install Chromium + headless-shell so the Python playwright client can launch a
+# browser. Without this line, the .onion fetch path added in Task 4 (Playwright
+# + SOCKS5 to ldr-tor) crashes on launch with 'Executable doesn't exist at
+# /root/.cache/ms-playwright/chromium_headless_shell-1223'. The chromium-1223
+# variant is also installed because some callers explicitly opt for the full
+# browser binary.
+RUN playwright install chromium chromium-headless-shell
 # disable update check
 ENV PDM_CHECK_UPDATE=false
 # Increase PDM request timeout from default 15s to 120s for large packages (numpy, torch)
@@ -132,7 +141,8 @@ ARG DEBIAN_FRONTEND=noninteractive
 # Using Acquire::Retries to handle transient Debian mirror errors during CI
 # `apt-get upgrade -y` is INTENTIONAL — see the rationale comment on the
 # corresponding upgrade in the builder-base stage (top of file).
-RUN apt-get update -o Acquire::Retries=3 && apt-get upgrade -y -o Acquire::Retries=3 \
+RUN sed -i "s|deb.debian.org|mirrors.aliyun.com|g; s|security.debian.org|mirrors.aliyun.com|g" /etc/apt/sources.list.d/debian.sources 2>/dev/null || true \
+    && apt-get update -o Acquire::Retries=3 && apt-get upgrade -y -o Acquire::Retries=3 \
     && apt-get install -y --no-install-recommends -o Acquire::Retries=3 \
     xauth \
     xvfb \
@@ -239,6 +249,7 @@ ENV PATH="/install/.venv/bin:$PATH"
 # Runs the LDR service.
 ###
 FROM python:3.14.5-slim@sha256:a7185a8e40af01bf891414a4df16ef10fc6000cee460a404a13da9029fe41604 AS ldr
+ENV PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple PIP_DISABLE_PIP_VERSION_CHECK=1
 
 # Set shell to bash with pipefail for safer pipe handling
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
@@ -248,12 +259,14 @@ ARG DEBIAN_FRONTEND=noninteractive
 # Upgrade pip to fix CVE-2026-1703 (malicious wheel extraction) + GHSA-jp4c-xjxw-mgf9
 # See builder-stage rationale above for why this install is not hash-pinned
 # — Scorecard alert #7742 dismissed as won't-fix on the same basis.
+ENV PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple PIP_DISABLE_PIP_VERSION_CHECK=1
 RUN pip3 install --no-cache-dir pip==26.1
 
 # Install runtime dependencies for SQLCipher and WeasyPrint.
 # `apt-get upgrade -y` is INTENTIONAL — see rationale on the builder-base
 # upgrade (top of file). Trade reproducibility for always-fresh CVE patches.
-RUN apt-get update && apt-get upgrade -y \
+RUN sed -i "s|deb.debian.org|mirrors.aliyun.com|g; s|security.debian.org|mirrors.aliyun.com|g" /etc/apt/sources.list.d/debian.sources 2>/dev/null || true \
+    && apt-get update && apt-get upgrade -y \
     && apt-get install -y --no-install-recommends \
     sqlcipher \
     libsqlcipher1 \
