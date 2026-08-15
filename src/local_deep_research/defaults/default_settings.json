@@ -2840,7 +2840,7 @@
     },
     "search.engine.web.searxng.default_params.instance_url": {
         "category": "searxng",
-        "description": "The SearXNG API endpoint URL.",
+        "description": "The SearXNG API endpoint URL. Defaults to the in-network sidecar hostname 'searxng-ldr:8080'; override only when running the LDR app outside Docker or pointing at an external SearXNG instance.",
         "editable": true,
         "max_value": null,
         "min_value": null,
@@ -2849,7 +2849,7 @@
         "step": null,
         "type": "SEARCH",
         "ui_element": "text",
-        "value": "http://localhost:8080",
+        "value": "http://searxng-ldr:8080",
         "visible": true
     },
     "search.engine.web.searxng.default_params.categories": {

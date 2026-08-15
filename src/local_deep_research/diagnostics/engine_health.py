@@ -55,7 +55,7 @@ _FALLBACK_ENGINES = [
 _ENGINE_CATEGORIES: dict[str, str] = {
     "google news": "news",
 }
-DEFAULT_SEARXNG_URL = "http://localhost:8080"
+DEFAULT_SEARXNG_URL = "http://searxng-ldr:8080"
 DEFAULT_FIRECRAWL_URL = "http://localhost:3002"
 _PROBE_QUERY = "test"
 _PROBE_TIMEOUT = 30  # seconds per probe — SearXNG runs the named engine PLUS all
