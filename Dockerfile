@@ -300,7 +300,7 @@ RUN sed -i "s|deb.debian.org|mirrors.aliyun.com|g; s|security.debian.org|mirrors
 # in environments where direct egress is throttled).
 ENV PLAYWRIGHT_DOWNLOAD_HOST=https://registry.npmmirror.com/-/binary/playwright
 RUN pip install --no-cache-dir playwright==1.60.0 && \
-    playwright install chromium chromium-headless-shell
+    playwright install --with-deps chromium chromium-headless-shell
 
 # Create non-root user for running service (security best practice)
 RUN groupadd -r ldruser && useradd -r -g ldruser -u 1000 -m -d /home/ldruser ldruser
