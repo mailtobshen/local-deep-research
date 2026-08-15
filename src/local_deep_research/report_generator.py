@@ -906,7 +906,6 @@ class IntegratedReportGenerator:
             # "## 暗网信息源" block appended after ## References.
             # Without this split the user can't tell clearnet from
             # darkweb sources at a glance.
-            from .utilities.is_darkweb_url import is_darkweb_url
             clearnet_lines: List[str] = []
             darkweb_lines: List[str] = []
             for canon, d in sorted_canon_docs:
@@ -1011,10 +1010,34 @@ class IntegratedReportGenerator:
                 )
 
             # 8) Rebuild body_parts with the renumbered sections.
+            import re as _re_for_section_marker
+            _URL_RE = _re_for_section_marker.compile(r"https?://[^\s\)\]]+")
             body_parts: List[str] = []
             for section in structure:
                 if section["name"] in sections:
-                    body_parts.append(sections[section["name"]])
+                    section_body = sections[section["name"]]
+                    # Phase-3 chapter section marker: if any URL in
+                    # the section body is .onion, append an explicit
+                    # localized note so readers know the section
+                    # contains darkweb-sourced claims.
+                    if any(
+                        is_darkweb_url(u)
+                        for u in _URL_RE.findall(section_body)
+                    ):
+                        lang = (self.settings_snapshot or {}).get(
+                            "report.language", "zh-CN"
+                        )
+                        if lang and lang.startswith("zh"):
+                            marker = (
+                                "\n\n*本节包含来自暗网（.onion）来源的信息。*\n"
+                            )
+                        else:
+                            marker = (
+                                "\n\n*This section contains claims "
+                                "sourced from darkweb (.onion) providers.*\n"
+                            )
+                        section_body = section_body + marker
+                    body_parts.append(section_body)
                     body_parts.append("")
             report_parts = [report_parts[0], ""] + report_parts[1:6] + body_parts
 
