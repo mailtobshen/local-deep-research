@@ -736,6 +736,10 @@ class IntegratedReportGenerator:
         # Sources headings). Driven by report.language so the
         # scaffolding matches the body language.
         headings = self._get_chapter_headings()
+        # Phase-3 darkweb grouping: imported once here so both the
+        # primary canon_to_doc path and the back-compat path can
+        # partition sources by URL without re-importing per branch.
+        from .utilities.is_darkweb_url import is_darkweb_url
 
         # Generate TOC
         toc = [f"{headings['toc']}\n"]
@@ -897,13 +901,30 @@ class IntegratedReportGenerator:
                 canon_to_doc.items(),
                 key=lambda item: old_to_new[item[1].metadata["index"]],
             )
+            # Phase-3 darkweb grouping: keep clearnet rows in the
+            # main sources_lines and divert .onion rows to a separate
+            # "## 暗网信息源" block appended after ## References.
+            # Without this split the user can't tell clearnet from
+            # darkweb sources at a glance.
+            from .utilities.is_darkweb_url import is_darkweb_url
+            clearnet_lines: List[str] = []
+            darkweb_lines: List[str] = []
             for canon, d in sorted_canon_docs:
                 new_idx = old_to_new[d.metadata["index"]]
                 title = d.metadata.get("title", "Untitled")
-                sources_lines.append(
-                    f"[{new_idx}] {title}\n   URL: {canon}\n\n"
+                row = f"[{new_idx}] {title}\n   URL: {canon}\n\n"
+                if is_darkweb_url(canon):
+                    darkweb_lines.append(row)
+                else:
+                    clearnet_lines.append(row)
+            sources_lines = clearnet_lines
+            darkweb_section = ""
+            if darkweb_lines:
+                darkweb_section = (
+                    "## 暗网信息源\n\n" + "".join(darkweb_lines)
                 )
             formatted_all_links = "".join(sources_lines)
+            formatted_all_links_darkweb = darkweb_section
         else:
             # Back-compat path: per-subsection documents were not captured
             # (detailed reports where _section_documents_per_subsection
@@ -1006,11 +1027,19 @@ class IntegratedReportGenerator:
                 if canon not in canon_to_entry:
                     canon_to_entry[canon] = (new_idx, title, url)
             sources_lines: List[str] = []
+            darkweb_lines: List[str] = []
             for canon, (new_idx, title, url) in canon_to_entry.items():
-                sources_lines.append(
-                    f"[{new_idx}] {title}\n   URL: {url}\n\n"
-                )
+                row = f"[{new_idx}] {title}\n   URL: {url}\n\n"
+                if is_darkweb_url(canon):
+                    darkweb_lines.append(row)
+                else:
+                    sources_lines.append(row)
             formatted_all_links = "".join(sources_lines)
+            formatted_all_links_darkweb = (
+                "## 暗网信息源\n\n" + "".join(darkweb_lines)
+                if darkweb_lines
+                else ""
+            )
 
         # Create final report with all parts
         final_report_content = "\n\n".join(report_parts)
@@ -1020,6 +1049,8 @@ class IntegratedReportGenerator:
             + headings["sources"]
             + "\n\n"
             + formatted_all_links
+            + ("\n\n" + formatted_all_links_darkweb
+               if formatted_all_links_darkweb else "")
         )
 
         # Create metadata dictionary
