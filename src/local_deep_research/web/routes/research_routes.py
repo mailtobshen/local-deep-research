@@ -236,11 +236,23 @@ def _apply_darkweb_override(
         return
     if search_engine == "darkweb":
         # Primary engine mode: darkweb is already doing the work, no
-        # append. Force the flag on (so the engine factory gate lets
-        # it through) and let include_darkweb control only whether the
-        # merge step in research_service.py runs — the call site
-        # passes include_darkweb=False for primary mode.
-        snapshot["search.engine.web.darkweb.enabled"] = {"value": True}
+        # append. We only honour the user's pick if the GLOBAL admin
+        # toggle is also on — otherwise we leave the snapshot unchanged
+        # (darkweb stays disabled) and let the request fall back to
+        # whatever other engine the system picks. This is the
+        # fail-closed path: a user can never bypass an admin who
+        # disabled darkweb (e.g. because ldr-tor is unreachable or
+        # searxng engines-darkweb.yml isn't merged) by submitting
+        # search_engine="darkweb" in the request payload.
+        existing = snapshot.get("search.engine.web.darkweb.enabled")
+        global_on = False
+        if isinstance(existing, dict):
+            global_on = bool(existing.get("value"))
+        if global_on:
+            snapshot["search.engine.web.darkweb.enabled"] = {"value": True}
+        # else: leave the entry as-is (False). The research flow's
+        # _darkweb_enabled check will then skip the darkweb engine
+        # entirely.
         return
     if not include_darkweb:
         # Force off — user did not check the box.
