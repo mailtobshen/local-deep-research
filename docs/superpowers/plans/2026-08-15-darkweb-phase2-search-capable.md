@@ -1339,3 +1339,35 @@ Task 1 (代理) → Task 2 (proxies helper) → Task 3 (工厂) → Task 4 (full
 每个 Task 独立可 commit、可停。**完成 9 个 Task 后**，报告用户，需用户**明确批准**才能重启 `ldr-local` 容器让 hot-mount 生效。
 
 **前置条件**：本计划假设阶段一 `probe_darkweb()` + `DARKWEB_ENGINES` 常量已存在（已 commit：f32c1c6f / ea890bf2 / b58238a0）。
+
+---
+
+## 实施现实（2026-08-15 落地时与原计划的偏差）
+
+计划假设 `_get_full_content` 走 `requests.get(url)`，然后通过 `get_onion_proxies(url)` 注入 HTTP CONNECT 代理。**实际**：抓取走 Playwright（`research_library/downloaders/playwright_html.py`），浏览器不能消费 HTTP CONNECT 代理——HTTP CONNECT 隧道方案对 Playwright 无效。
+
+**Task 4 实际实施**：Playwright 启动时传 `proxy={'server': 'socks5://172.21.0.4:9050'}`，浏览器走 Chromium 自带的 SOCKS5 远端解析（RFC 1928 `atyp=0x03`）直接连 ldr-tor。Task 1 的 `OnionConnectProxy` 代码**保留但未被任何代码路径使用**——作为基础设施，供未来非 Playwright 路径使用（例如未来某个 SSE 客户端、httpx 集成等）。按 CLAUDE.md §3 "Touch only what you must" 不删除未使用代码。
+
+**Task 5 修复**：原计划调 `darkweb_engine.search(query)`，但 SearXNGSearchEngine **没有** `.search()` 方法——实际 API 是 `.results()`。`fix(darkweb): SearXNGSearchEngine.results() not .search()`（commit b7d407a9）修了这个问题。
+
+**Task 1 / Task 4 文件路径不变**：Task 1 的本地代理仍在 `src/local_deep_research/network/onion_connect_proxy.py`，Task 4 的 Playwright SOCKS5 路由在 `src/local_deep_research/research_library/downloaders/playwright_html.py:_fetch_with_playwright`。两者解耦：Task 1 是基础设施，Task 4 是实际生效的抓取路径。
+
+**阶段二完整链路（实测验证）**：
+```
+SearXNG engines=ahmia,torch, categories=onions
+   → 10 .onion 结果，11.2s
+   ↓
+tag_darkweb() → is_darkweb=True × 10
+   ↓
+merge into all_links_of_system (1 clearnet + 10 darkweb)
+   ↓
+fetch_content_with_images → Playwright socks5://172.21.0.4:9050
+   ↓
+.onion 全文 HTML: 169 KB DuckDuckGo 实测，53.1s
+```
+
+**阶段三（任务 #21 / #23 / #24 / #25）已 commit**：`is_darkweb_url()` utility（537080e8）+ 图片管道 D引用防御测试（1c2a8a21）+ 参考文献暗网分组（b6d2210c）+ 章节末尾暗网标注（be937291）。`[D1]` 编号重写（Task #22）**有意不做**——触动引用系统核心风险高，阶段三其余 4 个改动已让暗网来源在视觉上明确区分。
+
+**Dockerfile 后续调整**（commit 946664de / 1626181b / a7475563 / c3cc31d1 / 4531ff1b / 2ab82bd0 / e14d9c72 / 35b2d258）：在最终 `ldr` stage 加 `playwright install --with-deps chromium chromium-headless-shell` 走 npmmirror 中国镜像下载，pin `playwright==1.60.0` 与 hot-mount site-packages 的 playwright 版本对齐，避免版本不匹配导致 "Executable doesn't exist" 错误。
+
+**此附录由 2026-08-15 实施 commit 链生成**：7e2e80f0 / 8a88cb68 / 11214ff2 / 87770a8f / 7caebb7c / 67388778 / 541b29ef / 45de0cd1 / b7d407a9 / 946664de / 1626181b / a7475563 / c3cc31d1 / 4531ff1b / 2ab82bd0 / e14d9c72 / 35b2d258 / 537080e8 / 1c2a8a21 / b6d2210c / be937291（21 个 commit 跨 main，分阶段二+阶段三）。
