@@ -288,6 +288,15 @@ RUN sed -i "s|deb.debian.org|mirrors.aliyun.com|g; s|security.debian.org|mirrors
     fonts-noto-cjk \
     && rm -rf /var/lib/apt/lists/*
 
+# Install Chromium browsers needed by the Python playwright client (Task 4
+# .onion fetch). Without this line, the final ldr image lacks the
+# chromium binaries and the Playwright launch path crashes with
+# 'Executable doesn't exist' on first use. The chromium-1223 variant
+# is the full browser; chromium-headless_shell-1223 is the lighter
+# headless shell used by default when headless=True.
+RUN pip install --no-cache-dir playwright==1.58.0 && \
+    playwright install chromium chromium-headless-shell
+
 # Create non-root user for running service (security best practice)
 RUN groupadd -r ldruser && useradd -r -g ldruser -u 1000 -m -d /home/ldruser ldruser
 
