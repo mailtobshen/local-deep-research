@@ -213,6 +213,30 @@ def _apply_report_language_override(research_settings: dict, report_language: st
         }
 
 
+def _apply_darkweb_override(research_settings: dict, include_darkweb: bool) -> None:
+    """Force-override search.engine.web.darkweb.enabled in the per-research snapshot.
+
+    The global toggle decides whether the darkweb engine is allowed at all
+    (gated by searxng settings.yml + ldr-tor reachability). The per-research
+    checkbox is a UX gate that says "this time, also pull from .onion". Only
+    when BOTH are true does the main flow call the darkweb engine.
+    """
+    snapshot = research_settings.get("settings_snapshot")
+    if not isinstance(snapshot, dict):
+        return
+    if not include_darkweb:
+        # Force off — user did not check the box.
+        snapshot["search.engine.web.darkweb.enabled"] = {"value": False}
+        return
+    # If the global toggle is on, leave it; if it's off, the override stays
+    # off (caller still needs searxng engines + ldr-tor for the probe to pass).
+    existing = snapshot.get("search.engine.web.darkweb.enabled")
+    if isinstance(existing, dict):
+        existing["value"] = bool(existing.get("value"))
+    # If include_darkweb=True and the global toggle is True, the existing entry
+    # already encodes True — nothing to do.
+
+
 def _extract_research_params(data, settings_manager):
     """Extract and resolve research parameters from request data and settings.
 
@@ -650,6 +674,13 @@ def start_research():
             # beats the global default so the language injection sees
             # the user's choice from the Advanced Options dropdown.
             _apply_report_language_override(research_settings, report_language)
+            # Darkweb opt-in: AND the global toggle with this research's
+            # checkbox state so unchecking the box always disables the
+            # darkweb engine for this run.
+            _apply_darkweb_override(
+                research_settings,
+                bool(data.get("include_darkweb", False)),
+            )
             logger.info(
                 f"Captured {len(all_settings)} settings for research {research_id}"
             )

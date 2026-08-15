@@ -304,6 +304,19 @@
         setupEventListeners();
         // Don't populate providers yet - wait for API data
         initializeDropdowns();
+        // Show the darkweb opt-in checkbox only when the engine is enabled
+        // (avoids confusing users whose setup lacks ldr-tor or the SearXNG
+        // engines-darkweb.yml template). The server already returns 200 even
+        // if the lookup fails — we hide on failure to be safe.
+        fetch('/settings/api/darkweb-status', { credentials: 'same-origin' })
+            .then(r => r.json())
+            .then(data => {
+                const c = document.getElementById('darkweb-container');
+                if (c && data && data.enabled) {
+                    c.style.display = '';
+                }
+            })
+            .catch(() => { /* leave hidden */ });
 
         // Don't set initial values yet - wait for model options to load first
         // setInitialFormValues() will be called after loadSettings() completes
@@ -2390,7 +2403,8 @@
             strategy,
             iterations,
             questions_per_iteration: questionsPerIteration,
-            report_language: reportLanguage
+            report_language: reportLanguage,
+            include_darkweb: document.getElementById('include_darkweb')?.checked || false
         };
 
         SafeLogger.log('Submitting research with data:', formData);

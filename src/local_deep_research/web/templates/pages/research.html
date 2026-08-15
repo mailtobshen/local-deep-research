@@ -223,6 +223,15 @@
                                 data_initial_value=settings.search_tool
                             ) }}
                         </div>
+
+                        <!-- Darkweb opt-in (conditional, only when enabled) -->
+                        <div class="ldr-form-group ldr-half" id="darkweb-container" style="display: none;">
+                            <label for="include_darkweb">{{ tooltip(_("Also search darkweb (Tor)"), _("Append a second SearXNG query via ahmia/torch on the Tor network. Adds ~26s per subsection. Requires the SearXNG darkweb engines and a reachable ldr-tor sidecar; preflight will skip silently if either is missing.")) }}</label>
+                            <div class="ldr-form-check">
+                                <input class="ldr-form-check-input" type="checkbox" id="include_darkweb" name="include_darkweb" value="true">
+                                <label class="ldr-form-check-label" for="include_darkweb">{{ _("Also search darkweb (Tor)") }}</label>
+                            </div>
+                        </div>
                     </div>
 
                     <div class="ldr-form-row">
