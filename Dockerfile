@@ -294,6 +294,11 @@ RUN sed -i "s|deb.debian.org|mirrors.aliyun.com|g; s|security.debian.org|mirrors
 # 'Executable doesn't exist' on first use. The browser version is
 # pinned by the playwright Python wheel — whatever revision
 # playwright's browsers.json declares (chromium-1223 for 1.60+, etc.).
+# PLAYWRIGHT_DOWNLOAD_HOST points playwright at the npmmirror China
+# mirror so the ~280 MB chromium downloads are not gated by the
+# international cdn.playwright.dev round-trip (and so they survive
+# in environments where direct egress is throttled).
+ENV PLAYWRIGHT_DOWNLOAD_HOST=https://registry.npmmirror.com/-/binary/playwright
 RUN playwright install chromium chromium-headless-shell
 
 # Create non-root user for running service (security best practice)
