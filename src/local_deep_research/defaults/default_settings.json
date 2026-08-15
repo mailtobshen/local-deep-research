@@ -5533,27 +5533,46 @@
         "value": 0.3,
         "visible": false
     },
-    "search.engine.web.darkweb.default_params": {
+    "search.engine.web.darkweb.default_params.engines": {
         "category": "search_engines",
-        "description": "Default parameters for the darkweb SearXNG client.",
-        "editable": false,
+        "description": "SearXNG backend engines to query for darkweb search.",
+        "editable": true,
         "max_value": null,
         "min_value": null,
-        "name": "Default parameters",
+        "name": "Engines",
         "options": null,
         "step": null,
         "type": "SEARCH",
-        "ui_element": "textarea",
-        "value": {
-            "engines": [
-                "ahmia",
-                "torch"
-            ],
-            "categories": [
-                "onions"
-            ],
-            "max_results": 10
-        },
-        "visible": false
+        "ui_element": "text",
+        "value": "ahmia,torch",
+        "visible": true
+    },
+    "search.engine.web.darkweb.default_params.categories": {
+        "category": "search_engines",
+        "description": "SearXNG categories to filter by (darkweb = onions).",
+        "editable": true,
+        "max_value": null,
+        "min_value": null,
+        "name": "Categories",
+        "options": null,
+        "step": null,
+        "type": "SEARCH",
+        "ui_element": "text",
+        "value": "onions",
+        "visible": true
+    },
+    "search.engine.web.darkweb.default_params.max_results": {
+        "category": "search_engines",
+        "description": "Maximum number of darkweb results per query.",
+        "editable": true,
+        "max_value": 50,
+        "min_value": 1,
+        "name": "Max Results",
+        "options": null,
+        "step": 1,
+        "type": "SEARCH",
+        "ui_element": "number",
+        "value": 10,
+        "visible": true
     }
 }

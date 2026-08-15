@@ -830,6 +830,22 @@
                 const searchEngine = this.value;
                 SafeLogger.log('Search engine changed to:', searchEngine);
                 saveSearchSetting('search.tool', searchEngine);
+                // When the user picks "暗网 (Tor)" as the primary engine,
+                // the "also search darkweb" checkbox becomes redundant —
+                // darkweb IS the engine. Disable + uncheck it so the
+                // form doesn't post a contradictory include_darkweb=true.
+                // Conversely, picking any other engine re-enables the
+                // checkbox so the user can opt in again.
+                const dwContainer = document.getElementById('darkweb-container');
+                const dwCheckbox = document.getElementById('include_darkweb');
+                if (dwContainer && dwCheckbox) {
+                    if (searchEngine === 'darkweb') {
+                        dwCheckbox.checked = false;
+                        dwCheckbox.disabled = true;
+                    } else {
+                        dwCheckbox.disabled = false;
+                    }
+                }
             });
         }
 

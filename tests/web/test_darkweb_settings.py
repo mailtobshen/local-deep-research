@@ -42,13 +42,13 @@ def test_darkweb_reliability_declared():
 
 
 def test_darkweb_default_params_declared():
+    """Default darkweb engines/categories/max_results use flat keys under
+    search.engine.web.darkweb.default_params.* (matches SearXNG's flat-
+    key convention so the engine factory extracts them correctly)."""
     d = _load_defaults()
-    params_key = "search.engine.web.darkweb.default_params"
-    assert params_key in d
-    val = d[params_key]["value"]
-    assert val["engines"] == ["ahmia", "torch"]
-    assert val["categories"] == ["onions"]
-    assert val["max_results"] == 10
+    assert d["search.engine.web.darkweb.default_params.engines"]["value"] == "ahmia,torch"
+    assert d["search.engine.web.darkweb.default_params.categories"]["value"] == "onions"
+    assert d["search.engine.web.darkweb.default_params.max_results"]["value"] == 10
 
 
 def test_zh_translation_present_for_darkweb():

@@ -213,16 +213,34 @@ def _apply_report_language_override(research_settings: dict, report_language: st
         }
 
 
-def _apply_darkweb_override(research_settings: dict, include_darkweb: bool) -> None:
+def _apply_darkweb_override(
+    research_settings: dict,
+    include_darkweb: bool,
+    search_engine: str = "",
+) -> None:
     """Force-override search.engine.web.darkweb.enabled in the per-research snapshot.
 
     The global toggle decides whether the darkweb engine is allowed at all
     (gated by searxng settings.yml + ldr-tor reachability). The per-research
     checkbox is a UX gate that says "this time, also pull from .onion". Only
-    when BOTH are true does the main flow call the darkweb engine.
+    when BOTH are true does the main flow call the darkweb engine as an
+    append source.
+
+    When ``search_engine == "darkweb"`` the darkweb engine is the *primary*
+    source (the engine dropdown is set to "暗网 (Tor)"). In that case the
+    append-checkbox is moot — we force the global toggle on so the engine
+    is allowed, and the merge step skips because include_darkweb=False.
     """
     snapshot = research_settings.get("settings_snapshot")
     if not isinstance(snapshot, dict):
+        return
+    if search_engine == "darkweb":
+        # Primary engine mode: darkweb is already doing the work, no
+        # append. Force the flag on (so the engine factory gate lets
+        # it through) and let include_darkweb control only whether the
+        # merge step in research_service.py runs — the call site
+        # passes include_darkweb=False for primary mode.
+        snapshot["search.engine.web.darkweb.enabled"] = {"value": True}
         return
     if not include_darkweb:
         # Force off — user did not check the box.
@@ -676,10 +694,15 @@ def start_research():
             _apply_report_language_override(research_settings, report_language)
             # Darkweb opt-in: AND the global toggle with this research's
             # checkbox state so unchecking the box always disables the
-            # darkweb engine for this run.
+            # darkweb engine for this run. When the engine dropdown
+            # itself is "暗网 (Tor)" (search_engine == "darkweb"), the
+            # darkweb engine is the *primary* source — force the flag
+            # on and let the caller pass include_darkweb=False so the
+            # merge step is a no-op (no double-searching).
             _apply_darkweb_override(
                 research_settings,
                 bool(data.get("include_darkweb", False)),
+                search_engine=str(data.get("search_engine", "") or ""),
             )
             logger.info(
                 f"Captured {len(all_settings)} settings for research {research_id}"
