@@ -46,7 +46,11 @@ def test_darkweb_default_params_declared():
     search.engine.web.darkweb.default_params.* (matches SearXNG's flat-
     key convention so the engine factory extracts them correctly)."""
     d = _load_defaults()
-    assert d["search.engine.web.darkweb.default_params.engines"]["value"] == "ahmia,torch"
+    engines = d["search.engine.web.darkweb.default_params.engines"]["value"]
+    # ahmia is the canonical engine; torch stays for legacy
+    # research runs; vormweb added 2026-08-15 as a backup index.
+    assert "ahmia" in engines
+    assert "vormweb" in engines
     assert d["search.engine.web.darkweb.default_params.categories"]["value"] == "onions"
     assert d["search.engine.web.darkweb.default_params.max_results"]["value"] == 10
 

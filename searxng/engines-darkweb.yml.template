@@ -24,3 +24,21 @@
     url_xpath: ./td[2]/a
     title_xpath: ./td[2]/b
     content_xpath: ./td[2]/small
+
+  - name: vormweb
+    # VormWeb indexes .onion sites and exposes both a clearnet
+    # endpoint (vormweb.com) and a .onion mirror. Clearnet is fine
+    # for the search call; only the indexed results are .onion links
+    # (which is what the user actually wants from a dark-web engine).
+    # using_tor_proxy=False because the clearnet endpoint is faster
+    # and not blocked from this container. If vormweb.com goes
+    # down, switch to the .onion URL by changing search_url +
+    # using_tor_proxy=True.
+    engine: xpath
+    timeout: 30.0
+    paging: true
+    search_url: https://vormweb.com/search?q={query}&page={pageno}
+    results_xpath: //div[contains(@class,"result")] | //li[contains(@class,"result")]
+    url_xpath: .//a[@class="result-link"]/@href | .//h3/a/@href
+    title_xpath: .//h3 | .//a[@class="result-title"]
+    content_xpath: .//p[@class="result-snippet"] | .//div[contains(@class,"snippet")]

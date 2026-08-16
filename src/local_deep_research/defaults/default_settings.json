@@ -5535,7 +5535,7 @@
     },
     "search.engine.web.darkweb.default_params.engines": {
         "category": "search_engines",
-        "description": "SearXNG backend engines to query for darkweb search.",
+        "description": "SearXNG backend engines to query for darkweb search. Comma-separated. Names must match the engine blocks in searxng/settings.yml (see searxng/engines-darkweb.yml.template).",
         "editable": true,
         "max_value": null,
         "min_value": null,
@@ -5544,7 +5544,7 @@
         "step": null,
         "type": "SEARCH",
         "ui_element": "text",
-        "value": "ahmia,torch",
+        "value": "ahmia,torch,vormweb",
         "visible": true
     },
     "search.engine.web.darkweb.default_params.categories": {
