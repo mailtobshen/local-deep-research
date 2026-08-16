@@ -474,27 +474,85 @@ def probe_proxy(
 
 
 # 暗网引擎。名称必须与 searxng/settings.yml 中的 `name:` 完全一致。
+# 默认是 (ahmia, torch)。用户可在 settings 注册更多（通过合并
+# searxng/engines-darkweb.yml.template）并由 settings registry 反映。
 DARKWEB_ENGINES: tuple[str, ...] = ("ahmia", "torch")
 
 # Tor 首次建链常需数十秒,远慢于明网引擎。这不是故障。
 _DARKWEB_TIMEOUT = 60
 
 
-def _darkweb_onion_hits(
-    instance_url: str, timeout: int
-) -> tuple[int, EngineStatus]:
-    """发一次真实查询,返回 (.onion 结果数, 底层探测状态)。
-
-    单独成函数是为了让 L3 在测试中可被替换,而不必打桩整个 HTTP 层。
+def _darkweb_engine_list(settings_snapshot: Optional[dict]) -> tuple[str, ...]:
+    """Read the darkweb engine list from settings, falling back to the
+    module-level default. Mirrors the resolver in
+    web_search_engines/darkweb._resolve_darkweb_engines.
     """
-    status = probe_searxng_engine(
-        instance_url, DARKWEB_ENGINES[0], timeout=timeout
+    if settings_snapshot is None:
+        return DARKWEB_ENGINES
+    raw = settings_snapshot.get(
+        "search.engine.web.darkweb.default_params.engines"
     )
-    if status.status != "ok":
-        return 0, status
+    if isinstance(raw, dict):
+        raw = raw.get("value")
+    if not raw:
+        return DARKWEB_ENGINES
+    parts = tuple(p.strip() for p in str(raw).split(",") if p.strip())
+    return parts or DARKWEB_ENGINES
+
+
+def _probe_darkweb_single(
+    instance_url: str, engine_name: str, timeout: int
+) -> EngineStatus:
+    """Probe one darkweb engine. Returns a status whose ``name`` is
+    ``darkweb/<engine_name>`` so the per-engine preflight table shows
+    a row per engine (mirroring how the clearnet table lists each
+    searxng backend individually)."""
+    start = time.monotonic()
+    status = probe_searxng_engine(instance_url, engine_name, timeout=timeout)
+    elapsed = int((time.monotonic() - start) * 1000)
+    if status.status == "ok":
+        return EngineStatus(
+            f"darkweb/{engine_name}",
+            "ok",
+            f"暗网引擎 {engine_name} 可用 (SearXNG)",
+            latency_ms=elapsed,
+            kind="darkweb",
+        )
+    return EngineStatus(
+        f"darkweb/{engine_name}",
+        status.status,
+        f"暗网引擎 {engine_name} 不可用 — {status.detail or 'unknown'}",
+        latency_ms=elapsed,
+        kind="darkweb",
+    )
+
+
+def _darkweb_onion_hits(
+    instance_url: str, engines: tuple[str, ...], timeout: int
+) -> tuple[int, EngineStatus]:
+    """Issue one real darkweb search and return (.onion hit count,
+    overall status). The ``inner`` status is for the union query
+    (all engines combined) — per-engine connectivity is reported
+    separately by ``_probe_darkweb_single``.
+    """
+    if not engines:
+        return 0, EngineStatus(
+            "darkweb",
+            "error",
+            "L2: 暗网引擎列表为空",
+            kind="darkweb",
+        )
+    # Use the first configured engine for the actual L3 query to
+    # avoid double-counting when many engines are registered.
+    primary = engines[0]
+    primary_status = probe_searxng_engine(
+        instance_url, primary, timeout=timeout
+    )
+    if primary_status.status != "ok":
+        return 0, primary_status
     params = {
         "q": "market",
-        "engines": ",".join(DARKWEB_ENGINES),
+        "engines": ",".join(engines),
         "format": "json",
         "categories": "onions",
         "pageno": 1,
@@ -509,68 +567,102 @@ def _darkweb_onion_hits(
         for r in results
         if ".onion" in str(r.get("url") or "").lower()
     )
-    return hits, status
+    return hits, primary_status
 
 
 def probe_darkweb(
     settings_snapshot: Optional[dict] = None,
     timeout: int = _DARKWEB_TIMEOUT,
-) -> EngineStatus:
-    """四级下钻诊断暗网检索的前提条件。
+) -> list[EngineStatus]:
+    """Per-darkweb-engine preflight. Returns a list of EngineStatus
+    entries — one per darkweb engine (``darkweb/ahmia``,
+    ``darkweb/torch``, etc.) so the preflight table shows fine-grained
+    connectivity like the clearnet table does for searxng backends.
 
-    L1 SearXNG 可达 → L2 引擎已合入 → L3 能取回 .onion → L4 记录耗时。
-    失败即返回,detail 前缀标明到达的级别,使症结一眼可辨。绝不抛异常。
+    Each entry walks L1..L3 against the individual engine. L4 is
+    encoded in latency_ms.
+
+    Errors (L1 SearXNG unreachable, L2 engine block not merged) are
+    propagated to every per-engine entry so the user sees a coherent
+    picture: every darkweb engine is reported with the same upstream
+    cause.
     """
+    engines = _darkweb_engine_list(settings_snapshot)
     start = time.monotonic()
     try:
         instance_url = _get_searxng_url(settings_snapshot)
         # L1
         try:
-            available = get_searxng_all_engines(instance_url, timeout=timeout)
+            available = get_searxng_all_engines(
+                instance_url, timeout=timeout
+            )
         except Exception as e:  # noqa: BLE001
-            return EngineStatus(
-                "darkweb",
-                "error",
-                f"L1: SearXNG 不可达 ({instance_url}) — {str(e)[:60]}",
-                kind="darkweb",
-            )
+            return [
+                EngineStatus(
+                    f"darkweb/{engine_name}",
+                    "error",
+                    f"L1: SearXNG 不可达 ({instance_url}) — {str(e)[:60]}",
+                    kind="darkweb",
+                )
+                for engine_name in engines
+            ]
         # L2
-        missing = [e for e in DARKWEB_ENGINES if e not in available]
+        missing = [e for e in engines if e not in available]
         if missing:
-            return EngineStatus(
-                "darkweb",
-                "error",
-                (
-                    f"L2: SearXNG 未启用 {'/'.join(missing)} — "
-                    "引擎块尚未合入 searxng/settings.yml"
-                ),
-                kind="darkweb",
-            )
-        # L3
-        hits, inner = _darkweb_onion_hits(instance_url, timeout)
+            return [
+                EngineStatus(
+                    f"darkweb/{engine_name}",
+                    "error",
+                    (
+                        f"L2: SearXNG 未启用 {'/'.join(missing)} — "
+                        "引擎块尚未合入 searxng/settings.yml"
+                    ),
+                    kind="darkweb",
+                )
+                for engine_name in engines
+            ]
+        # L3 — per engine
+        per_engine = [
+            _probe_darkweb_single(instance_url, engine_name, timeout)
+            for engine_name in engines
+        ]
+        # Plus one L3-union status that captures the actual .onion
+        # hit count from a real darkweb search (matters when
+        # individual engines are reachable but the onions category
+        # is empty for the query).
+        hits, _inner = _darkweb_onion_hits(
+            instance_url, engines, timeout
+        )
         if hits == 0:
-            return EngineStatus(
-                "darkweb",
+            per_engine.append(
+                EngineStatus(
+                    "darkweb",
+                    "error",
+                    "L3: 未取回任何 .onion 结果 — Tor 线路不通或引擎超时",
+                    kind="darkweb",
+                )
+            )
+        else:
+            per_engine.append(
+                EngineStatus(
+                    "darkweb",
+                    "ok",
+                    f"L4: 取回 {hits} 条 .onion 结果",
+                    latency_ms=int((time.monotonic() - start) * 1000),
+                    kind="darkweb",
+                )
+            )
+        return per_engine
+    except Exception as e:  # noqa: BLE001
+        return [
+            EngineStatus(
+                f"darkweb/{engine_name}",
                 "error",
-                (
-                    "L3: 未取回任何 .onion 结果 — "
-                    f"Tor 线路不通或引擎超时 ({inner.detail or inner.status})"
-                ),
+                f"探测异常: {str(e)[:70]}",
                 kind="darkweb",
             )
-        # L4
-        elapsed = int((time.monotonic() - start) * 1000)
-        return EngineStatus(
-            "darkweb",
-            "ok",
-            f"L4: 取回 {hits} 条 .onion 结果",
-            latency_ms=elapsed,
-            kind="darkweb",
-        )
-    except Exception as e:  # noqa: BLE001
-        return EngineStatus(
-            "darkweb", "error", f"探测异常: {str(e)[:70]}", kind="darkweb"
-        )
+            for engine_name in engines
+        ]
 
 
 def run_preflight_check(
@@ -637,8 +729,17 @@ def run_preflight_check(
 
         if darkweb_future is not None:
             try:
-                statuses.append(darkweb_future.result(timeout=_DARKWEB_TIMEOUT + 5))
+                # probe_darkweb returns one EngineStatus per darkweb
+                # engine (e.g. "darkweb/ahmia", "darkweb/torch") plus
+                # a union L3 status. extend() (not append) so the
+                # per-engine rows land in the preflight table.
+                statuses.extend(
+                    darkweb_future.result(timeout=_DARKWEB_TIMEOUT + 5)
+                )
             except FutureTimeout:
+                # When probe_darkweb itself times out we don't know
+                # which engines were configured; fall back to a
+                # single ambiguous "darkweb" row.
                 statuses.append(
                     EngineStatus(
                         "darkweb", "timeout", "探测超时", kind="darkweb"
