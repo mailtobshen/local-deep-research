@@ -47,14 +47,17 @@ def test_darkweb_default_params_declared():
     key convention so the engine factory extracts them correctly)."""
     d = _load_defaults()
     engines = d["search.engine.web.darkweb.default_params.engines"]["value"]
-    # ahmia + torch are Tor-routed darkweb engines. yacy (added
-    # 2026-08-16) is a free distributed P2P search whose public
-    # index at yacy.searchlab.eu already contains .onion results;
-    # it replaced vormweb (NXDOMAIN as of 2026-Q3) as the third
-    # engine.
+    # As of 2026-Q3 the only reliably reachable darkweb engines
+    # (NXDOMAIN-checked via 8.8.8.8 + ahmia/torch probed through
+    # SearXNG) are ahmia and torch. vormweb NXDOMAIN'd; phobos,
+    # haystak, notEvil, darksearch are all defunct; yacy
+    # (yacy.searchlab.eu) returns .onion results but the yacy
+    # plugin in searxng-ldr:wikidata-fixed (SearXNG 2026.7.8)
+    # throws KeyError 'yacy' during network init. So the default
+    # remains ahmia + torch; operators who need a third engine
+    # should add their own via searxng-settings/engines/.
     assert "ahmia" in engines
     assert "torch" in engines
-    assert "yacy" in engines
     assert "vormweb" not in engines
     assert d["search.engine.web.darkweb.default_params.categories"]["value"] == "onions"
     assert d["search.engine.web.darkweb.default_params.max_results"]["value"] == 10

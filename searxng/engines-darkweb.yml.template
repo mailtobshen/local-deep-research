@@ -25,20 +25,13 @@
     title_xpath: ./td[2]/b
     content_xpath: ./td[2]/small
 
-  - name: yacy
-    # YaCy is a free distributed (P2P) search engine with one
-    # public instance at yacy.searchlab.eu. It indexes the clearnet
-    # AND .onion domains its peers have crawled, so when the
-    # default search is restricted to the 'onions' category the
-    # results lean heavily toward Tor hidden services. YaCy is
-    # preferable to vormweb here because vormweb.com NXDOMAIN'd in
-    # 2026-Q3 and the alternative clearnet mirrors (phobos, haystak,
-    # notEvil, darksearch) are all offline.
-    # engine: yacy is SearXNG's built-in plugin — no xpath, no Tor
-    # proxy needed (the public index already includes .onion links).
-    engine: yacy
-    base_url: https://yacy.searchlab.eu
-    shortcut: ya
-    categories: [onions, general]
-    timeout: 30.0
-    paging: true
+  # Note: as of 2026-Q3, every third darkweb search engine we
+  # tested (vormweb.com, phobos, haystak, notEvil, darksearch.io,
+  # onionland) is either NXDOMAIN or returns zero usable results
+  # from this network. yacy.searchlab.eu (SearXNG's built-in yacy
+  # plugin) DOES return .onion results via the 'onions' category,
+  # but it triggers a SearXNG network-init KeyError on this image
+  # version (2026.7.8-1412926f5). Until that's fixed, the default
+  # stays at the two reachable engines: ahmia + torch. Operators
+  # who need a third engine should test candidates in their own
+  # network and add them via searxng-settings/engines/.
