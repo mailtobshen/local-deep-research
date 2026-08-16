@@ -58,7 +58,13 @@ _ENGINE_CATEGORIES: dict[str, str] = {
 DEFAULT_SEARXNG_URL = "http://searxng-ldr:8080"
 DEFAULT_FIRECRAWL_URL = "http://localhost:3002"
 _PROBE_QUERY = "test"
-_PROBE_TIMEOUT = 30  # seconds per probe — SearXNG runs the named engine PLUS all
+_PROBE_TIMEOUT = 60  # seconds per probe — SearXNG runs the named engine PLUS all
+              # upstream engines that the engine depends on. When the
+              # request goes through the host Privoxy (HTTP_PROXY env
+              # on ldr-local), the round-trip can easily exceed 30s
+              # for a slow upstream like ahmia.fi, so we budget a full
+              # minute per probe and let the run_preflight_check
+              # timeout handle aggregate failures separately.
 # other enabled engines behind the scenes to populate `unresponsive_engines`,
 # so a probe of just one engine still waits for every backend's timeout.
 # 30s covers the worst-case aggregation when several slow backends run in
