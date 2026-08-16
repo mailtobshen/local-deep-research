@@ -25,20 +25,20 @@
     title_xpath: ./td[2]/b
     content_xpath: ./td[2]/small
 
-  - name: vormweb
-    # VormWeb indexes .onion sites and exposes both a clearnet
-    # endpoint (vormweb.com) and a .onion mirror. Clearnet is fine
-    # for the search call; only the indexed results are .onion links
-    # (which is what the user actually wants from a dark-web engine).
-    # using_tor_proxy=False because the clearnet endpoint is faster
-    # and not blocked from this container. If vormweb.com goes
-    # down, switch to the .onion URL by changing search_url +
-    # using_tor_proxy=True.
-    engine: xpath
+  - name: yacy
+    # YaCy is a free distributed (P2P) search engine with one
+    # public instance at yacy.searchlab.eu. It indexes the clearnet
+    # AND .onion domains its peers have crawled, so when the
+    # default search is restricted to the 'onions' category the
+    # results lean heavily toward Tor hidden services. YaCy is
+    # preferable to vormweb here because vormweb.com NXDOMAIN'd in
+    # 2026-Q3 and the alternative clearnet mirrors (phobos, haystak,
+    # notEvil, darksearch) are all offline.
+    # engine: yacy is SearXNG's built-in plugin — no xpath, no Tor
+    # proxy needed (the public index already includes .onion links).
+    engine: yacy
+    base_url: https://yacy.searchlab.eu
+    shortcut: ya
+    categories: [onions, general]
     timeout: 30.0
     paging: true
-    search_url: https://vormweb.com/search?q={query}&page={pageno}
-    results_xpath: //div[contains(@class,"result")] | //li[contains(@class,"result")]
-    url_xpath: .//a[@class="result-link"]/@href | .//h3/a/@href
-    title_xpath: .//h3 | .//a[@class="result-title"]
-    content_xpath: .//p[@class="result-snippet"] | .//div[contains(@class,"snippet")]

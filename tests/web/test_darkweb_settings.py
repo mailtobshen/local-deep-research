@@ -47,10 +47,15 @@ def test_darkweb_default_params_declared():
     key convention so the engine factory extracts them correctly)."""
     d = _load_defaults()
     engines = d["search.engine.web.darkweb.default_params.engines"]["value"]
-    # ahmia is the canonical engine; torch stays for legacy
-    # research runs; vormweb added 2026-08-15 as a backup index.
+    # ahmia + torch are Tor-routed darkweb engines. yacy (added
+    # 2026-08-16) is a free distributed P2P search whose public
+    # index at yacy.searchlab.eu already contains .onion results;
+    # it replaced vormweb (NXDOMAIN as of 2026-Q3) as the third
+    # engine.
     assert "ahmia" in engines
-    assert "vormweb" in engines
+    assert "torch" in engines
+    assert "yacy" in engines
+    assert "vormweb" not in engines
     assert d["search.engine.web.darkweb.default_params.categories"]["value"] == "onions"
     assert d["search.engine.web.darkweb.default_params.max_results"]["value"] == 10
 

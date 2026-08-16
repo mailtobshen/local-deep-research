@@ -5544,7 +5544,7 @@
         "step": null,
         "type": "SEARCH",
         "ui_element": "text",
-        "value": "ahmia,torch,vormweb",
+        "value": "ahmia,torch,yacy",
         "visible": true
     },
     "search.engine.web.darkweb.default_params.categories": {
