@@ -621,18 +621,22 @@ def probe_darkweb(
                 )
                 for engine_name in engines
             ]
-        # L3 — per engine
-        per_engine = [
-            _probe_darkweb_single(instance_url, engine_name, timeout)
-            for engine_name in engines
-        ]
-        # Plus one L3-union status that captures the actual .onion
-        # hit count from a real darkweb search (matters when
-        # individual engines are reachable but the onions category
-        # is empty for the query).
-        hits, _inner = _darkweb_onion_hits(
-            instance_url, engines, timeout
-        )
+        # L3 — per engine. Each engine probe can take up to ``timeout``
+        # seconds (a slow ahmia can hang for the full 60s); run them
+        # in parallel so the total wall time is bounded by the slowest
+        # engine, not the sum.
+        with ThreadPoolExecutor(max_workers=len(engines) or 1) as pool:
+            per_engine_futs = [
+                pool.submit(
+                    _probe_darkweb_single, instance_url, engine_name, timeout
+                )
+                for engine_name in engines
+            ]
+            union_fut = pool.submit(
+                _darkweb_onion_hits, instance_url, engines, timeout
+            )
+            per_engine = [f.result() for f in per_engine_futs]
+            hits, _inner = union_fut.result()
         if hits == 0:
             per_engine.append(
                 EngineStatus(
