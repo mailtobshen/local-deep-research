@@ -430,6 +430,14 @@
                 window.ui.showAlert(i18n.t('Some options could not be loaded. Using defaults instead.'), 'warning');
             }
         });
+
+        // Apply the darkweb-as-primary engine guard at page load:
+        // when the darkweb engine is the primary, the "Also search
+        // darkweb (Tor)" checkbox becomes redundant — darkweb IS the
+        // engine — so disable + uncheck it. Without this guard the
+        // checkbox would still be enabled when the user reloads the
+        // page with darkweb as their last-selected engine.
+        syncDarkwebCheckboxWithSearchEngine(selectedSearchEngineValue);
     }
 
     /**
@@ -646,16 +654,8 @@
                 }
             }
         }
+    }
 
-        // Apply the darkweb-as-primary engine guard at page load:
-        // when the darkweb engine is the primary, the "Also search
-        // darkweb (Tor)" checkbox becomes redundant — darkweb IS the
-        // engine — so disable + uncheck it. Without this guard the
-        // checkbox would still be enabled when the user reloads the
-        // page with darkweb as their last-selected engine.
-        syncDarkwebCheckboxWithSearchEngine(selectedSearchEngineValue);
-    }
-    }
 
     /**
      * Setup event listeners
