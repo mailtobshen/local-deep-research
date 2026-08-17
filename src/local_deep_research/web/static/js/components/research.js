@@ -210,6 +210,26 @@
     }
 
     /**
+     * Keep the darkweb-as-append checkbox in sync with whether the
+     * primary engine is itself darkweb. When the user picks the
+     * darkweb engine as the primary source, the append checkbox
+     * becomes redundant (and a conflicting request would double-
+     * search), so we disable + uncheck it. For every other engine
+     * we re-enable it.
+     */
+    function syncDarkwebCheckboxWithSearchEngine(searchEngineValue) {
+        const dwContainer = document.getElementById('darkweb-container');
+        const dwCheckbox = document.getElementById('include_darkweb');
+        if (!dwContainer || !dwCheckbox) return;
+        if (searchEngineValue === 'darkweb') {
+            dwCheckbox.checked = false;
+            dwCheckbox.disabled = true;
+        } else {
+            dwCheckbox.disabled = false;
+        }
+    }
+
+    /**
      * Called when initialization completes. Applies any pending rerun config.
      */
     function onInitializationComplete() {
@@ -626,6 +646,15 @@
                 }
             }
         }
+
+        // Apply the darkweb-as-primary engine guard at page load:
+        // when the darkweb engine is the primary, the "Also search
+        // darkweb (Tor)" checkbox becomes redundant — darkweb IS the
+        // engine — so disable + uncheck it. Without this guard the
+        // checkbox would still be enabled when the user reloads the
+        // page with darkweb as their last-selected engine.
+        syncDarkwebCheckboxWithSearchEngine(selectedSearchEngineValue);
+    }
     }
 
     /**
@@ -839,12 +868,7 @@
                 const dwContainer = document.getElementById('darkweb-container');
                 const dwCheckbox = document.getElementById('include_darkweb');
                 if (dwContainer && dwCheckbox) {
-                    if (searchEngine === 'darkweb') {
-                        dwCheckbox.checked = false;
-                        dwCheckbox.disabled = true;
-                    } else {
-                        dwCheckbox.disabled = false;
-                    }
+                    syncDarkwebCheckboxWithSearchEngine(searchEngine);
                 }
             });
         }
