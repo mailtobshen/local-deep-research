@@ -691,6 +691,9 @@ def register_blueprints(app):
                     "search_strategy": settings_manager.get_setting(
                         "search.search_strategy", "source-based"
                     ),
+                    "report_language": settings_manager.get_setting(
+                        "report.language", "zh-CN"
+                    ),
                 }
                 show_all = settings_manager.get_setting(
                     "search.show_all_strategies", False
