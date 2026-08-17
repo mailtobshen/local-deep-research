@@ -760,6 +760,24 @@ def save_settings(db_session=None, settings_manager=None):
             logger.exception("Failed to commit settings")
             flash(_("Error saving settings. Please try again."), "error")
 
+        # Sync the user's app.language choice into the session and
+        # Flask g so the next template render reflects the new
+        # language without needing a hard refresh. The app_factory
+        # only syncs the DB → session at login (and only when the
+        # session locale is unset); mid-session changes were
+        # previously invisible until the user re-logged in.
+        try:
+            from flask import g, session
+            from ..translations import translator
+
+            if "app.language" in request.form:
+                new_lang = request.form.get("app.language", "").strip()
+                if new_lang in translator._SUPPORTED_LANGUAGES:
+                    session["locale"] = new_lang
+                    g.locale = new_lang
+        except Exception:
+            pass
+
         return redirect(url_for("settings.settings_page"))
 
     except Exception:
