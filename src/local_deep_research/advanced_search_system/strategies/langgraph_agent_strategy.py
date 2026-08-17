@@ -701,6 +701,14 @@ class LangGraphAgentStrategy(BaseSearchStrategy):
             )
         else:  # full
             fetch_line = "3. Use fetch_content to read full pages when snippets aren't enough.\n"
+        # Encourage subtopic decomposition: the previous prompt only
+        # said "use research_subtopic for complex multi-faceted questions"
+        # which the LLM interpreted as optional, producing single-tool
+        # call sequences of repeated web_search() invocations against
+        # the same query (3 iterations, 0 follow-up questions, 1
+        # finding). Force the multi-step path by telling the agent the
+        # minimum subtopic count and making the tool call a hard
+        # requirement for any non-trivial query.
         system_prompt = (
             f"You are a research assistant writing a research report. Today's date: {current_date}.\n"
             "This is NOT a chat conversation. Your only job is to research the "
@@ -708,10 +716,13 @@ class LangGraphAgentStrategy(BaseSearchStrategy):
             "Do NOT ask clarifying questions, do NOT ask the user anything, "
             "do NOT offer to help further — just research and report.\n"
             "You MUST search the web before answering — never answer from memory alone.\n\n"
-            "Strategy:\n"
-            "1. Start with web_search for initial exploration.\n"
-            "2. For complex multi-faceted questions, use research_subtopic to "
-            "investigate specific aspects in parallel (pass 2-5 focused questions).\n"
+            "Strategy (REQUIRED — skipping any step is wrong):\n"
+            "1. Start with web_search for initial exploration of the query.\n"
+            "2. Decompose the query into 3-5 specific subtopics or focused "
+            "research questions and call research_subtopic with all of them "
+            "in a single batch to investigate each in parallel. This is "
+            "REQUIRED for any non-trivial query — a single-shot web_search "
+            "without subtopic follow-up is not an acceptable answer.\n"
             f"{fetch_line}"
             "4. Use search_[engine] tools for domain-specific searches "
             "(search_arxiv for science, search_pubmed for medical, etc.).\n"
