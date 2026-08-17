@@ -1431,8 +1431,18 @@ def run_research_process(research_id, query, mode, **kwargs):
         progress_callback("Starting research process", 5, {"phase": "init"})
 
         try:
+            logger.info(
+                f"[RESEARCH] {research_id} analyze_topic start "
+                f"strategy={strategy!r} query={query!r}"
+            )
             with _perf_stage(research_id, "analyze_topic"):
                 results = system.analyze_topic(query)
+            logger.info(
+                f"[RESEARCH] {research_id} analyze_topic done "
+                f"findings={len(results.get('findings', []))} "
+                f"iterations={results.get('iterations', 0)} "
+                f"questions={len(results.get('questions', []))}"
+            )
             # === Darkweb merge (opt-in) ===
             # When the user enabled the darkweb engine, run a second SearXNG
             # query against ahmia/torch via the onions category and append

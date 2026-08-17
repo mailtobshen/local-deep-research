@@ -706,10 +706,20 @@ def run_preflight_check(
     else:
         engines = get_searxng_engines(instance_url)
 
+    logger.info(
+        f"[PREFLIGHT] primary_engine={primary_engine!r}, "
+        f"engine_count={len(engines)}, engines={engines}"
+    )
+
     statuses: list[EngineStatus] = []
 
     def _probe_engine(name: str) -> EngineStatus:
-        return probe_searxng_engine(instance_url, name)
+        result = probe_searxng_engine(instance_url, name)
+        logger.info(
+            f"[PREFLIGHT] engine={name!r} status={result.status!r} "
+            f"latency_ms={result.latency_ms} detail={result.detail[:60]!r}"
+        )
+        return result
 
     with ThreadPoolExecutor(max_workers=_MAX_WORKERS) as pool:
         # Proxy first — a dead proxy is the usual root cause of an
