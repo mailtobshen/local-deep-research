@@ -678,13 +678,33 @@ def probe_darkweb(
 def run_preflight_check(
     settings_snapshot: Optional[dict] = None,
 ) -> list[EngineStatus]:
-    """Probe all SearXNG backends + Firecrawl in parallel.
+    """Probe SearXNG backends + Firecrawl in parallel.
 
-    Returns a list of :class:`EngineStatus`. Never raises — any probe error
-    is captured as a status entry.
+    When the user has selected a specific primary engine via the
+    dropdown (``settings.search.tool``), the per-engine SearXNG
+    probe list is restricted to that single engine — probing the
+    entire 80+ engine catalogue when the user only intends to
+    search one of them wastes 30s+ of preflight time and floods the
+    status table with irrelevant results. When the primary is the
+    default ``searxng`` meta-engine (i.e. the user has not picked
+    a specific backend), we fall back to the curated allowlist.
+
+    Returns a list of :class:`EngineStatus`. Never raises — any probe
+    error is captured as a status entry.
     """
     instance_url = _get_searxng_url(settings_snapshot)
-    engines = get_searxng_engines(instance_url)
+    primary_engine = (
+        get_setting_from_snapshot(
+            "search.tool", "searxng", settings_snapshot=settings_snapshot
+        )
+        if settings_snapshot
+        else "searxng"
+    )
+    if primary_engine and primary_engine not in ("", "searxng", "auto"):
+        # User picked a specific backend — probe only that engine.
+        engines = [primary_engine]
+    else:
+        engines = get_searxng_engines(instance_url)
 
     statuses: list[EngineStatus] = []
 
