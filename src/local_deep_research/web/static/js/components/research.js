@@ -431,13 +431,23 @@
             }
         });
 
-        // Apply the darkweb-as-primary engine guard at page load:
-        // when the darkweb engine is the primary, the "Also search
-        // darkweb (Tor)" checkbox becomes redundant — darkweb IS the
-        // engine — so disable + uncheck it. Without this guard the
-        // checkbox would still be enabled when the user reloads the
-        // page with darkweb as their last-selected engine.
-        syncDarkwebCheckboxWithSearchEngine(selectedSearchEngineValue);
+        // Apply the darkweb-as-primary engine guard at page load.
+        // When the primary engine is "darkweb", the append
+        // "Also search darkweb (Tor)" checkbox is redundant — the
+        // engine IS darkweb — so we disable + uncheck it. We pass
+        // the value from data-initial-value (or the engine option's
+        // value) so a reload with the darkweb engine remembered
+        // still gets the correct guard. We call the helper here
+        // (inside the loadSettings() then) so the snapshot has been
+        // loaded.
+        let initialEngineValue = '';
+        if (searchEngineInput) {
+            const dataInit = searchEngineInput.getAttribute('data-initial-value');
+            if (dataInit) {
+                initialEngineValue = dataInit;
+            }
+        }
+        syncDarkwebCheckboxWithSearchEngine(initialEngineValue);
     }
 
     /**
