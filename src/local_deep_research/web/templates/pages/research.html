@@ -277,10 +277,14 @@
                             <span class="ldr-input-help">{{ _("Focused Iteration works best with >16,000 context window") }}</span>
                         </div>
 
-                        <!-- Report Language — i18n: tip text tracks settings.report.language -->
+                        <!-- Report Language — i18n: name + tip track settings.report.language -->
                         <div class="ldr-form-group ldr-half">
                             {% set is_zh_lang = settings.report_language and settings.report_language.startswith('zh') %}
-                            <label for="report_language">{{ tooltip(_("Report Language"), _("Controls the language of the final report via system prompt injection. Does not affect the search language.")) }}</label>
+                            {% if is_zh_lang %}
+                            <label for="report_language">{{ tooltip("报告语言", "通过系统提示词注入控制最终报告的语言，不影响搜索引擎") }}</label>
+                            {% else %}
+                            <label for="report_language">{{ tooltip("Report Language", "Controls the language of the final report via system prompt injection. Does not affect the search language.") }}</label>
+                            {% endif %}
                             <select id="report_language" name="report_language" class="ldr-form-control">
                                 {% if is_zh_lang %}
                                 <option value="zh-CN" selected>{{ _("中文简体 (Simplified Chinese)") }}</option>

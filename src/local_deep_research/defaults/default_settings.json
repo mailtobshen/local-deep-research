@@ -836,7 +836,8 @@
         "editable": true,
         "max_value": null,
         "min_value": null,
-        "name": "报告语言 / Report Language",
+        "name": "报告语言",
+        "name_en": "Report Language",
         "options": [
             {"label": "中文简体 (Simplified Chinese)", "value": "zh-CN"},
             {"label": "English", "value": "en"}
