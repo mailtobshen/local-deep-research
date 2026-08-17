@@ -155,7 +155,7 @@ def extract_links_from_search_results(search_results: List[Dict]) -> List[Dict]:
         try:
             # Ensure we handle None values safely before calling strip()
             title = result.get("title", "")
-            url = result.get("link", "")
+            url = result.get("url", "") or result.get("link", "")
             index = result.get("index", "")
 
             # Apply strip() only if the values are not None
