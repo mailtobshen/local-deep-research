@@ -225,12 +225,27 @@
                         </div>
 
                         <!-- Darkweb opt-in (conditional, only when enabled) -->
+                        <!-- i18n: tip text tracks settings.report.language (zh-CN vs en) -->
                         <div class="ldr-form-group ldr-half" id="darkweb-container" style="display: none;">
-                            <label for="include_darkweb">{{ tooltip(_("Also search darkweb (Tor)"), _("Append a second SearXNG query via ahmia/torch on the Tor network. Adds ~26s per subsection. Requires the SearXNG darkweb engines and a reachable ldr-tor sidecar; preflight will skip silently if either is missing.")) }}</label>
-                            <div class="ldr-form-check">
-                                <input class="ldr-form-check-input" type="checkbox" id="include_darkweb" name="include_darkweb" value="true">
-                                <label class="ldr-form-check-label" for="include_darkweb">{{ _("Also search darkweb (Tor)") }}</label>
-                            </div>
+                            {% set is_zh = settings.report_language and settings.report_language.startswith('zh') %}
+                            <label class="ldr-form-switch-row" for="include_darkweb">
+                                <input class="ldr-form-check-input ldr-form-switch"
+                                       type="checkbox"
+                                       id="include_darkweb"
+                                       name="include_darkweb"
+                                       value="true">
+                                <span class="ldr-form-switch-track">
+                                    <span class="ldr-form-switch-thumb"></span>
+                                </span>
+                                <span class="ldr-form-switch-label">
+                                    {% if is_zh %}同时检索暗网 (Tor){% else %}Also search darkweb (Tor){% endif %}
+                                </span>
+                            </label>
+                            {% if is_zh %}
+                            <span class="ldr-input-help">追加一次 SearXNG 查询（走 ahmia/torch + Tor）。每个子节大约多 26s。需要 SearXNG 已配置暗网引擎块 + ldr-tor 可达，否则 preflight 会静默跳过。</span>
+                            {% else %}
+                            <span class="ldr-input-help">Append a second SearXNG query via ahmia/torch on the Tor network. Adds ~26s per subsection. Requires the SearXNG darkweb engines and a reachable ldr-tor sidecar; preflight will skip silently if either is missing.</span>
+                            {% endif %}
                         </div>
                     </div>
 
@@ -262,13 +277,24 @@
                             <span class="ldr-input-help">{{ _("Focused Iteration works best with >16,000 context window") }}</span>
                         </div>
 
-                        <div class="ldr-form-row">
-                            <label for="report_language">{{ _("报告语言 / Report Language") }}</label>
+                        <!-- Report Language — i18n: tip text tracks settings.report.language -->
+                        <div class="ldr-form-group ldr-half">
+                            {% set is_zh_lang = settings.report_language and settings.report_language.startswith('zh') %}
+                            <label for="report_language">{{ tooltip(_("Report Language"), _("Controls the language of the final report via system prompt injection. Does not affect the search language.")) }}</label>
                             <select id="report_language" name="report_language" class="ldr-form-control">
-                                <option value="zh-CN" {% if settings.report_language == 'zh-CN' or not settings.report_language %}selected{% endif %}>{{ _("中文简体 (Simplified Chinese)") }}</option>
-                                <option value="en" {% if settings.report_language == 'en' %}selected{% endif %}>{{ _("English") }}</option>
+                                {% if is_zh_lang %}
+                                <option value="zh-CN" selected>{{ _("中文简体 (Simplified Chinese)") }}</option>
+                                <option value="en">{{ _("English") }}</option>
+                                {% else %}
+                                <option value="zh-CN">{{ _("中文简体 (Simplified Chinese)") }}</option>
+                                <option value="en" selected>{{ _("English") }}</option>
+                                {% endif %}
                             </select>
+                            {% if is_zh_lang %}
                             <span class="ldr-input-help">{{ _("通过系统提示词注入控制最终报告语言，不影响搜索") }}</span>
+                            {% else %}
+                            <span class="ldr-input-help">{{ _("Injected via system prompt; does not change the search language") }}</span>
+                            {% endif %}
                         </div>
 
                     </div>
