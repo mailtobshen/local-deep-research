@@ -582,6 +582,7 @@ def start_research():
                 .filter_by(username=username, status=ResearchStatus.IN_PROGRESS)
                 .all()
             )
+            any_changes = False
             for row in stale_rows:
                 if not is_research_thread_alive(row.research_id):
                     logger.warning(
@@ -590,9 +591,29 @@ def start_research():
                     )
                     row.status = ResearchStatus.FAILED
                     cleanup_research(row.research_id)
-            if any(
-                not is_research_thread_alive(r.research_id) for r in stale_rows
-            ):
+                    # The UI displays the status from ResearchHistory, not
+                    # UserActiveResearch — see
+                    # ``research_routes.get_research_status``. Update the
+                    # matching ResearchHistory row so the WebUI no longer
+                    # shows this research as running. Without this, a
+                    # process-aborted research (e.g. lxml heap-corruption
+                    # crash from concurrent fetch_content) stays pinned
+                    # at ``in_progress`` in the UI forever — see the
+                    # 2026-08-18 darkweb-research incident where the
+                    # task ``eb74cbf4-...`` was reported as "永不结束".
+                    history_row = (
+                        db_session.query(ResearchHistory)
+                        .filter_by(id=row.research_id)
+                        .first()
+                    )
+                    if (
+                        history_row
+                        and history_row.status
+                        == ResearchStatus.IN_PROGRESS
+                    ):
+                        history_row.status = ResearchStatus.FAILED
+                    any_changes = True
+            if any_changes:
                 db_session.commit()
 
             # Now count truly active researches

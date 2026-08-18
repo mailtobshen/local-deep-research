@@ -262,6 +262,45 @@ def search_config(
     return search_engines
 
 
+def get_engine_network(
+    engine_name: str,
+    settings_snapshot: Optional[Dict[str, Any]] = None,
+) -> str:
+    """Return the egress network of *engine_name*.
+
+    Reads ``search.engine.web.<engine_name>.network``. Known values:
+
+    - ``"tor"`` — egress goes through Tor. Tools that fetch content from
+      results returned by this engine must also use a Tor proxy; the
+      agent's tool list is filtered so the LLM never pairs a tor engine
+      with a clearnet fetcher or sibling engine.
+    - ``"clearnet"`` (default) — normal internet egress.
+
+    Engines that do not declare ``network`` default to ``"clearnet"`` so
+    existing engines are unaffected. New tor engines just need the
+    ``network = "tor"`` setting entry; no strategy code changes.
+
+    Args:
+        engine_name: Engine identifier (e.g. ``"darkweb"``).
+        settings_snapshot: Thread-safe settings snapshot.
+
+    Returns:
+        ``"tor"`` or ``"clearnet"``. Unknown values default to
+        ``"clearnet"`` and are logged at debug level.
+    """
+    key = f"search.engine.web.{engine_name}.network"
+    raw = _get_setting(
+        key, "clearnet", settings_snapshot=settings_snapshot
+    )
+    if raw in ("tor", "clearnet"):
+        return raw
+    logger.debug(
+        f"Unknown network value {raw!r} for engine {engine_name!r}; "
+        "treating as 'clearnet'"
+    )
+    return "clearnet"
+
+
 def get_available_engines(
     settings_snapshot: Optional[Dict[str, Any]] = None,
     use_api_key_services: bool = True,

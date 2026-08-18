@@ -87,6 +87,68 @@ def _register_in_collector(
 # web/services/research_service.py for the unified path.
 
 
+def _warn_clearnet_in_tor_mode(
+    url: str, settings_snapshot: dict | None
+) -> None:
+    """Log a warning if a non-.onion URL is fetched under tor isolation.
+
+    Network isolation in the agent's tool list (see
+    ``langgraph_agent_strategy._build_tools`` and the mcp equivalent)
+    already removes clearnet sibling engines when the user picked a
+    tor-egress engine. But the *fetcher* itself is not aware of which
+    engine produced the URL — it just downloads whatever the agent
+    hands it. If the agent surfaces a ``fetch_content("https://...")``
+    call anyway (e.g. because a .onion page linked out), we want to
+    leave a loud audit trail that a clearnet request happened during a
+    Tor session.
+
+    Per the user's choice we **do not block** the fetch — blocking
+    would also block legitimate .onion content that embeds clearnet
+    redirects. We just record it.
+
+    Args:
+        url: The URL the agent is about to fetch.
+        settings_snapshot: Thread-safe settings snapshot.
+    """
+    if not settings_snapshot:
+        return
+    # Lazily resolve the tor-isolated flag from the chosen primary engine
+    # so this helper stays usable in tests without a strategy instance.
+    try:
+        from local_deep_research.utilities.is_darkweb_url import (
+            is_darkweb_url,
+        )
+    except Exception:
+        return
+    if is_darkweb_url(url):
+        return  # .onion URL is expected; no warning.
+    try:
+        from local_deep_research.web_search_engines.search_engines_config import (
+            get_setting_from_snapshot,
+        )
+        current_tool = get_setting_from_snapshot(
+            "search.tool", None, settings_snapshot=settings_snapshot
+        )
+    except Exception:
+        return
+    if not current_tool:
+        return
+    try:
+        from local_deep_research.web_search_engines.search_engines_config import (
+            get_engine_network,
+        )
+        if get_engine_network(current_tool, settings_snapshot) != "tor":
+            return
+    except Exception:
+        return
+    logger.warning(
+        f"[ISOLATION] fetch_content called with clearnet URL {url!r} while "
+        f"primary engine {current_tool!r} is tor-isolated. The fetch will "
+        f"proceed (per policy: allow-but-warn), but this is a privacy "
+        f"event — the user's traffic left the Tor exit."
+    )
+
+
 def _make_full_fetch_tool(
     collector: Any, settings_snapshot: dict | None = None
 ):
@@ -95,6 +157,7 @@ def _make_full_fetch_tool(
         """Download and read the full text content from a URL. Use when search snippets aren't detailed enough."""
         from local_deep_research.content_fetcher import ContentFetcher
 
+        _warn_clearnet_in_tor_mode(url, settings_snapshot)
         enable_js = _read_js_rendering_setting(settings_snapshot)
         try:
             with ContentFetcher(
@@ -155,6 +218,7 @@ def _make_summary_fetch_tool(
         """
         from local_deep_research.content_fetcher import ContentFetcher
 
+        _warn_clearnet_in_tor_mode(url, settings_snapshot)
         enable_js = _read_js_rendering_setting(settings_snapshot)
         try:
             with ContentFetcher(

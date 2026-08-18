@@ -345,6 +345,69 @@ def _perform_post_login_tasks_body(username: str, password: str) -> None:
         logger.exception(f"Post-login backup scheduling failed for {username}")
     _log_step_duration("step 4 (schedule backup)", step_start, username)
 
+    # 5. Reap orphan in-progress research rows.
+    #
+    # Why this step exists
+    # ---------------------
+    # When a research thread crashes (e.g. the lxml
+    # ``malloc_consolidate`` abort fixed alongside this change), the
+    # process dies before ``cleanup_research_resources`` can flip the
+    # DB status. The orphan row stays at ``status=in_progress`` and
+    # the WebUI shows it as running forever — until the user submits
+    # a new research, which then triggers the inline cleanup in
+    # ``research_routes.start_research``. After a clean process
+    # restart, that inline cleanup never fires (the user hasn't
+    # submitted anything yet), so the orphan is invisible until
+    # manual intervention.
+    #
+    # Per-user DBs are SQLCipher-encrypted (``encrypted_db.py:518``)
+    # and require the user's password to open — which is why this
+    # reaper runs at login time (password in scope) rather than at
+    # Flask startup. The existing ``is_research_thread_alive()`` check
+    # in ``web/routes/globals.py`` is consulted for every candidate
+    # row so a research that is genuinely still running on another
+    # session/process is never reaped — after a restart
+    # ``_active_research`` is empty, so all residual rows will look
+    # dead, which is precisely the semantic we want.
+    step_start = time.perf_counter()
+    try:
+        from ...constants import ResearchStatus
+        from ...database.models.research import ResearchHistory
+        from ...database.session_context import get_user_db_session
+        from ...web.routes.globals import is_research_thread_alive
+
+        with get_user_db_session(username, password) as db_session:
+            orphan_rows = (
+                db_session.query(ResearchHistory)
+                .filter_by(status=ResearchStatus.IN_PROGRESS)
+                .all()
+            )
+            reaped = 0
+            for row in orphan_rows:
+                # Belt-and-braces: skip if any process still has the
+                # research registered. ``is_research_thread_alive``
+                # returns False after a process restart, so all
+                # post-crash rows will be reaped.
+                if is_research_thread_alive(row.id):
+                    continue
+                row.status = ResearchStatus.FAILED
+                reaped += 1
+                logger.warning(
+                    f"[REAP] Orphan research {row.id!r} "
+                    f"(query={row.query[:60]!r}) marked FAILED at login"
+                )
+            if reaped:
+                db_session.commit()
+                logger.info(
+                    f"Reaped {reaped} orphan in-progress research row(s) "
+                    f"for user {username}"
+                )
+    except Exception:
+        logger.exception(
+            f"Post-login orphan-research reap failed for {username}"
+        )
+    _log_step_duration("step 5 (reap orphan research)", step_start, username)
+
     total_ms = (time.perf_counter() - total_start) * 1000
     if total_ms > 1000:
         logger.info(

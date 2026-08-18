@@ -27,30 +27,23 @@ from .base_strategy import BaseSearchStrategy
 
 # ReAct prompt template - simplified for better model compatibility
 # Note: {current_date} placeholder is replaced at runtime
-REACT_SYSTEM_PROMPT = """You are a research assistant. Today's date: {current_date}
+REACT_SYSTEM_PROMPT_TEMPLATE = """You are a research assistant. Today's date: {current_date}
 
 You MUST search before answering. Do NOT answer from memory. Do NOT ask clarifying questions.
 
 ## Tool Selection — pick the right tool for the domain:
 
-| Domain | First step (quick) | Deep dive |
-|--------|-------------------|-----------|
-| Medical/biomedical | **search_pubmed** | focused_research with search_engine="pubmed" |
-| Scientific papers (physics, math, CS) | **search_arxiv** | focused_research with search_engine="arxiv" |
-| Academic papers (all fields) | **search_semantic_scholar** or **search_openalex** | focused_research with search_engine="semantic_scholar" |
-| Background knowledge | **search_wikipedia** | — |
-| Current news | **search_wikinews** or **web_search** | — |
-| General/mixed topics | **web_search** | focused_research |
+{engine_routing_table}
 
 **Strategy**: Start with a quick direct search (web_search or search_[engine]) to learn about the topic. Only use focused_research after initial exploration — it runs many search rounds and is slow.
 
 ## Tools:
 
 - **web_search** — General web search. You control the query — use exact phrases, date ranges, site filters.
-- **search_[engine]** — Single query against a specialized database (arxiv, pubmed, wikipedia, etc.). Fast and targeted.
+- **search_[engine]** — Single query against a specialized database. Fast and targeted. Only the engines listed above are registered; calling any other ``search_<engine>`` name will fail and may route through a network the user explicitly chose not to use.
 - **focused_research** — Deep iterative research with multiple automatic search rounds. Optional parameters:
   - **iterations** (1-25): Search rounds. Default 8. Use 15-20+ for exhaustive research. More iterations = deeper.
-  - **search_engine**: Override which engine to use (e.g. "pubmed", "arxiv"). Powerful for domain-specific deep dives.
+  - **search_engine**: Override which engine to use (e.g. one of the engines listed above). Powerful for domain-specific deep dives.
 - **download_content** — Fetch full text from a URL (papers, articles, web pages).
 
 ## Response format:
@@ -63,30 +56,113 @@ After searching, give your final answer:
 THOUGHT: [summary of what you found]
 ANSWER: [comprehensive answer citing sources as [1], [2], etc.]
 
-## Example:
-
-THOUGHT: I need to find recent papers on protein folding.
-ACTION: search_arxiv
-ARGUMENTS: {{"query": "protein structure prediction diffusion models 2024"}}
-
-[Results: [1] AlphaFold3 paper, [2] RFdiffusion...]
-
-THOUGHT: I found key papers. Let me search deeper on PubMed for clinical applications.
-ACTION: search_pubmed
-ARGUMENTS: {{"query": "protein structure prediction clinical applications"}}
-
-[More results...]
-
-THOUGHT: I have enough information from both sources.
-ANSWER: Recent breakthroughs in protein structure prediction include... [1][2]. Clinical applications show... [3][4].
-
 ## Rules:
 1. ALWAYS search before answering
 2. Use THOUGHT: then ACTION: then ARGUMENTS: format
 3. Cite sources as [1], [2], etc. in your ANSWER
 4. Start with quick searches, escalate to focused_research only if needed
-5. Match the search engine to the domain (arxiv for science, pubmed for medical, etc.)
+5. Only invoke the engines listed in the Tool Selection table — never invent a ``search_<engine>`` name from training data. If you need a specialised engine that isn't listed, use web_search instead.
 """
+
+
+def _build_engine_routing_table(
+    available_search_tool_names: list[str],
+    current_engine: str,
+    settings_snapshot: dict | None = None,
+) -> str:
+    """Render the per-run Tool Selection table.
+
+    The previous hardcoded table listed ``search_pubmed`` /
+    ``search_arxiv`` / ``search_wikipedia`` / etc. regardless of which
+    engines the user actually exposed to the agent. That was the
+    root cause of the darkweb-research-going-to-wikipedia incident:
+    the LLM was told "Background knowledge: search_wikipedia" and
+    happily called it even though the user picked a Tor-isolated
+    engine.
+
+    Now we generate the table from the engines that survived both
+    ``get_available_engines()`` and the network-isolation filter. If
+    no specialised engines are available (e.g. darkweb-isolated
+    runs), we render an explicit notice telling the LLM that web_search
+    is the only routable entry point.
+
+    Args:
+        available_search_tool_names: Names of currently-registered
+            search tools (each starting with ``search_``).
+        current_engine: The primary engine selected for this run.
+        settings_snapshot: For deriving network context (only used to
+            annotate the isolated-mode notice).
+
+    Returns:
+        Markdown table string suitable for ``engine_routing_table``
+        substitution into ``REACT_SYSTEM_PROMPT_TEMPLATE``.
+    """
+    if not available_search_tool_names:
+        try:
+            from local_deep_research.web_search_engines.search_engines_config import (
+                get_engine_network,
+            )
+            net = get_engine_network(
+                current_engine or "", settings_snapshot
+            )
+        except Exception:
+            net = "clearnet"
+        if net == "tor":
+            return (
+                "| All queries | **web_search** | focused_research |"
+                "\n\n"
+                "> **No specialised search engines are available in this run "
+                "because the primary engine "
+                f"({current_engine!r}) is tor-isolated.** Use only "
+                "``web_search`` (and ``download_content`` for the URLs it "
+                "returns). Do not invoke any other ``search_<engine>`` "
+                "tool — none are registered, and any clearnet fallback "
+                "would defeat the privacy intent of this research."
+            )
+        return (
+            "| All queries | **web_search** | focused_research |"
+            "\n\n"
+            "> No specialised search engines are available in this run; "
+            "use ``web_search`` and ``download_content`` only."
+        )
+    # Render one row per available engine. The Deep-dive column always
+    # points to focused_research; the agent can pick any engine as the
+    # "quick" entry point.
+    rows = []
+    for name in sorted(available_search_tool_names):
+        rows.append(
+            f"| Engine ``{name}`` | **{name}** | focused_research |"
+        )
+    return "\n".join(rows)
+
+
+def build_react_system_prompt(
+    current_date: str,
+    available_search_tool_names: list[str],
+    current_engine: str = "",
+    settings_snapshot: dict | None = None,
+) -> str:
+    """Build the MCP strategy's ReAct system prompt with the dynamic
+    tool-selection table."""
+    routing_table = _build_engine_routing_table(
+        available_search_tool_names,
+        current_engine,
+        settings_snapshot,
+    )
+    return REACT_SYSTEM_PROMPT_TEMPLATE.format(
+        current_date=current_date, engine_routing_table=routing_table
+    )
+
+
+# Backwards compatibility: the original constant is preserved so any
+# out-of-tree import (e.g. test fixtures) still resolves. New code
+# should call ``build_react_system_prompt``.
+REACT_SYSTEM_PROMPT = REACT_SYSTEM_PROMPT_TEMPLATE.format(
+    current_date="<unset>",
+    engine_routing_table=(
+        "| All queries | **web_search** | focused_research |"
+    ),
+)
 
 
 def _to_bool(value) -> bool:
@@ -597,14 +673,37 @@ class MCPSearchStrategy(BaseSearchStrategy):
 
         # Add specialized search engine tools dynamically from available engines
         available_engines = self._get_available_search_engines()
+        current_engine = self._get_current_engine_name()
+        try:
+            from local_deep_research.web_search_engines.search_engines_config import (
+                get_engine_network,
+            )
+            current_network = get_engine_network(
+                current_engine, self.settings_snapshot
+            )
+        except Exception:
+            current_network = "clearnet"
         for engine_name, engine_config in available_engines.items():
             # Skip the currently selected engine (already available via web_search)
             # Skip 'auto' and meta engines
             if (
                 engine_name in ("auto", "meta")
-                or engine_name == self._get_current_engine_name()
+                or engine_name == current_engine
             ):
                 continue
+            # Network isolation: tor/clearnet engines must not be mixed in
+            # the agent's tool list. Mirrors the langgraph strategy fix.
+            try:
+                if get_engine_network(
+                    engine_name, self.settings_snapshot
+                ) != current_network:
+                    logger.debug(
+                        f"Skipping {engine_name!r}: network mismatch with "
+                        f"current engine {current_engine!r}"
+                    )
+                    continue
+            except Exception:
+                pass
 
             # Create tool for this engine
             description = engine_config.get(
@@ -776,9 +875,23 @@ class MCPSearchStrategy(BaseSearchStrategy):
             history=history,
         )
 
-        # Format system prompt with current date
+        # Format system prompt with current date and a routing table
+        # built from the engines actually exposed to this run (the
+        # previous static prompt was the root cause of the darkweb
+        # research being routed to clearnet engines like
+        # ``search_wikipedia``).
         current_date = datetime.now(UTC).strftime("%Y-%m-%d")
-        system_prompt = REACT_SYSTEM_PROMPT.format(current_date=current_date)
+        available_search_tool_names = [
+            tool["name"]
+            for tool in tools
+            if tool.get("name", "").startswith("search_")
+        ]
+        system_prompt = build_react_system_prompt(
+            current_date=current_date,
+            available_search_tool_names=available_search_tool_names,
+            current_engine=self._get_current_engine_name(),
+            settings_snapshot=self.settings_snapshot,
+        )
 
         messages = [
             {"role": "system", "content": system_prompt},
@@ -1417,12 +1530,19 @@ class MCPSearchStrategy(BaseSearchStrategy):
             return {}
 
     def _get_current_engine_name(self) -> str:
-        """Get the name of the currently selected search engine."""
+        """Return the engine identifier selected for this run.
+
+        Prefer the ``search.tool`` setting over the class-name heuristic:
+        the darkweb engine instantiates ``SearXNGSearchEngine``, so the
+        old heuristic returned ``"searxng"`` and the skip-current-engine
+        filter never excluded ``search_darkweb``.
+        """
+        tool_setting = self.get_setting("search.tool", None)
+        if tool_setting and isinstance(tool_setting, str):
+            return tool_setting
         try:
             if hasattr(self.search, "__class__"):
-                # Extract engine name from class name
                 class_name = self.search.__class__.__name__
-                # Convert "ArXivSearchEngine" -> "arxiv"
                 return class_name.replace("SearchEngine", "").lower()
         except Exception:
             logger.debug("best-effort class name extraction", exc_info=True)

@@ -570,15 +570,21 @@ class LangGraphAgentStrategy(BaseSearchStrategy):
         return "duckduckgo"
 
     def _get_current_engine_name(self) -> str:
-        """Get the name of the currently selected search engine."""
-        try:
-            if hasattr(self.search, "__class__"):
-                return self.search.__class__.__name__.replace(
-                    "SearchEngine", ""
-                ).lower()
-        except Exception:
-            logger.debug("Could not extract engine name from class")
-        return ""
+        """Return the engine identifier selected for this run.
+
+        Previously derived from the runtime class name (e.g.
+        ``SearXNGSearchEngine`` → ``"searxng"``). That heuristic is wrong
+        for engines that share a generic class — ``darkweb`` instantiates
+        ``SearXNGSearchEngine`` under the hood, so the old code returned
+        ``"searxng"`` and the per-strategy skip rule
+        (``name == current``) never excluded ``search_darkweb``, causing
+        duplicate registration.
+
+        Now delegates to ``_resolve_engine_name()`` which prefers the
+        ``search.tool`` setting over the class-name fallback, so darkweb
+        → ``"darkweb"`` and the skip rule actually fires.
+        """
+        return self._resolve_engine_name()
 
     def _build_tools(self, overall_query: str = "") -> list:
         """Build the LangChain tool list for the lead agent.
@@ -616,14 +622,33 @@ class LangGraphAgentStrategy(BaseSearchStrategy):
         try:
             from local_deep_research.web_search_engines.search_engines_config import (
                 get_available_engines,
+                get_engine_network,
             )
 
             available = get_available_engines(
                 settings_snapshot=self.settings_snapshot,
             )
             current = self._get_current_engine_name()
+            current_network = get_engine_network(
+                current, self.settings_snapshot
+            )
             for name, config in available.items():
                 if name in ("auto", "meta") or name == current:
+                    continue
+                # Network isolation: a tor-egress engine (e.g. darkweb)
+                # must never be paired with clearnet sibling engines,
+                # and vice versa. Without this filter the LLM is free to
+                # call search_<clearnet-engine> from a darkweb-isolated
+                # run, defeating the user's privacy choice and silently
+                # leaking clearnet fetches into a Tor session.
+                if get_engine_network(
+                    name, self.settings_snapshot
+                ) != current_network:
+                    logger.debug(
+                        f"Skipping {name!r}: network "
+                        f"{get_engine_network(name, self.settings_snapshot)!r} "
+                        f"!= current engine network {current_network!r}"
+                    )
                     continue
                 desc = config.get("description", f"Search using {name}")
                 strengths = config.get("strengths", [])
@@ -701,6 +726,62 @@ class LangGraphAgentStrategy(BaseSearchStrategy):
             )
         else:  # full
             fetch_line = "3. Use fetch_content to read full pages when snippets aren't enough.\n"
+
+        # Generate the engine-routing step (was previously hardcoded with
+        # search_arxiv/search_pubmed examples — that instruction was the
+        # root cause of the darkweb-research-going-to-wikipedia bug,
+        # because the LLM is told "use search_[engine] for domain-specific
+        # searches" without ever being told which engines are actually
+        # available. Now we list only the engines that survived the
+        # network-isolation filter, so the agent can't be sent to a tool
+        # that doesn't exist (or worse, to a tool that exists but routes
+        # to a different network than the user picked).
+        try:
+            available_search_tools = sorted(
+                {
+                    t.name
+                    for t in tools
+                    if isinstance(getattr(t, "name", None), str)
+                    and t.name.startswith("search_")
+                }
+            )
+        except Exception:
+            available_search_tools = []
+        if available_search_tools:
+            engine_step = (
+                f"4. Use these specialized search tools when appropriate: "
+                f"{', '.join(available_search_tools)}.\n"
+            )
+        else:
+            # Network isolation removed every sibling engine (e.g. the
+            # user picked darkweb and no other tor-egress engine is
+            # configured). Tell the LLM explicitly that it must rely on
+            # web_search + fetch_content only — and not silently fall back
+            # to other engines it has seen in training data.
+            try:
+                from local_deep_research.web_search_engines.search_engines_config import (
+                    get_engine_network,
+                )
+                current_net = get_engine_network(
+                    self._search_engine_name, self.settings_snapshot
+                )
+            except Exception:
+                current_net = "clearnet"
+            if current_net == "tor":
+                engine_step = (
+                    "4. No specialized search engines are available in this "
+                    "run because the primary engine is tor-isolated. Use "
+                    "only web_search and fetch_content; do not invoke any "
+                    "search_<engine> tool by name — none are registered, "
+                    "and any clearnet fallback would defeat the privacy "
+                    "intent of this research.\n"
+                )
+            else:
+                engine_step = (
+                    "4. No specialized search engines are available in this "
+                    "run — rely entirely on web_search and fetch_content.\n"
+                )
+
         # Encourage subtopic decomposition: the previous prompt only
         # said "use research_subtopic for complex multi-faceted questions"
         # which the LLM interpreted as optional, producing single-tool
@@ -724,8 +805,7 @@ class LangGraphAgentStrategy(BaseSearchStrategy):
             "REQUIRED for any non-trivial query — a single-shot web_search "
             "without subtopic follow-up is not an acceptable answer.\n"
             f"{fetch_line}"
-            "4. Use search_[engine] tools for domain-specific searches "
-            "(search_arxiv for science, search_pubmed for medical, etc.).\n"
+            f"{engine_step}"
             "5. When you have enough information, provide a comprehensive answer "
             "citing sources as [1], [2], etc.\n"
         )

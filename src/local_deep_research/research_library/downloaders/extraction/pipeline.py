@@ -13,6 +13,7 @@ Academic URLs (arXiv, PubMed, bioRxiv, etc.) are automatically routed to
 specialized downloaders first, with the generic HTML pipeline as fallback.
 """
 
+import threading
 import time
 from typing import Any, Dict, List, Optional
 
@@ -59,6 +60,34 @@ _readability = ReadabilityExtractor()
 _justext_en = JustextExtractor(language="English")
 _newspaper = NewspaperExtractor()
 
+
+# Serialise access to the lxml-backed singleton extractors above.
+#
+# Background
+# ----------
+# The four module-level singletons share state inside lxml's C
+# extension. LangGraph's ``ToolNode`` runs concurrent tool calls
+# (one LLM turn producing several ``tool_calls``) on a
+# ``ContextThreadPoolExecutor`` — so 3 parallel ``fetch_content`` calls
+# all hit ``extract_content`` simultaneously. Each thread then calls
+# ``_trafilatura.extract`` / ``_newspaper.extract`` etc. on the same
+# shared objects, and lxml's allocator races. On Python 3.14 the
+# visible symptom is ``malloc_consolidate(): unaligned fastbin chunk
+# detected`` followed by glibc aborting the process — the same root
+# cause already documented for ``_run_extractors_parallel`` below
+# ("Fatal Python error: Aborted during pool teardown on Python 3.14").
+#
+# Fix
+# ---
+# Hold a single module-level ``threading.Lock`` around every entry
+# point that touches a shared extractor. This serialises the C calls
+# at the cost of throughput; the alternative (one process per
+# concurrent tool call) would also kill throughput and require
+# architectural changes. Per the trade-off already accepted for
+# ``_run_extractors_parallel`` ("the perf cost … is acceptable"),
+# serialising is the right call here.
+_extractor_lock = threading.Lock()
+
 # Boilerplate keywords — used to penalize low-quality extraction
 _BOILERPLATE_KEYWORDS = [
     "cookie",
@@ -85,6 +114,27 @@ def _run_extractors_parallel(
 
     The function name is preserved for backwards compatibility with
     any callers/tests that import it directly.
+
+    The actual extractor calls live in ``_run_extractors_unsafe`` so
+    callers that already hold ``_extractor_lock`` (e.g.
+    ``extract_content``) can avoid deadlock — Python's ``threading.Lock``
+    is not reentrant. This wrapper acquires the lock around the unsafe
+    call for direct callers; ``extract_content`` invokes the unsafe
+    helper directly while it holds the lock.
+    """
+    with _extractor_lock:
+        return _run_extractors_unsafe(html, url)
+
+
+def _run_extractors_unsafe(
+    html: str, url: str
+) -> tuple[str | None, str | None]:
+    """Run trafilatura and newspaper4k on the shared singletons.
+
+    Caller MUST hold ``_extractor_lock``. Extracted into its own helper
+    so ``extract_content`` (which already holds the lock) can call it
+    without the lock-acquire / re-entrant deadlock this function would
+    otherwise produce.
     """
     try:
         trafilatura_content = _trafilatura.extract(html)
@@ -143,11 +193,18 @@ def extract_content(
     if not html or not html.strip():
         return None
 
-    # Run trafilatura and newspaper4k in parallel, pick the better result.
-    # newspaper4k is strong on news front pages and multi-answer threads
-    # where trafilatura sometimes extracts less content.
-    # 5s timeout per extractor — covers P95 of pages, cuts off outliers.
-    trafilatura_content, newspaper_content = _run_extractors_parallel(html, url)
+    # Hold the module-level extractor lock for the entire call so that
+    # LangGraph's parallel tool dispatch (and any other concurrent
+    # caller) cannot interleave with another thread's extraction. The
+    # serialisation cost is acceptable: the alternative is a
+    # ``malloc_consolidate: unaligned fastbin chunk`` abort (see
+    # ``_extractor_lock`` docstring). Inside the lock we use the
+    # ``*_unsafe`` variants to avoid re-entrant deadlocks on the
+    # non-reentrant ``threading.Lock``.
+    with _extractor_lock:
+        trafilatura_content, newspaper_content = _run_extractors_unsafe(
+            html, url
+        )
 
     traf_score = _quality_score(trafilatura_content)
     np_score = _quality_score(newspaper_content)
@@ -173,78 +230,84 @@ def extract_content(
             )
         )
     else:
-        # Fallback: readability → justext
+        # Fallback: readability → justext. The shared singletons
+        # ``_readability`` and ``_justext_en`` are also lxml-backed and
+        # need the same serialisation as the primary path, so the whole
+        # fallback block runs under the same lock.
         logger.debug(
             "Pipeline: primary extractors insufficient, using fallback"
         )
 
-        soup = BeautifulSoup(html, "html.parser")
-        for tag_name in [
-            "script",
-            "style",
-            "iframe",
-            "noscript",
-            "svg",
-            "form",
-            "button",
-            "input",
-            "select",
-            "textarea",
-        ]:
-            for tag in soup.find_all(tag_name):
-                tag.decompose()
-        cleaned_html = str(soup)
+        with _extractor_lock:
+            soup = BeautifulSoup(html, "html.parser")
+            for tag_name in [
+                "script",
+                "style",
+                "iframe",
+                "noscript",
+                "svg",
+                "form",
+                "button",
+                "input",
+                "select",
+                "textarea",
+            ]:
+                for tag in soup.find_all(tag_name):
+                    tag.decompose()
+            cleaned_html = str(soup)
 
-        justext_extractor = (
-            _justext_en
-            if language == "English"
-            else JustextExtractor(language=language)
-        )
-
-        content = None
-        prev_text_len = 0
-
-        for extractor in [_readability, justext_extractor]:
-            result = extractor.extract(
-                cleaned_html if prev_text_len == 0 else content
+            justext_extractor = (
+                _justext_en
+                if language == "English"
+                else JustextExtractor(language=language)
             )
-            if result and result.strip():
-                result_len = len(result.strip())
-                # Safety: skip if extractor discards >80% of content.
-                # Compare text lengths (strip HTML tags for fair comparison
-                # since readability returns HTML but justext returns text).
-                if (
-                    prev_text_len > 0
-                    and result_len < prev_text_len * SAFETY_DISCARD_RATIO
-                ):
+
+            content = None
+            prev_text_len = 0
+
+            for extractor in [_readability, justext_extractor]:
+                result = extractor.extract(
+                    cleaned_html if prev_text_len == 0 else content
+                )
+                if result and result.strip():
+                    result_len = len(result.strip())
+                    # Safety: skip if extractor discards >80% of content.
+                    # Compare text lengths (strip HTML tags for fair comparison
+                    # since readability returns HTML but justext returns text).
+                    if (
+                        prev_text_len > 0
+                        and result_len < prev_text_len * SAFETY_DISCARD_RATIO
+                    ):
+                        logger.debug(
+                            f"Pipeline: {extractor.__class__.__name__} discarded "
+                            f">80% of content — skipping"
+                        )
+                        continue
+                    content = result
+                    # Store text-equivalent length for fair comparison
+                    if "<" in result:
+                        prev_text_len = len(
+                            BeautifulSoup(result, "html.parser").get_text()
+                        )
+                    else:
+                        prev_text_len = result_len
                     logger.debug(
-                        f"Pipeline: {extractor.__class__.__name__} discarded "
-                        f">80% of content — skipping"
+                        f"Pipeline: {extractor.__class__.__name__} "
+                        f"returned {result_len} chars"
                     )
-                    continue
-                content = result
-                # Store text-equivalent length for fair comparison
-                if "<" in result:
-                    prev_text_len = len(
-                        BeautifulSoup(result, "html.parser").get_text()
-                    )
-                else:
-                    prev_text_len = result_len
-                logger.debug(
-                    f"Pipeline: {extractor.__class__.__name__} "
-                    f"returned {result_len} chars"
+
+            # Strip remaining HTML tags (e.g. readability-only mode)
+            if content and "<" in content:
+                content = BeautifulSoup(content, "html.parser").get_text(
+                    separator="\n", strip=True
                 )
 
-        # Strip remaining HTML tags (e.g. readability-only mode)
-        if content and "<" in content:
-            content = BeautifulSoup(content, "html.parser").get_text(
-                separator="\n", strip=True
-            )
-
-        # Last resort
-        if not content or len(content.strip()) < min_length:
-            logger.debug("Pipeline: all extractors failed, using get_text()")
-            content = soup.get_text(separator="\n", strip=True)
+            # Last resort
+            if not content or len(content.strip()) < min_length:
+                logger.debug(
+                    "Pipeline: all extractors failed, using get_text()"
+                )
+                content = soup.get_text(separator="\n", strip=True)
 
     if not content or len(content.strip()) < min_length:
         return None

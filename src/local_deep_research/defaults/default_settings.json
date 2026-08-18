@@ -5506,6 +5506,20 @@
         "value": false,
         "visible": true
     },
+    "search.engine.web.darkweb.network": {
+        "category": "search_engines",
+        "description": "Egress network of this engine. tor engines are isolated from clearnet engines in the agent tool layer (see get_engine_network helper in web_search_engines/search_engines_config.py).",
+        "editable": false,
+        "max_value": null,
+        "min_value": null,
+        "name": "Darkweb network",
+        "options": null,
+        "step": null,
+        "type": "SEARCH",
+        "ui_element": "text",
+        "value": "tor",
+        "visible": false
+    },
     "search.engine.web.darkweb.display_name": {
         "category": "search_engines",
         "description": "Display name to use in the U.I. for this search engine.",
