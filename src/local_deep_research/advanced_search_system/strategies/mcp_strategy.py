@@ -309,6 +309,11 @@ class MCPSearchStrategy(BaseSearchStrategy):
         self._sources = []
         self._findings = []
         self.all_search_results = []
+        # Set by ``_execute_web_search`` (or any other tool) when the
+        # engine returned zero results across all attempted sub-queries.
+        # When non-None the ReAct loop short-circuits with a no-results
+        # feedback message instead of letting the LLM hallucinate.
+        self._abort_reason: Optional[str] = None
 
         # Build tool descriptions
         tools = self._build_tool_descriptions()
@@ -325,6 +330,36 @@ class MCPSearchStrategy(BaseSearchStrategy):
         final_answer = None
 
         while iteration < self.max_iterations:
+            # A previous tool call (typically web_search) signalled that
+            # every sub-query returned zero results. Stop the ReAct loop
+            # here and surface the feedback below — letting the LLM
+            # continue would just produce a hallucinated report.
+            if self._abort_reason is not None:
+                logger.warning(
+                    f"ReAct loop aborting due to no-results: "
+                    f"{self._abort_reason}"
+                )
+                self._update_progress(
+                    "No search results returned — research aborted to "
+                    "prevent hallucination. Please rephrase or pick a "
+                    "different search engine.",
+                    50,
+                    {
+                        "phase": "no_results",
+                        "type": "milestone",
+                        "reason": self._abort_reason,
+                    },
+                )
+                final_answer = (
+                    "## 未搜索到相关结果\n\n"
+                    "查询通过搜索引擎调取了多个子查询，但均未返回"
+                    "任何结果。为避免生成没有真实来源的内容，本次研究"
+                    "主动停止。建议：\n"
+                    "1. 调整查询语句（缩短关键词、增加具体名词）\n"
+                    "2. 换一个搜索引擎（设置中的 `search.tool`）\n"
+                    "3. 若目标是暗网资源，请确认 SearXNG 配置正确"
+                )
+                break
             iteration += 1
             progress = 10 + int((iteration / self.max_iterations) * 80)
 
@@ -1187,7 +1222,17 @@ class MCPSearchStrategy(BaseSearchStrategy):
             if isinstance(results, list):
                 # Handle empty results
                 if not results:
-                    logger.info(f"Web search returned no results for: {query}")
+                    logger.info(
+                        f"Web search returned no results for: {query}"
+                    )
+                    # Set the strategy-level abort flag so the ReAct
+                    # loop short-circuits with a no-results feedback
+                    # instead of letting the LLM hallucinate on an
+                    # empty collector. See MCPSearchStrategy.analyze_topic
+                    # for the loop-side handling.
+                    self._abort_reason = (
+                        f"web_search returned no results for {query!r}"
+                    )
                     return {
                         "status": "success",
                         "content": f"No search results found for '{query}'. Try rephrasing the query or using a different search approach.",
@@ -1579,6 +1624,28 @@ class MCPSearchStrategy(BaseSearchStrategy):
             try:
                 # Run the search
                 results = engine.run(query)
+
+                # Handle empty results: set the strategy-level abort
+                # flag so the ReAct loop short-circuits with a no-results
+                # feedback instead of letting the LLM hallucinate on an
+                # empty collector.
+                if isinstance(results, list) and not results:
+                    logger.info(
+                        f"Specialized search returned no results: "
+                        f"engine={engine_name!r} query={query!r}"
+                    )
+                    self._abort_reason = (
+                        f"specialized_search({engine_name}) returned no "
+                        f"results for {query!r}"
+                    )
+                    return {
+                        "status": "success",
+                        "content": (
+                            f"No search results for {engine_name} "
+                            f"query={query!r}. Try rephrasing or a "
+                            "different engine."
+                        ),
+                    }
 
                 # Track sources and accumulate search results
                 if isinstance(results, list):

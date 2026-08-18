@@ -1863,7 +1863,7 @@ def run_research_process(research_id, query, mode, **kwargs):
                     # rationale (image enhancement is upstream of this
                     # step so its citation matching is unaffected).
                     try:
-                        from ..text_optimization.citation_formatter import (
+                        from ...text_optimization.citation_formatter import (
                             enforce_sources_ascending_and_drop_orphans,
                         )
 
@@ -2260,7 +2260,7 @@ def run_research_process(research_id, query, mode, **kwargs):
             # enforcer after it, we preserve that match while
             # guaranteeing ascending order in the user-visible report.
             try:
-                from ..text_optimization.citation_formatter import (
+                from ...text_optimization.citation_formatter import (
                     enforce_sources_ascending_and_drop_orphans,
                 )
 

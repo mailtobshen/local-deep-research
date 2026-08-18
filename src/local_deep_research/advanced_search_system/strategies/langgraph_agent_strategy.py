@@ -260,6 +260,43 @@ def _format_results(results: list[dict], start_idx: int) -> str:
     return "\n\n".join(lines) if lines else "No results."
 
 
+# Tool-level sentinel string returned by ``web_search`` when the engine
+# yielded zero results across all sub-queries. The strategy layer (and
+# the MCP strategy) look for this prefix to decide whether to abort the
+# rest of the research to prevent LLM hallucination on a Tor-isolated
+# run where every query came back empty. See ``_make_web_search_tool``
+# for how the sentinel is emitted.
+LDR_NO_RESULTS_PREFIX = "__LDR_NO_RESULTS__|"
+
+
+def _format_no_results_payload(
+    original_query: str,
+    sub_queries_attempted: list[str],
+    detail: str = "",
+) -> str:
+    """Build the structured no-results string returned by ``web_search``.
+
+    Format: ``__LDR_NO_RESULTS__|<json>``. The JSON envelope carries
+    the original query and the list of attempted sub-queries so the
+    caller can log them for diagnostics.
+    """
+    import json as _json
+
+    payload = {
+        "status": "no_results",
+        "query": original_query,
+        "sub_queries_attempted": sub_queries_attempted,
+        "message": (
+            f"No results returned for {len(sub_queries_attempted)} "
+            f"attempted quer"
+            f"{'y' if len(sub_queries_attempted) == 1 else 'ies'}; "
+            "research aborted to prevent hallucination."
+        ),
+        "detail": detail,
+    }
+    return LDR_NO_RESULTS_PREFIX + _json.dumps(payload, ensure_ascii=False)
+
+
 def _make_web_search_tool(
     search_engine_name: str,
     model: BaseChatModel,
@@ -267,7 +304,23 @@ def _make_web_search_tool(
     collector: SearchResultsCollector,
     programmatic_mode: bool = False,
 ):
-    """Create a ``web_search`` tool that instantiates a fresh engine per call."""
+    """Create a ``web_search`` tool that instantiates a fresh engine per call.
+
+    Darkweb-specific behaviour
+    -------------------------
+    When ``search_engine_name == "darkweb"`` and the incoming query
+    contains CJK characters, the tool fans the single agent tool call
+    into a sequence of smaller queries (Chinese short phrases + a few
+    English aliases drawn from the darkweb keyword map). The ahmia /
+    torch engines that back the darkweb SearXNG index poorly on long
+    Chinese strings; this fan-out is what makes those runs return any
+    sources at all (see ``utilities/cjk_query_split.py``).
+
+    If every sub-query (and the original) returns zero results, the
+    tool emits ``LDR_NO_RESULTS_PREFIX + json`` instead of the usual
+    human-readable "No results found" message. The strategy layer
+    parses that sentinel and aborts the run to avoid hallucination.
+    """
 
     @tool
     def web_search(query: str) -> str:
@@ -276,6 +329,24 @@ def _make_web_search_tool(
         from local_deep_research.web_search_engines.search_engine_factory import (
             create_search_engine,
         )
+
+        # Plan sub-queries for darkweb + CJK. Done before instantiating
+        # the engine because the CJK check is cheap and we want to
+        # avoid an unnecessary engine allocation when the query is
+        # empty / CJK-free.
+        attempted_queries: list[str] = []
+        sub_queries: list[str] = []
+        if search_engine_name == "darkweb":
+            try:
+                from local_deep_research.utilities.cjk_query_split import (
+                    plan_darkweb_queries,
+                )
+                sub_queries = plan_darkweb_queries(query)
+            except Exception:
+                logger.exception(
+                    "cjk_query_split failed for darkweb web_search"
+                )
+                sub_queries = []
 
         engine = create_search_engine(
             engine_name=search_engine_name,
@@ -286,9 +357,58 @@ def _make_web_search_tool(
         if engine is None:
             return f"Failed to create search engine '{search_engine_name}'."
         try:
-            results = engine.run(query)
+            # Decide whether to fan out across multiple sub-queries or
+            # to issue the original single query.
+            if sub_queries:
+                # Darkweb multi-query path
+                logger.info(
+                    f"web_search darkweb fan-out: original={query!r} "
+                    f"sub_queries={sub_queries}"
+                )
+                merged: list[dict] = []
+                for sq in sub_queries:
+                    attempted_queries.append(sq)
+                    try:
+                        merged.extend(engine.run(sq))
+                    except Exception:
+                        logger.exception(
+                            f"web_search sub-query failed: {sq!r}"
+                        )
+                # Dedup by URL while preserving order. Items without a
+                # URL are kept as-is (they cannot collide).
+                seen_urls: set[str] = set()
+                deduped: list[dict] = []
+                for r in merged:
+                    url = r.get("url") or r.get("link") or ""
+                    if url:
+                        if url in seen_urls:
+                            continue
+                        seen_urls.add(url)
+                    deduped.append(r)
+                results = deduped
+            else:
+                # Single-query path (clearnet engines, or darkweb with
+                # an English query, or darkweb when CJK split returned
+                # nothing usable).
+                attempted_queries.append(query)
+                results = engine.run(query)
+
             if not isinstance(results, list) or not results:
-                return f"No results found for '{query}'. Try rephrasing."
+                logger.warning(
+                    f"web_search no_results original_query={query!r} "
+                    f"engine={search_engine_name!r} "
+                    f"sub_queries={attempted_queries}"
+                )
+                # Return a sentinel the strategy layer can detect to
+                # abort the rest of the run. The previous plain-text
+                # "No results found" message was indistinguishable
+                # from a legitimate empty response and let the LLM
+                # hallucinate freely on Tor-isolated runs.
+                return _format_no_results_payload(
+                    original_query=query,
+                    sub_queries_attempted=attempted_queries,
+                )
+
             start = collector.add_results(
                 results, engine_name=search_engine_name
             )
@@ -829,6 +949,12 @@ class LangGraphAgentStrategy(BaseSearchStrategy):
         iteration = 0
         final_content = ""
         agent_messages: list = []
+        # Set to True the first time a web_search tool returns the
+        # ``LDR_NO_RESULTS_PREFIX`` sentinel. We then break out of the
+        # agent loop so research_subtopic never runs (which would
+        # otherwise attempt more sub-researches against an empty
+        # collector and waste 30+ seconds before failing).
+        no_results_abort = False
 
         try:
             for chunk in agent.stream(
@@ -874,9 +1000,8 @@ class LangGraphAgentStrategy(BaseSearchStrategy):
                     msgs = chunk["tools"].get("messages", [])
                     for msg in msgs:
                         tool_name = getattr(msg, "name", "tool")
-                        preview = str(getattr(msg, "content", ""))[
-                            :150
-                        ].replace("\n", " ")
+                        tool_content = str(getattr(msg, "content", ""))
+                        preview = tool_content[:150].replace("\n", " ")
                         self._update_progress(
                             f"Result from {tool_name}: {preview}",
                             min(
@@ -885,6 +1010,47 @@ class LangGraphAgentStrategy(BaseSearchStrategy):
                             ),
                             {"phase": "observation", "tool": tool_name},
                         )
+                        # Detect the no-results sentinel from any tool.
+                        # web_search is the only emitter today, but we
+                        # gate on the prefix so future tools can adopt
+                        # the same convention.
+                        if tool_content.startswith(LDR_NO_RESULTS_PREFIX):
+                            no_results_abort = True
+
+            # If web_search emitted the no-results sentinel, stop here
+            # so we never enter research_subtopic on a dead collector.
+            if no_results_abort:
+                logger.warning(
+                    f"web_search returned no_results sentinel; aborting "
+                    f"agent loop before research_subtopic for query={query!r}"
+                )
+                self._update_progress(
+                    "No search results returned — research aborted to "
+                    "prevent hallucination. Please rephrase or pick a "
+                    "different search engine.",
+                    30,
+                    {
+                        "phase": "no_results",
+                        "type": "milestone",
+                        "query": query[:100],
+                    },
+                )
+                # Synthesize a feedback message from the LLM. We
+                # cannot synthesize a research report because the
+                # Collector is empty; the user needs to see the
+                # explicit "we found nothing" message instead of a
+                # hallucinated report.
+                final_content = (
+                    "## 未搜索到相关结果\n\n"
+                    f"查询 `{query}` 通过搜索引擎 "
+                    f"`{self._search_engine_name}` 调取了多个子查询（暗网模式下还会 "
+                    "按中英文短语拆分），但均未返回任何结果。\n\n"
+                    "为避免生成没有真实来源的内容，本次研究主动停止。建议：\n"
+                    "1. 调整查询语句（缩短关键词、增加具体名词）\n"
+                    "2. 换一个搜索引擎（设置中的 `search.tool`）\n"
+                    "3. 若目标是暗网资源，请确认 SearXNG 的 "
+                    "`engines-darkweb.yml` 已合并、`ldr-tor` 可达"
+                )
 
         except GraphRecursionError:
             logger.warning(
