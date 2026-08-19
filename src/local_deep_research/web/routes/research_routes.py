@@ -1553,6 +1553,7 @@ def get_research_report(research_id):
                         "completed_at": research.completed_at
                         if research.completed_at
                         else None,
+                        "duration_seconds": research.duration_seconds,
                         "report_path": research.report_path,
                         **safe_metadata,
                     },
