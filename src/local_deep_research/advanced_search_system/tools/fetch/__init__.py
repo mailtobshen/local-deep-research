@@ -229,6 +229,21 @@ def _make_full_fetch_tool(
         from local_deep_research.content_fetcher import ContentFetcher
 
         enable_js = _read_js_rendering_setting(settings_snapshot)
+        # Darkweb-only: JS rendering on .onion pages is double-painful —
+        # Playwright's ``wait_until=networkidle`` never fires over Tor
+        # (idle packets trickle in continuously), so the browser hangs
+        # for the full page_timeout (30 s) per URL. Most darknet
+        # markets serve their content in plain HTML, so we drop JS
+        # rendering for .onion URLs and rely on the static HTML path.
+        # Clearnet URLs keep the user-configured toggle verbatim.
+        try:
+            from local_deep_research.utilities.is_darkweb_url import (
+                is_darkweb_url,
+            )
+            if is_darkweb_url(url):
+                enable_js = False
+        except Exception:
+            pass
         try:
             with ContentFetcher(
                 timeout=CONTENT_FETCH_TIMEOUT,
@@ -297,6 +312,15 @@ def _make_summary_fetch_tool(
         from local_deep_research.content_fetcher import ContentFetcher
 
         enable_js = _read_js_rendering_setting(settings_snapshot)
+        # See the full-mode variant for the JS-on-.onion rationale.
+        try:
+            from local_deep_research.utilities.is_darkweb_url import (
+                is_darkweb_url,
+            )
+            if is_darkweb_url(url):
+                enable_js = False
+        except Exception:
+            pass
         try:
             with ContentFetcher(
                 timeout=CONTENT_FETCH_TIMEOUT,
