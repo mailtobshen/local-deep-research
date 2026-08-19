@@ -261,40 +261,54 @@ def darkweb_english_aliases(zh_phrase: str) -> List[str]:
     return out
 
 
-def plan_darkweb_queries(query: str, max_queries: int = 4) -> List[str]:
+def plan_darkweb_queries(query: str, max_queries: int = 6) -> List[str]:
     """Plan the multi query list sequence to issue for a darkweb search.
 
     Pipeline:
-        1. ``split_cjk_phrases(query)`` — up to 4 Chinese short phrases.
-        2. For each phrase, ``darkweb_english_aliases`` — English
+        1. **Original query verbatim** is always preserved as
+           ``plan[0]``. This is the user's full literal request
+           ("芬太尼及精神药物交易") — never split or rewritten. SearXNG
+           sees it untouched so that a hit on the exact user phrasing
+           (when darkweb vocab mirrors it) is captured. Without this
+           guard the plan would only contain machine-split Chinese
+           short phrases + English aliases, and the user's literal
+           query would be dropped — the previous behaviour was the
+           root cause of the no-results abort on task a5f52f0a.
+        2. ``split_cjk_phrases(query)`` — up to 4 Chinese short phrases.
+        3. For each phrase, ``darkweb_english_aliases`` — English
            aliases drawn from the keyword map.
-        3. Combine Chinese phrases + English aliases into a single
-           de-duplicated ordered list, longest queries first, capped
-           at ``max_queries``.
+        4. Combine [original + Chinese phrases + English aliases] into
+           a single de-duplicated ordered list, longest queries first,
+           capped at ``max_queries``.
 
     Args:
         query: Original user query.
-        max_queries: Hard cap on the returned list (default 4). Set
-            higher in callers that want more aggressive fan-out.
+        max_queries: Hard cap on the returned list (default 6, raised
+            from 4 to make room for the preserved original query on
+            top of the split phrases + English aliases).
 
     Returns:
         Ordered list of query strings to issue against SearXNG. Returns
         ``[]`` when *query* contains no CJK (caller falls back to the
         original single-query path) or when no usable split survives.
-        The original query is **not** in the returned list — the
-        caller is expected to use it as the fallback when the plan
-        is empty.
+        When the plan is non-empty the original query is at index 0;
+        when the plan is empty the caller still falls back to the
+        original single-query path.
     """
     if not query or not contains_cjk(query):
         return []
     zh_phrases = split_cjk_phrases(query)
     if not zh_phrases:
         return []
-    # Build candidate list: Chinese phrases first (preserving
-    # longest-first order), then English aliases for each phrase in
-    # the same order. De-duplicate while preserving order.
+    # Build candidate list: original verbatim first, then Chinese
+    # short phrases (longest-first), then English aliases per phrase.
+    # De-duplicate while preserving order — a phrase that is also the
+    # original query (or that appears as an alias) is collapsed.
     seen: set[str] = set()
     plan: List[str] = []
+    if query not in seen:
+        seen.add(query)
+        plan.append(query)
     for zh in zh_phrases:
         if zh not in seen:
             seen.add(zh)
