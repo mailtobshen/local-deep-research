@@ -135,6 +135,31 @@ class HTMLDownloader(BaseDownloader):
 
     def _fetch_html(self, url: str) -> Optional[str]:
         """Fetch raw HTML content from URL."""
+        # OBS-G Path A: promote http://...onion to https://...onion so
+        # the requests lib auto-uses HTTP CONNECT through the local
+        # onion-connect-proxy (which only accepts CONNECT method per
+        # RFC 2817). Without this, plain HTTP GET against a .onion
+        # proxy returns 400 Bad Request because the proxy refuses
+        # non-CONNECT request lines. Verified 2026-08-20 on research
+        # 6dc7dcd1: 146/150 .onion URLs failed with
+        # failure_mode=onion_proxy_rejected_get; promoting to https://
+        # flips the requests lib into CONNECT mode, restoring the
+        # full 200-OK tunnel path that already works for direct
+        # CONNECT probes. .onion:443 failures (sites that only listen
+        # on :80) remain observable as failure_mode=onion_tor_socks_
+        # failed or fetch_exception in the OBS-G probe — that's the
+        # intent of the partition, not a regression.
+        if url.startswith("http://"):
+            host_check = (urlparse(url).hostname or "").lower()
+            if host_check == "onion" or host_check.endswith(".onion"):
+                promoted = "https://" + url[len("http://"):]
+                logger.info(
+                    f"[OBS-G] URL_SCHEME_PROMOTED url={url} "
+                    f"host={host_check} promoted={promoted} "
+                    f"reason=onion_proxy_rejects_get"
+                )
+                url = promoted
+
         logger.debug(f"Static fetch: {url}")
         domain = urlparse(url).netloc
         engine_type = f"html_download_{domain}"
