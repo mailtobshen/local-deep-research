@@ -31,22 +31,40 @@ def _find_references_start(markdown: str) -> int:
 
 
 def _used_nums_in_body(markdown: str, refs_start: int) -> set[str]:
-    """Return the set of citation numbers appearing before the References block.
+    r"""Return the set of citation numbers appearing before the References block.
 
-    Matches both production ``[[N]](url)`` markdown-link citations and
-    plain ``[N]`` / ``[2, 3]`` bracket citations (fixture/legacy shape).
+    Matches production ``[[N]](url)`` / ``[[N](url)]`` markdown-link
+    citations, plain ``[N]`` / ``[2, 3]`` bracket citations, and the
+    full-width ``【N】`` form.
+
+    Note: a bare ``[[N](url)]`` form (double-bracket-then-link) was
+    NOT matched by the previous ``\[\[?([\d,\s]+)\]\]?`` regex because
+    the inner ``(`` breaks the bracket symmetry. That gap let
+    ``sanitize_references`` strip every reference row when the body
+    used only that shape (verified 2026-08-19 on research f4a735c4:
+    REFERENCES_CLEANED before=122 after=0).
     """
     body = markdown[:refs_start]
     nums: set[str] = set()
-    # ASCII [[N]](url) / [N] / [2, 3] plus the full-width 【N】 form
-    # (CITE_INLINE_RE accepts it, so the citation index's section scan
-    # treats it as a citation — the sanitizer must agree).
-    for m in re.finditer(r"\[\[?([\d,\s]+)\]\]?|【([\d,\s]+)】", body):
-        g = m.group(1) if m.group(1) is not None else m.group(2)
-        for n in g.split(","):
-            n = n.strip()
-            if n.isdigit():
-                nums.add(n)
+    # Three forms:
+    #   (a) plain        [N]   [N, M]
+    #   (b) double       [[N]]   [[N, M]]
+    #   (c) link inner   [[N](url)]   [[N, M](url)]   [[N]](url)
+    # plus full-width   【N】 / 【N, M】
+    pattern = (
+        r"\[\[?[\d,\s]+\]?\]?"        # (a) + (b): any plain/double bracket
+        r"|"                             # OR
+        r"\[\[[\d,\s]+\]\([^)]*\)\]?"   # (c) link inside: [[N](url)] / [[N]](url)
+        r"|"                             # OR
+        r"【[\d,\s]+】"                  # full-width
+    )
+    for m in re.finditer(pattern, body):
+        # Extract digits+commas from whichever group matched. The link
+        # form's digit group is m.group(0) (whole match minus brackets),
+        # so normalise via a single findall over the match text.
+        text = m.group(0)
+        for n in re.findall(r"\d+", text):
+            nums.add(n)
     return nums
 
 
@@ -128,4 +146,19 @@ def sanitize_references(markdown: str) -> str:
         f"[IMG-TRACE] REFERENCES_CLEANED "
         f"before={len(row_starts)} after={kept_rows_count}"
     )
+    # Defence-in-depth rollback: if the sanitizer stripped every
+    # reference row while the source markdown had ≥1, return the
+    # input unchanged. This catches the case where the LLM wrote
+    # References but used a citation form the body regex still
+    # missed (e.g. a future markdown variant we haven't taught the
+    # regex yet). Verified 2026-08-19 on research f4a735c4 where
+    # the previous regex gap caused before=122 after=0.
+    if len(row_starts) > 0 and kept_rows_count == 0:
+        logger.warning(
+            f"[IMG-TRACE] REFERENCES_CLEANED_ROLLBACK "
+            f"reason=all_stripped before={len(row_starts)} "
+            f"after={kept_rows_count} — returning input markdown "
+            f"unchanged to preserve References block"
+        )
+        return markdown
     return markdown[:start] + "".join(kept_chunks)
