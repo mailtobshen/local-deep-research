@@ -86,10 +86,19 @@ class ResearchSourcesService:
                         title = source.get("title", "") or source.get(
                             "name", ""
                         )
+                        # content is the canonical SearXNG output key
+                        # (search_engine_searxng.py:419); snippet/
+                        # content_preview/description are alternative
+                        # names from other engines. Without the content
+                        # fallback, darkweb engines (ahmia/torch) that
+                        # populate only `content` show as body_bytes=0
+                        # in the OBS-C probe (verified 2026-08-19 on
+                        # research f4a735c4: 170/170 sources 0 bytes).
                         snippet = (
                             source.get("snippet", "")
                             or source.get("content_preview", "")
                             or source.get("description", "")
+                            or source.get("content", "")
                         )
                         source_type = source.get("source_type", "web")
 
@@ -108,7 +117,15 @@ class ResearchSourcesService:
                         # saved-source attribute). Recording it here
                         # would always log 0 and flood the grep with
                         # false positives.
+                        #
+                        # content_len distinguishes "content field
+                        # missing from the dict" (the previous 170/170
+                        # failure mode) from "content field present but
+                        # empty" (legitimate 0-byte snippet). Combined
+                        # with the new fallback above this lets the
+                        # probe verify the fallback actually fired.
                         body_bytes = len(snippet or "")
+                        content_len = len(source.get("content", "") or "")
                         try:
                             from local_deep_research.utilities.is_darkweb_url import (
                                 is_darkweb_url,
@@ -118,6 +135,7 @@ class ResearchSourcesService:
                                 f"[OBS-C] SOURCE_SAVE url={url} "
                                 f"is_onion={is_darkweb_url(url)} "
                                 f"body_bytes={body_bytes} "
+                                f"content_len={content_len} "
                                 f"title={(title or '')[:80]!r} "
                                 f"source_type={source_type}"
                             )
