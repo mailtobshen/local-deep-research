@@ -93,6 +93,38 @@ class ResearchSourcesService:
                         )
                         source_type = source.get("source_type", "web")
 
+                        # OBS-C: per-source save probe. Logs the raw
+                        # body length (full snippet, pre-truncation —
+                        # content_preview is later truncated to 1000
+                        # chars before persistence) plus the
+                        # html_content byte count if the caller
+                        # attached a full body. Lets one grep
+                        #   grep '\[OBS-C\] SOURCE_SAVE body_bytes=0'
+                        # find every 0-byte source the deferred-fill
+                        # pass would otherwise leave unexplained.
+                        body_bytes = len(snippet or "")
+                        html_bytes = len(
+                            source.get("html_content", "") or ""
+                        )
+                        try:
+                            from local_deep_research.utilities.is_darkweb_url import (
+                                is_darkweb_url,
+                            )
+
+                            logger.info(
+                                f"[OBS-C] SOURCE_SAVE url={url} "
+                                f"is_onion={is_darkweb_url(url)} "
+                                f"body_bytes={body_bytes} "
+                                f"html_bytes={html_bytes} "
+                                f"title={(title or '')[:80]!r} "
+                                f"source_type={source_type}"
+                            )
+                        except Exception:
+                            # Probe must never break the save loop.
+                            logger.exception(
+                                "[OBS-C] SOURCE_SAVE logging failed"
+                            )
+
                         # Skip if no URL
                         if not url:
                             continue
