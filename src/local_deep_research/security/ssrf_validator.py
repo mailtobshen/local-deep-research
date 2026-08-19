@@ -14,6 +14,7 @@ from loguru import logger
 from urllib3.exceptions import LocationParseError
 from urllib3.util import parse_url
 
+from ..utilities.is_darkweb_url import is_darkweb_url
 from .ip_ranges import PRIVATE_IP_RANGES as BLOCKED_IP_RANGES
 from .ip_ranges import NAT64_PREFIXES
 
@@ -303,6 +304,21 @@ def validate_url(
         except ValueError:
             # Not an IP address, it's a hostname - need to resolve it
             pass
+
+        # Darkweb / .onion: the kernel resolver cannot resolve `.onion`
+        # hostnames (no A/AAAA records exist outside Tor), so every attempt
+        # below would raise socket.gaierror and the URL would be falsely
+        # flagged as a private-IP bypass attempt. The codebase already
+        # tunnels `.onion` traffic through a local CONNECT proxy
+        # (proxy_config.ONION_PROXY_URL -> Tor), so the SSRF surface the
+        # validator protects against (RFC1918/loopback/metadata) cannot
+        # apply: the request never reaches a kernel-resolved IP. Allow
+        # `.onion` unconditionally and let the proxy layer handle routing.
+        # This is invoked by HTMLDownloader._fetch_html and the
+        # fetch_content tool, both of which wire get_onion_proxies(url)
+        # into the request.
+        if is_darkweb_url(url):
+            return True
 
         # Resolve hostname to IP and check.
         #
