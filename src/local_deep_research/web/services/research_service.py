@@ -778,9 +778,33 @@ def _deferred_image_fill(
     filled = 0
     for url, entry in (data or {}).items():
         images = (entry or {}).get("images", []) if entry else []
-        if not images:
+        text = (entry or {}).get("text") if entry else None
+        # Build the attach payload. Two sources:
+        #   - images present (normal path): dumps_images(images) — JSON
+        #     list of ExtractedImage for the image-enhancement gate.
+        #   - images empty BUT text non-empty (degenerate page like
+        #     darkweb forums with no <img>): fall back to the raw
+        #     text payload so url_to_html still gets populated and
+        #     build_citation_index sees html_covered > 0. Without
+        #     this fallback the BANK_EMPTY gate fires even when the
+        #     fetch pipeline ran cleanly (verified 2026-08-20 on
+        #     research 2a603351: 193/193 .onion URLs fetched with
+        #     text but no images, all skipped by the old
+        #     `if not images: continue`).
+        payload: Optional[str] = None
+        if images:
+            try:
+                payload = dumps_images(images)
+            except Exception:
+                logger.exception(
+                    f"Deferred image fill: dumps_images failed for {url}"
+                )
+                continue
+        elif text:
+            payload = text
+        else:
             # OBS-F: per-URL zero-images probe. fetch_content_with_images
-            # returned the URL but with an empty images list — the
+            # returned the URL with empty images AND empty text — the
             # fetch pipeline ran end-to-end without error yet produced
             # nothing attachable. Silent `continue` previously left
             # this class invisible, indistinguishable from "fetch
@@ -792,15 +816,8 @@ def _deferred_image_fill(
             logger.info(
                 f"[OBS-F] DEFERRED_FETCH_EMPTY research={research_id} "
                 f"url={url} cite_num={cite_num_for_empty} "
-                f"reason=no_images entry_keys="
+                f"reason=no_images_no_text entry_keys="
                 f"{list((entry or {}).keys())}"
-            )
-            continue
-        try:
-            payload = dumps_images(images)
-        except Exception:
-            logger.exception(
-                f"Deferred image fill: dumps_images failed for {url}"
             )
             continue
         # Per-URL summary that records the cite_num + ref_url
