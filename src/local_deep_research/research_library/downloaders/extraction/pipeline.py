@@ -676,6 +676,22 @@ def _fetch_content_dispatcher(
         language=language,
         enable_js_rendering=enable_js_rendering,
     )
+    # Helper: is this URL a .onion? Pure URL check, identical to
+    # is_darkweb_url() — defined inline (and *before* the only caller)
+    # to avoid a circular import through ``darkweb`` / ``is_darkweb_url``
+    # here. Must be defined BEFORE the onion_downloader generator below —
+    # Python binds generator-expression free variables when the
+    # generator is *created*, not when it is iterated, so a nested
+    # function defined later in the same body raises NameError at call
+    # time. Observed in 3e09edbc: fetch_content_with_images raised
+    # NameError: cannot access free variable '_is_onion_url'.
+    def _is_onion_url(url: str) -> bool:
+        try:
+            host = (urlparse(url).hostname or "").lower()
+        except (ValueError, AttributeError):
+            return False
+        return bool(host) and (host == "onion" or host.endswith(".onion"))
+
     onion_downloader = (
         dl_cls(
             timeout=ONION_TIMEOUT,
@@ -688,15 +704,6 @@ def _fetch_content_dispatcher(
         else None
     )
 
-    # Helper: is this URL a .onion? Pure URL check, identical to
-    # is_darkweb_url() — defined inline to avoid a circular import
-    # through ``darkweb`` / ``is_darkweb_url`` here.
-    def _is_onion_url(url: str) -> bool:
-        try:
-            host = (urlparse(url).hostname or "").lower()
-        except (ValueError, AttributeError):
-            return False
-        return bool(host) and (host == "onion" or host.endswith(".onion"))
     # Pre-compute once before the loop (snapshot doesn't change per URL).
     firecrawl_enabled = _firecrawl_enabled(settings_snapshot)
     firecrawl_client = None
