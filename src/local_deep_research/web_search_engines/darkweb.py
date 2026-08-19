@@ -9,6 +9,8 @@ security/proxy_config.get_onion_proxies).
 """
 from typing import Optional
 
+from loguru import logger
+
 from local_deep_research.web_search_engines.engines.search_engine_searxng import (
     SearXNGSearchEngine,
 )
@@ -93,4 +95,25 @@ def tag_darkweb(results: list[dict]) -> list[dict]:
     for r in results:
         r.setdefault("metadata", {})["source"] = "darkweb"
         r["is_darkweb"] = True
+        # OBS-A: per-result darkweb URL classification — records whether
+        # each SearXNG darkweb result is actually a .onion, so the log
+        # alone can answer "how many .onion URLs did the agent see and
+        # which titles/snippets came with them". Lazy-import keeps the
+        # module load order identical to existing callers.
+        try:
+            from local_deep_research.utilities.is_darkweb_url import (
+                is_darkweb_url,
+            )
+
+            url = r.get("url") or r.get("link") or ""
+            logger.info(
+                f"[OBS-A] DARKWEB_RESULT url={url} "
+                f"is_onion={is_darkweb_url(url)} "
+                f"title={(r.get('title') or '')[:80]!r} "
+                f"engine={r.get('engine')!r}"
+            )
+        except Exception:
+            # Probe must never break the tagging path; logger.exception
+            # would re-throw into the tag_darkweb caller.
+            pass
     return results
