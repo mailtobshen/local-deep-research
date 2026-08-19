@@ -96,16 +96,19 @@ class ResearchSourcesService:
                         # OBS-C: per-source save probe. Logs the raw
                         # body length (full snippet, pre-truncation —
                         # content_preview is later truncated to 1000
-                        # chars before persistence) plus the
-                        # html_content byte count if the caller
-                        # attached a full body. Lets one grep
+                        # chars before persistence). Lets one grep
                         #   grep '\[OBS-C\] SOURCE_SAVE body_bytes=0'
                         # find every 0-byte source the deferred-fill
                         # pass would otherwise leave unexplained.
+                        # Note: html_content is intentionally NOT
+                        # logged here — save_research_sources callers
+                        # never put it on the source dict (html_content
+                        # is a per-search-result column populated by
+                        # relevance.build_citation_index, not a per-
+                        # saved-source attribute). Recording it here
+                        # would always log 0 and flood the grep with
+                        # false positives.
                         body_bytes = len(snippet or "")
-                        html_bytes = len(
-                            source.get("html_content", "") or ""
-                        )
                         try:
                             from local_deep_research.utilities.is_darkweb_url import (
                                 is_darkweb_url,
@@ -115,7 +118,6 @@ class ResearchSourcesService:
                                 f"[OBS-C] SOURCE_SAVE url={url} "
                                 f"is_onion={is_darkweb_url(url)} "
                                 f"body_bytes={body_bytes} "
-                                f"html_bytes={html_bytes} "
                                 f"title={(title or '')[:80]!r} "
                                 f"source_type={source_type}"
                             )
