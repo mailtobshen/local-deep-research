@@ -113,7 +113,9 @@ def tag_darkweb(results: list[dict]) -> list[dict]:
                 f"engine={r.get('engine')!r}"
             )
         except Exception:
-            # Probe must never break the tagging path; logger.exception
-            # would re-throw into the tag_darkweb caller.
-            pass
+            # Probe must never break the tagging path. loguru's
+            # logger.exception does NOT re-raise, so it's safe to call
+            # here — surfaces silent-probe failures for the operator
+            # without breaking tag_darkweb's contract.
+            logger.exception("[OBS-A] DARKWEB_RESULT logging failed")
     return results
