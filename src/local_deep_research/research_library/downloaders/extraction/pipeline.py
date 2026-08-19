@@ -808,36 +808,15 @@ def _fetch_content_dispatcher(
                     text_status = "FAIL(fc_exception)"
             elif pw_failed and url_is_onion and firecrawl_enabled:
                 # Mirror the failure path so IMG-TRACE explains why.
+                # NOTE: Firecrawl cannot reach .onion (no ldr-tor egress),
+                # so we deliberately skip the fallback — no `response`
+                # is ever assigned in this branch. The dead code that
+                # used to read `response` here raised UnboundLocalError
+                # for every .onion batch with firecrawl_enabled=True
+                # (verified 2026-08-19 on research f4a735c4: 122 .onion
+                # URLs all crashed on `isinstance(response, dict)`).
                 text_status = "SKIP(fc_onion_unsupported)"
                 fc_triggered = False
-                if isinstance(response, dict):
-                    md = response.get("markdown")
-                    if isinstance(md, str) and md.strip():
-                        text = md
-                        via = "firecrawl"
-                        text_status = "ok"
-                    else:
-                        text_status = "FAIL(fc_no_markdown)"
-                    html_from_fc = response.get("html")
-                    if (
-                        enable_images
-                        and isinstance(html_from_fc, str)
-                        and html_from_fc
-                    ):
-                        try:
-                            images = extract_images(
-                                html_from_fc, url, titles.get(url, "")
-                            )
-                            extract_scope = "content-root"
-                            image_status = "ok" if images else "empty"
-                        except Exception:
-                            logger.exception(
-                                f"extract_images failed on Firecrawl html for {url}"
-                            )
-                            images = []
-                            image_status = "EXTRACT_FAIL"
-                elif text_status != "FAIL(fc_exception)":
-                    text_status = "FAIL(fc_no_response)"
 
             # [IMG-TRACE] Per-URL fetch outcome: which fetcher won, text
             # status, image count, image-extraction status, and whether
