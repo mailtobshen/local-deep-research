@@ -541,7 +541,14 @@ def enhance_report_with_images(
                         # ``kept=0`` reason baked in so consumers don't
                         # need to fork on the event name to know what
                         # happened.
-                        logger.debug(
+                        # OBS-D: promoted from debug to info so a
+                        # single grep over `[IMG-TRACE] CANDIDATE_` can
+                        # union KEPT + DROPPED into a complete per-image
+                        # decision table without depending on operator
+                        # log-level config. The five-key schema
+                        # (img_alt / img_url / img_source_url / cite_num
+                        # / ref_url) is preserved verbatim.
+                        logger.info(
                             f"[IMG-TRACE] CANDIDATE_DROPPED research={research_id} "
                             f"img_alt={(img.alt or '')!r} "
                             f"img_url={img.url} "
