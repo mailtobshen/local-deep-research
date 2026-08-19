@@ -812,12 +812,25 @@ def _deferred_image_fill(
             # `[OBS-F] DEFERRED_FETCH_EMPTY` lists every URL that
             # entered the pipeline and came out empty, tagged with
             # cite_num so the operator can map back to report [[N]].
+            #
+            # text_len fields partition the failure modes:
+            #   text_len=0  text=None — Playwright/firecrawl failed
+            #                            (verify via=none per-URL
+            #                            [IMG-TRACE] url= event).
+            #   text_len=N  text=real string — HTML fetched but
+            #                                 extract_images found no
+            #                                 <img> (page genuinely
+            #                                 image-free).
+            # The d7866f38 fix promotes entry[text] to html_content
+            # so the text_len=N case flows into url_to_html and
+            # build_citation_index's html gate.
             cite_num_for_empty = _url_to_cite_num.get(url, "-")
+            text_len = len(text) if isinstance(text, str) else 0
             logger.info(
                 f"[OBS-F] DEFERRED_FETCH_EMPTY research={research_id} "
                 f"url={url} cite_num={cite_num_for_empty} "
-                f"reason=no_images_no_text entry_keys="
-                f"{list((entry or {}).keys())}"
+                f"reason=no_images_no_text text_len={text_len} "
+                f"entry_keys={list((entry or {}).keys())}"
             )
             continue
         # Per-URL summary that records the cite_num + ref_url
