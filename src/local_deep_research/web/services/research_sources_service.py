@@ -86,19 +86,25 @@ class ResearchSourcesService:
                         title = source.get("title", "") or source.get(
                             "name", ""
                         )
-                        # content is the canonical SearXNG output key
-                        # (search_engine_searxng.py:419); snippet/
-                        # content_preview/description are alternative
-                        # names from other engines. Without the content
-                        # fallback, darkweb engines (ahmia/torch) that
-                        # populate only `content` show as body_bytes=0
-                        # in the OBS-C probe (verified 2026-08-19 on
-                        # research f4a735c4: 170/170 sources 0 bytes).
+                        # Fallback chain. Each name comes from a different
+                        # search engine / phase in the codebase:
+                        #   snippet          — SearXNG._get_previews() + most engines' preview layer (line 503)
+                        #   content_preview  — Resource dataclass wrapper (web/services/research_service.py:378)
+                        #   description      — alternate engine field
+                        #   content          — SearXNG._get_search_results() raw dict (line 419)
+                        #   full_content     — FullSearchResults._get_full_content() (full_search.py:199,222)
+                        # Without `full_content` in the chain, the SOURCE_SAVE
+                        # probe body_bytes stays 0 even when FullSearchResults
+                        # successfully populated the field — verified 2026-08-20
+                        # on research 2a603351 (402/402 sources body_bytes=0
+                        # + content_len=0 despite the engine having produced
+                        # real `full_content` text).
                         snippet = (
                             source.get("snippet", "")
                             or source.get("content_preview", "")
                             or source.get("description", "")
                             or source.get("content", "")
+                            or source.get("full_content", "")
                         )
                         source_type = source.get("source_type", "web")
 
@@ -126,6 +132,9 @@ class ResearchSourcesService:
                         # probe verify the fallback actually fired.
                         body_bytes = len(snippet or "")
                         content_len = len(source.get("content", "") or "")
+                        full_content_len = len(
+                            source.get("full_content", "") or ""
+                        )
                         try:
                             from local_deep_research.utilities.is_darkweb_url import (
                                 is_darkweb_url,
@@ -136,6 +145,7 @@ class ResearchSourcesService:
                                 f"is_onion={is_darkweb_url(url)} "
                                 f"body_bytes={body_bytes} "
                                 f"content_len={content_len} "
+                                f"full_content_len={full_content_len} "
                                 f"title={(title or '')[:80]!r} "
                                 f"source_type={source_type}"
                             )
