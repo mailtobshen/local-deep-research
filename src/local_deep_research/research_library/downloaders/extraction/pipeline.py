@@ -16,6 +16,7 @@ specialized downloaders first, with the generic HTML pipeline as fallback.
 import threading
 import time
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlparse
 
 from bs4 import BeautifulSoup
 from loguru import logger
@@ -633,6 +634,21 @@ def _fetch_content_dispatcher(
       3. Else if _firecrawl_enabled(snapshot) →
          single scrape(link, include_html=enable_images); text=markdown, images from html
       4. Else → {text: None, images: []}
+
+    Darkweb / .onion hard-timeout (see task 83a26e94 trace)
+    -------------------------------------------------------
+    On task 83a26e94 the deferred-image-fill pass spent 44.7 minutes
+    attempting 111 ``.onion`` URLs. The Tor egress is volatile: a single
+    guard-failure cascade (see ldr-tor logs) makes every .onion resolve
+    retry hang for the full per-URL timeout. Two changes narrow the
+    failure mode:
+
+    * .onion URLs use an 8 s download timeout instead of 30 s. Clearnet
+      URLs are unaffected — they keep the original 30 s.
+    * .onion URLs skip the Firecrawl fallback entirely. Firecrawl
+      cannot resolve ``.onion`` (it doesn't egress through ldr-tor),
+      so falling back to it just adds a guaranteed-FAIL ~24 s round
+      trip per URL. Clearnet URLs still get the Firecrawl fallback.
     """
     result: Dict[str, Dict[str, Any]] = {}
     if not urls:
@@ -646,11 +662,41 @@ def _fetch_content_dispatcher(
         from ..playwright_html import AutoHTMLDownloader as _dl_cls
 
         dl_cls = _dl_cls
+    # Darkweb-only: a shorter 8 s timeout makes the .onion fetch exit
+    # fast when tor is unhealthy. Clearnet URLs (the vast majority of
+    # cite traffic) get the default 30 s. We build a SECOND downloader
+    # instance for .onion URLs because the timeout is fixed at
+    # construction time (HTMLDownloader's base class doesn't expose a
+    # per-call override). The two instances share the same Crawl4AI /
+    # Playwright browser cache internally, so the cost is one extra
+    # downloader object, not a second Chromium.
+    ONION_TIMEOUT = 8
     downloader = dl_cls(
         timeout=30,
         language=language,
         enable_js_rendering=enable_js_rendering,
     )
+    onion_downloader = (
+        dl_cls(
+            timeout=ONION_TIMEOUT,
+            language=language,
+            enable_js_rendering=enable_js_rendering,
+        )
+        if any(
+            _is_onion_url(u) for u in urls if u
+        )
+        else None
+    )
+
+    # Helper: is this URL a .onion? Pure URL check, identical to
+    # is_darkweb_url() — defined inline to avoid a circular import
+    # through ``darkweb`` / ``is_darkweb_url`` here.
+    def _is_onion_url(url: str) -> bool:
+        try:
+            host = (urlparse(url).hostname or "").lower()
+        except (ValueError, AttributeError):
+            return False
+        return bool(host) and (host == "onion" or host.endswith(".onion"))
     # Pre-compute once before the loop (snapshot doesn't change per URL).
     firecrawl_enabled = _firecrawl_enabled(settings_snapshot)
     firecrawl_client = None
@@ -687,8 +733,18 @@ def _fetch_content_dispatcher(
             extract_scope = "page"
             # Per-URL wall-clock; see [IMG-TRACE] url=… log below.
             _t_url_start = time.monotonic()
+            url_is_onion = _is_onion_url(url)
             try:
-                text_bytes, raw_html = downloader.download_with_html(url)
+                # Darkweb-only: pick the short-timeout onion downloader
+                # for .onion URLs so a stalled SOCKS handshake / Tor
+                # circuit build does not dominate the whole batch.
+                # Clearnet URLs use the 30 s downloader (unchanged).
+                _dl = (
+                    onion_downloader
+                    if url_is_onion and onion_downloader is not None
+                    else downloader
+                )
+                text_bytes, raw_html = _dl.download_with_html(url)
                 if text_bytes:
                     text = text_bytes.decode("utf-8", errors="replace")
                     via = "playwright"
@@ -720,7 +776,20 @@ def _fetch_content_dispatcher(
                 pw_failed = True
                 text_status = "FAIL(pw_exception)"
 
-            if pw_failed and firecrawl_enabled and firecrawl_client is not None:
+            if (
+                pw_failed
+                and firecrawl_enabled
+                and firecrawl_client is not None
+                # Darkweb-only: skip the Firecrawl fallback for .onion
+                # URLs. Firecrawl cannot reach .onion hosts (it does not
+                # egress through ldr-tor), so every attempt is a
+                # guaranteed FAIL with a ~24 s SOCKS round-trip —
+                # blocking the batch with zero recovery. Recorded as
+                # ``text_status = "SKIP(fc_onion_unsupported)"`` so the
+                # IMG-TRACE line below still tells the operator why
+                # nothing came back for this URL.
+                and not url_is_onion
+            ):
                 fc_triggered = True
                 try:
                     response = firecrawl_client.scrape(
@@ -730,6 +799,10 @@ def _fetch_content_dispatcher(
                     logger.exception(f"Firecrawl fallback failed for {url}")
                     response = None
                     text_status = "FAIL(fc_exception)"
+            elif pw_failed and url_is_onion and firecrawl_enabled:
+                # Mirror the failure path so IMG-TRACE explains why.
+                text_status = "SKIP(fc_onion_unsupported)"
+                fc_triggered = False
                 if isinstance(response, dict):
                     md = response.get("markdown")
                     if isinstance(md, str) and md.strip():
