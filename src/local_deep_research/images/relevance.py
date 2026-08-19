@@ -760,6 +760,26 @@ def build_citation_index(
                     seen.add(n)
                     nums.append(n)
         section_to_nums[idx] = nums
+        # OBS-E: per-section citation→source mapping. Emits one line
+        # per section after all [[N]] / [N] / [N,M] markers have been
+        # merged, so cite_nums here match the final report. Heading
+        # comes from ``sections[idx][0]`` (heading line). ref_url comes
+        # from num_to_url; empty when the cite number has no row in the
+        # References block (orphan citation). Lets one grep
+        #   grep '\[OBS-E\] SEC_CITE_MAP'
+        # rebuild a (section_idx, heading, cite_num, ref_url) table
+        # without reading the report markdown.
+        heading_line = (
+            sections[idx][0] if idx < len(sections) and sections[idx] else ""
+        )
+        for n in nums:
+            logger.info(
+                f"[OBS-E] SEC_CITE_MAP sec={idx} "
+                f"heading={(heading_line or '')[:120]!r} "
+                f"cite_num={n} "
+                f"ref_url={num_to_url.get(n, '')[:200]!r} "
+                f"ref_url_resolved={'yes' if n in num_to_url else 'no'}"
+            )
 
     url_to_html: dict[str, str] = {}
     for finding in results.get("findings", []) or []:
@@ -782,6 +802,54 @@ def build_citation_index(
         html = r.get("html_content")
         if url and html and url not in url_to_html:
             url_to_html[url] = html
+
+    # OBS-E (aggregate): per-section diagnostic that explains the
+    # ``html_covered`` aggregate at the IMG-TRACE CITATION_INDEX event
+    # level. For each section, reports:
+    #   cited_n       = number of unique [[N]]/[N] cite markers
+    #   html_covered  = how many of those cite_num resolved to a URL
+    #                   that has non-empty html_content
+    #   orphan_n      = how many cite_num resolved to a URL but with
+    #                   empty/missing html_content (the 0-byte class)
+    #   unresolved_n  = how many cite_num had no row in the References
+    #                   block at all
+    # This is the single log line that, in one grep, distinguishes
+    # "fetch failed" (orphan_n high, unresolved_n ~0) from "agent
+    # hallucinated a citation" (unresolved_n high).
+    try:
+        for idx in sorted(section_to_nums.keys()):
+            section_nums = section_to_nums[idx] or []
+            html_cov = sum(
+                1
+                for n in section_nums
+                if (num_to_url.get(n) or "")
+                and (url_to_html.get(num_to_url.get(n) or "") or "")
+            )
+            orphan = sum(
+                1
+                for n in section_nums
+                if (num_to_url.get(n) or "")
+                and not (url_to_html.get(num_to_url.get(n) or "") or "")
+            )
+            unresolved = sum(
+                1 for n in section_nums if not (num_to_url.get(n) or "")
+            )
+            heading_line = (
+                sections[idx][0]
+                if idx < len(sections) and sections[idx]
+                else ""
+            )
+            logger.info(
+                f"[OBS-E] SEC_HTML_COVERAGE sec={idx} "
+                f"heading={(heading_line or '')[:120]!r} "
+                f"cited_n={len(section_nums)} "
+                f"html_covered={html_cov} "
+                f"orphan_n={orphan} "
+                f"unresolved_n={unresolved}"
+            )
+    except Exception:
+        # Probe must never break build_citation_index.
+        logger.exception("[OBS-E] SEC_HTML_COVERAGE logging failed")
 
     return num_to_url, section_to_nums, url_to_html
 
