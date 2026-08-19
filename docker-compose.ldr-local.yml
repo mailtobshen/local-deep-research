@@ -262,6 +262,19 @@ services:
         DataDirectory /tmp/tordata
         Log notice stdout
         HTTPSProxy 172.25.128.1:10888
+        # Tuned per task 83a26e94 trace (guard cascade + .onion stalls):
+        # spread circuits across more guards so a single bad guard does
+        # not stall every fetch; cap circuit-build timeout at 30s (default
+        # 60s is too generous when one guard is failing 100/166 builds);
+        # disable adaptive timeout learning (the cascade previously
+        # pushed the learned cutoff higher instead of retrying); drop
+        # IPv6 from the client (the docker network has no v6 path so it
+        # just adds failure modes).
+        NumEntryGuards 5
+        CircuitBuildTimeout 30
+        LearnCircuitBuildTimeout 0
+        KeepAlivePeriod 60
+        ClientUseIPv6 0
         EOF
         exec tor -f /tmp/torrc
     security_opt:
