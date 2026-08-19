@@ -375,6 +375,91 @@ def probe_firecrawl(
     )
 
 
+def probe_ldr_tor_proxy(
+    settings_snapshot: Optional[dict],
+    timeout: int = _PROBE_TIMEOUT,
+    host: str = "ldr-tor",
+    port: int = 9050,
+) -> EngineStatus:
+    """Probe the in-cluster ldr-tor SOCKS5 daemon.
+
+    Triggered only when darkweb is a primary or secondary engine — i.e.
+    the user has either selected ``darkweb`` as the main search engine,
+    or has the darkweb merge switch on. In both cases every SearXNG
+    ``darkweb/*`` engine plus every ``.onion`` image fetch goes through
+    ``socks5h://ldr-tor:9050`` — if that SOCKS5 daemon is down the whole
+    darkweb research silently degrades to BANK_EMPTY (verified
+    2026-08-20 on research 6dc7dcd1 — 146 .onion image fetches failed
+    with onion_proxy_rejected_get).
+
+    Two-stage check:
+      1. TCP connect to ``ldr-tor:9050`` — distinguishes "container
+         not running / port not bound" from a working listener.
+      2. SOCKS5 greeting (``\\x05\\x01\\x00`` → expect ``\\x05\\x00``) —
+         proves the port speaks SOCKS5 and is not an HTTP proxy or
+         unrelated service.
+
+    Returns ``EngineStatus(kind="darkweb")`` so the row groups with the
+    existing darkweb probe results in the preflight table.
+    """
+    # Gate: only probe when darkweb is actually used.
+    primary_tool = (
+        get_setting_from_snapshot(
+            "search.tool", "searxng", settings_snapshot=settings_snapshot
+        )
+        if settings_snapshot
+        else "searxng"
+    )
+    darkweb_merge_on = get_bool_setting_from_snapshot(
+        "search.engine.web.darkweb.enabled",
+        default=False,
+        settings_snapshot=settings_snapshot,
+    )
+    if primary_tool != "darkweb" and not darkweb_merge_on:
+        return EngineStatus(
+            "ldr-tor", "skipped",
+            "darkweb 引擎未启用", kind="darkweb",
+        )
+
+    start = time.monotonic()
+    # Stage 1: TCP connect
+    try:
+        with socket.create_connection((host, port), timeout=timeout) as s:
+            latency_ms = int((time.monotonic() - start) * 1000)
+            # Stage 2: SOCKS5 greeting — VER=5, NMETHODS=1, METHOD=0 (no auth).
+            s.sendall(bytes([0x05, 0x01, 0x00]))
+            greeting = s.recv(2)
+            if greeting == bytes([0x05, 0x00]):
+                return EngineStatus(
+                    "ldr-tor", "ok",
+                    f"SOCKS5 no-auth @ {host}:{port} (daemon 可用)",
+                    latency_ms=latency_ms, kind="darkweb",
+                )
+            return EngineStatus(
+                "ldr-tor", "error",
+                f"SOCKS5 greeting 拒绝: 0x{greeting.hex()} (非 SOCKS5 服务)",
+                latency_ms=latency_ms, kind="darkweb",
+            )
+    except socket.timeout:
+        return EngineStatus(
+            "ldr-tor", "timeout",
+            f"连接 {host}:{port} 超时 ({timeout}s)",
+            kind="darkweb",
+        )
+    except ConnectionRefusedError:
+        return EngineStatus(
+            "ldr-tor", "error",
+            f"连接被拒 — ldr-tor 容器可能未运行",
+            kind="darkweb",
+        )
+    except Exception as e:  # noqa: BLE001
+        return EngineStatus(
+            "ldr-tor", "error",
+            f"{type(e).__name__}: {str(e)[:80]}",
+            kind="darkweb",
+        )
+
+
 def probe_proxy(
     settings_snapshot: Optional[dict], timeout: int = _PROBE_TIMEOUT
 ) -> EngineStatus:
@@ -792,6 +877,12 @@ def run_preflight_check(
                     )
                 )
 
+        # L0 darkweb preflight: confirm the ldr-tor SOCKS5 daemon is
+        # reachable. Gates on darkweb being the primary tool or the
+        # darkweb merge switch being on; otherwise returns "skipped".
+        # Runs in the same pool so it adds at most one parallel probe.
+        ldr_tor_future = pool.submit(probe_ldr_tor_proxy, settings_snapshot)
+
         # Proxy status leads the report (prepended, not appended).
         try:
             proxy_status = proxy_future.result(timeout=_PROBE_TIMEOUT + 2)
@@ -804,6 +895,25 @@ def run_preflight_check(
                 "proxy", "error", str(e)[:80], kind="proxy"
             )
         statuses.insert(0, proxy_status)
+
+        # L0 darkweb SOCKS5 probe result — gathered last so its
+        # timeout doesn't block the proxy / engine results. The
+        # ``skipped`` path returns immediately for non-darkweb
+        # configurations so this never costs more than the configured
+        # probe timeout.
+        try:
+            ldr_tor_status = ldr_tor_future.result(timeout=_PROBE_TIMEOUT + 2)
+        except FutureTimeout:
+            ldr_tor_status = EngineStatus(
+                "ldr-tor", "timeout", "探测超时", kind="darkweb"
+            )
+        except Exception as e:  # noqa: BLE001
+            ldr_tor_status = EngineStatus(
+                "ldr-tor", "error", str(e)[:80], kind="darkweb"
+            )
+        # Insert after proxy_status (index 0) so the row groups with
+        # the darkweb engine rows below.
+        statuses.insert(1, ldr_tor_status)
 
     return statuses
 
