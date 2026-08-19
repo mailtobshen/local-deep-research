@@ -84,6 +84,31 @@ def create_app():
 
     logger.info("Initializing Local Deep Research application...")
 
+    # Start the in-process ``.onion`` CONNECT proxy. ``get_onion_proxies``
+    # in ``security/proxy_config.py`` already points every .onion URL
+    # at ``http://127.0.0.1:18080``; this daemon actually listens on
+    # that port and tunnels to ``ldr-tor:9050`` via SOCKS5 with
+    # remote-DNS resolution. Without it every .onion fetch fails at
+    # the SSRF validator (the kernel resolver can't reach .onion
+    # without going through Tor). Best-effort: a failure here does
+    # not abort app creation — the user just sees the legacy
+    # ``Failed to resolve hostname`` behaviour until they restart.
+    try:
+        from local_deep_research.security.onion_connect_proxy import (
+            start_onion_connect_proxy,
+        )
+
+        bound = start_onion_connect_proxy()
+        if bound is not None:
+            logger.info(
+                f".onion CONNECT proxy started at http://{bound[0]}:{bound[1]}"
+            )
+    except Exception:
+        logger.exception(
+            "Failed to start .onion CONNECT proxy; .onion fetches will "
+            "continue to fail at the SSRF validator"
+        )
+
     try:
         # Get directories based on package installation
         PACKAGE_DIR = importlib_resources.files("local_deep_research") / "web"

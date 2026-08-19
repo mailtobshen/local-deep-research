@@ -13,7 +13,10 @@ from bs4 import BeautifulSoup
 from .base import BaseDownloader, ContentType, DownloadResult
 from .extraction.pipeline import extract_content_with_metadata
 from ...constants import BROWSER_USER_AGENT
-from ...security.proxy_config import fetch_with_cert_fallback
+from ...security.proxy_config import (
+    fetch_with_cert_fallback,
+    get_onion_proxies,
+)
 
 
 class HTMLDownloader(BaseDownloader):
@@ -139,11 +142,21 @@ class HTMLDownloader(BaseDownloader):
         wait_time = self.rate_tracker.apply_rate_limit(engine_type)
 
         try:
+            # Darkweb-only: ``.onion`` URLs must egress through the
+            # local CONNECT proxy (started by ``app_factory.create_app``)
+            # which tunnels to ldr-tor:9050. Without ``proxies=`` the
+            # request goes direct, the kernel resolver returns
+            # ``Failed to resolve hostname`` at the SSRF validator, and
+            # the whole batch stalls (see task 83a26e94 — 44.7 min for
+            # 111 .onion URLs). ``get_onion_proxies`` returns ``None``
+            # for clearnet URLs so the existing behaviour is preserved.
+            onion_proxies = get_onion_proxies(url)
             response = fetch_with_cert_fallback(
                 self.session,
                 url,
                 timeout=self.timeout,
                 allow_redirects=True,
+                proxies=onion_proxies,
             )
 
             if response.status_code == 200:
