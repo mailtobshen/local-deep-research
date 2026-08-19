@@ -242,23 +242,6 @@
                         SafeLogger.error('Error parsing date:', e);
                     }
                 }
-
-                // Add duration if available - format as "Xm Ys" for values over 60 seconds
-                if (metadata.duration || metadata.duration_seconds || data.duration_seconds) {
-                    const durationSeconds = parseInt(metadata.duration || metadata.duration_seconds || data.duration_seconds, 10);
-
-                    if (!isNaN(durationSeconds)) {
-                        let durationStr;
-                        if (durationSeconds < 60) {
-                            durationStr = `${durationSeconds}s`;
-                        } else {
-                            const minutes = Math.floor(durationSeconds / 60);
-                            const seconds = durationSeconds % 60;
-                            durationStr = `${minutes}m ${seconds}s`;
-                        }
-                        dateStr += ` (${durationStr})`;
-                    }
-                }
             }
 
             SafeLogger.log('Setting date to:', dateStr);
@@ -290,6 +273,33 @@
 
             SafeLogger.log('Setting mode to:', mode || 'Quick');
             modeElement.textContent = mode || i18n.t('Quick');
+        }
+
+        // Total duration field. Populated independently from the date
+        // element so the new "总耗时" data item renders as its own
+        // row instead of being appended as a parenthetical suffix to
+        // the Generated date. Formatting mirrors the previous inline
+        // rule (<60s → "Ns", ≥60s → "Xm Ys") so behaviour is unchanged
+        // for callers that consumed the old appended text.
+        const durationElement = document.getElementById('result-duration');
+        if (durationElement) {
+            const rawDuration = metadata.duration_seconds ??
+                                metadata.duration ??
+                                data.duration_seconds;
+            const durationSeconds = parseInt(rawDuration, 10);
+            if (!isNaN(durationSeconds) && durationSeconds >= 0) {
+                let durationStr;
+                if (durationSeconds < 60) {
+                    durationStr = `${durationSeconds}s`;
+                } else {
+                    const minutes = Math.floor(durationSeconds / 60);
+                    const seconds = durationSeconds % 60;
+                    durationStr = `${minutes}m ${seconds}s`;
+                }
+                durationElement.textContent = durationStr;
+            } else {
+                durationElement.textContent = i18n.t('—');
+            }
         }
     }
 
