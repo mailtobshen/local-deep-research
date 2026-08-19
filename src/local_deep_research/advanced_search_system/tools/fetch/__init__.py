@@ -87,65 +87,125 @@ def _register_in_collector(
 # web/services/research_service.py for the unified path.
 
 
-def _warn_clearnet_in_tor_mode(
+def _enforce_url_isolation(
     url: str, settings_snapshot: dict | None
-) -> None:
-    """Log a warning if a non-.onion URL is fetched under tor isolation.
+) -> str | None:
+    """Reject non-.onion URLs at the fetcher boundary, but only under tor mode.
 
-    Network isolation in the agent's tool list (see
-    ``langgraph_agent_strategy._build_tools`` and the mcp equivalent)
-    already removes clearnet sibling engines when the user picked a
-    tor-egress engine. But the *fetcher* itself is not aware of which
-    engine produced the URL — it just downloads whatever the agent
-    hands it. If the agent surfaces a ``fetch_content("https://...")``
-    call anyway (e.g. because a .onion page linked out), we want to
-    leave a loud audit trail that a clearnet request happened during a
-    Tor session.
+    The activation condition is the *primary engine's* network. If the
+    user picked a clearnet engine (google, bing, …) the isolation
+    policy does not apply and any URL is allowed — the agent is doing
+    regular research. Only when the chosen primary engine is tor-egress
+    does the URL-level check kick in.
 
-    Per the user's choice we **do not block** the fetch — blocking
-    would also block legitimate .onion content that embeds clearnet
-    redirects. We just record it.
+    Inside tor mode the URL itself is the only authority: ``.onion`` is
+    the Tor reserved TLD and no clearnet domain can ever end in
+    ``.onion``. We refuse any URL that fails this check, which closes
+    two distinct failure modes in one rule:
+
+    1. **Race-condition safety.** Earlier policy checked the primary
+       engine's network and only logged a warning. That let a clearnet
+       URL slip through whenever the session engine and the URL
+       diverged (e.g. a Tor-search result that linked out, or an LLM
+       call coming back after the engine was swapped). The check is
+       now local and stateless — once we are inside tor mode, no
+       engine snapshot to drift, no flag to forget to set.
+
+    2. **LLM URL fabrication defence.** If the LLM invents a
+       plausible-looking clearnet URL that never existed, the fetcher
+       used to happily attempt the request. Rejecting on URL shape
+       alone means a fabricated URL is short-circuited before any DNS /
+       TCP work, and the agent sees a deterministic refusal it can
+       reason about.
+
+    Per the user's choice, ``.onion`` URLs are always allowed in tor
+    mode. URLs embedded inside a fetched ``.onion`` page (the page
+    source contains a ``https://...`` reference) are *not* fetched by
+    this tool — the tool only fetches the single URL the agent
+    passes; it does not follow page links.
 
     Args:
         url: The URL the agent is about to fetch.
-        settings_snapshot: Thread-safe settings snapshot.
+        settings_snapshot: Thread-safe settings snapshot (used to read
+            the chosen primary engine and its network).
+
+    Returns:
+        ``None`` if the URL is allowed (either because we are not in
+        tor mode, or because the URL is ``.onion``). A fixed refusal
+        string otherwise — the caller should return it directly to
+        the agent without invoking ``ContentFetcher``.
     """
+    # ----- Gate 1: only enforce isolation under tor mode. -----
     if not settings_snapshot:
-        return
-    # Lazily resolve the tor-isolated flag from the chosen primary engine
-    # so this helper stays usable in tests without a strategy instance.
+        # Without a snapshot we cannot know the primary engine. Be
+        # safe: treat as not-tor and allow, matching the pre-fix
+        # behaviour for environments where the snapshot was not
+        # threaded through.
+        return None
+    try:
+        from local_deep_research.web_search_engines.search_engines_config import (
+            get_setting_from_snapshot,
+            get_engine_network,
+        )
+    except Exception:
+        logger.exception(
+            "[IMG-TRACE] FETCH_CONTENT_BLOCKED "
+            f"url={url} reason=clearnet_url "
+            "detail=engine_network_import_failed"
+        )
+        return (
+            f"[FETCH BLOCKED] clearnet URL {url!r} rejected: URL "
+            "isolation check could not run (engine-network helper "
+            "import failed); refusing the fetch to preserve isolation."
+        )
+    try:
+        current_tool = get_setting_from_snapshot(
+            "search.tool", None, settings_snapshot=settings_snapshot
+        )
+    except Exception:
+        current_tool = None
+    if not current_tool:
+        return None
+    try:
+        if get_engine_network(current_tool, settings_snapshot) != "tor":
+            return None  # Clearnet primary engine: no isolation.
+    except Exception:
+        # If we cannot resolve the engine's network, be conservative
+        # and skip the check rather than blocking every fetch — the
+        # alternative would be a hard outage for users whose engine
+        # config drifted.
+        return None
+
+    # ----- Gate 2: in tor mode, accept only .onion URLs. -----
     try:
         from local_deep_research.utilities.is_darkweb_url import (
             is_darkweb_url,
         )
     except Exception:
-        return
+        logger.exception(
+            "[IMG-TRACE] FETCH_CONTENT_BLOCKED "
+            f"url={url} reason=clearnet_url "
+            "detail=is_darkweb_url_import_failed"
+        )
+        return (
+            f"[FETCH BLOCKED] clearnet URL {url!r} rejected: URL "
+            "isolation check could not run (is_darkweb_url import "
+            "failed); refusing the fetch to preserve isolation."
+        )
     if is_darkweb_url(url):
-        return  # .onion URL is expected; no warning.
-    try:
-        from local_deep_research.web_search_engines.search_engines_config import (
-            get_setting_from_snapshot,
-        )
-        current_tool = get_setting_from_snapshot(
-            "search.tool", None, settings_snapshot=settings_snapshot
-        )
-    except Exception:
-        return
-    if not current_tool:
-        return
-    try:
-        from local_deep_research.web_search_engines.search_engines_config import (
-            get_engine_network,
-        )
-        if get_engine_network(current_tool, settings_snapshot) != "tor":
-            return
-    except Exception:
-        return
+        return None  # .onion URL is expected; allow.
     logger.warning(
-        f"[ISOLATION] fetch_content called with clearnet URL {url!r} while "
-        f"primary engine {current_tool!r} is tor-isolated. The fetch will "
-        f"proceed (per policy: allow-but-warn), but this is a privacy "
-        f"event — the user's traffic left the Tor exit."
+        "[IMG-TRACE] FETCH_CONTENT_BLOCKED "
+        f"url={url} reason=clearnet_url "
+        f"primary_engine={current_tool}"
+    )
+    return (
+        f"[FETCH BLOCKED] clearnet URL {url!r} rejected: this research "
+        "session isolates to .onion sources only because the primary "
+        f"engine {current_tool!r} is tor-egress. .onion URLs (and only "
+        ".onion URLs) can be fetched. If the agent surfaced this URL "
+        "from a fetched .onion page, treat its content as unverified "
+        "— do not follow the link."
     )
 
 
@@ -154,10 +214,20 @@ def _make_full_fetch_tool(
 ):
     @tool
     def fetch_content(url: str) -> str:
-        """Download and read the full text content from a URL. Use when search snippets aren't detailed enough."""
+        """Download and read the full text content from a URL. Use when search snippets aren't detailed enough.
+
+        Only ``.onion`` URLs are allowed; clearnet URLs are rejected at
+        the tool boundary (see ``_enforce_url_isolation``).
+        """
+        # Reject clearnet URLs before importing ``ContentFetcher``: if the
+        # fetcher module fails to load (e.g. a transient dependency
+        # error), the isolation check must still hold — refusing a
+        # clearnet URL is the safer default than letting it leak through.
+        blocked = _enforce_url_isolation(url, settings_snapshot)
+        if blocked is not None:
+            return blocked
         from local_deep_research.content_fetcher import ContentFetcher
 
-        _warn_clearnet_in_tor_mode(url, settings_snapshot)
         enable_js = _read_js_rendering_setting(settings_snapshot)
         try:
             with ContentFetcher(
@@ -215,10 +285,17 @@ def _make_summary_fetch_tool(
         """Fetch a URL and return only the spans of text relevant to ``focus``.
         Pass the specific question or claim you want answered as ``focus`` — the
         tool will quote relevant facts verbatim and discard unrelated content.
+
+        Only ``.onion`` URLs are allowed; clearnet URLs are rejected at
+        the tool boundary (see ``_enforce_url_isolation``).
         """
+        # See the full-mode variant for why the isolation check runs
+        # before importing ``ContentFetcher``.
+        blocked = _enforce_url_isolation(url, settings_snapshot)
+        if blocked is not None:
+            return blocked
         from local_deep_research.content_fetcher import ContentFetcher
 
-        _warn_clearnet_in_tor_mode(url, settings_snapshot)
         enable_js = _read_js_rendering_setting(settings_snapshot)
         try:
             with ContentFetcher(
