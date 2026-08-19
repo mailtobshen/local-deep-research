@@ -447,14 +447,17 @@ def _make_summary_fetch_tool(
                         f"[IMG-TRACE-DARKWEB] LLMCALL url={url} "
                         f"mode={mode_label} llm_called=1"
                     )
-                # OBS-B: summary-mode success. Body bytes are the
-                # post-summary length when the LLM produced output, else
-                # the raw page length — both come from `len(content)`
-                # which is the page text the LLM was handed.
+                # OBS-B: summary-mode success. Splits the byte counts into
+                # input_bytes (= raw page text handed to the LLM)
+                # and output_bytes (= what the LLM produced; empty if
+                # the summarise step was skipped). Failure paths log
+                # body_bytes=0 to flag "nothing returned to the caller",
+                # so the success-path input_bytes is intentionally a
+                # different name — they're not the same quantity.
                 logger.info(
                     f"[OBS-B] FETCH_OUTCOME url={url} mode=summary "
-                    f"status=success body_bytes={len(content)} "
-                    f"summary_bytes={len(summary or '')} "
+                    f"status=success input_bytes={len(content)} "
+                    f"output_bytes={len(summary or '')} "
                     f"cite_idx={cite_idx} title={(title or '')[:80]!r}"
                 )
                 # Image extraction moved entirely to the
