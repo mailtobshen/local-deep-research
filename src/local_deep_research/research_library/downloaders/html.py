@@ -172,12 +172,46 @@ class HTMLDownloader(BaseDownloader):
                         retry_count=1,
                         search_result_count=1,
                     )
+                    # OBS-G: per-fetch outcome probe. Emits one line per
+                    # successful HTTP response so an operator can grep
+                    # `[OBS-G] FETCH_STATUS` to partition darkweb batch
+                    # failures (HTTP 200 + non-html / HTTP !=200 /
+                    # exception) without correlating against
+                    # downstream logs. Verified 2026-08-20 on research
+                    # 2a603351: 193 .onion URLs all returned via=none
+                    # text=SKIP(fc_onion_unsupported) images=0 — the
+                    # IMG-TRACE probe alone couldn't distinguish
+                    # 'never received HTML' from 'received non-html'.
+                    # content_len exposes the latter so the next run
+                    # can attribute the 0 images correctly.
+                    logger.info(
+                        f"[OBS-G] FETCH_STATUS url={url} "
+                        f"host={(urlparse(url).hostname or '-').lower()} "
+                        f"status=200 content_type={content_type!r} "
+                        f"content_len={len(response.text)} "
+                        f"elapsed_s=0"
+                    )
                     return response.text
+                # Non-HTML 200 — common on darkweb (binary, captcha
+                # challenge, JS-only page that returns 1-line stub).
                 logger.warning(
                     f"Unexpected content type for HTML download: {content_type}"
                 )
+                logger.info(
+                    f"[OBS-G] FETCH_STATUS url={url} "
+                    f"host={(urlparse(url).hostname or '-').lower()} "
+                    f"status=200 content_type={content_type!r} "
+                    f"content_len={len(getattr(response, 'text', '') or '')} "
+                    f"reason=non_html_content_type"
+                )
                 return None
             logger.warning(f"HTTP {response.status_code} fetching {url}")
+            logger.info(
+                f"[OBS-G] FETCH_STATUS url={url} "
+                f"host={(urlparse(url).hostname or '-').lower()} "
+                f"status={response.status_code} "
+                f"reason=http_error"
+            )
             self.rate_tracker.record_outcome(
                 engine_type=engine_type,
                 wait_time=wait_time,
@@ -189,6 +223,13 @@ class HTMLDownloader(BaseDownloader):
 
         except Exception as e:
             logger.exception(f"Error fetching HTML from {url}")
+            logger.info(
+                f"[OBS-G] FETCH_STATUS url={url} "
+                f"host={(urlparse(url).hostname or '-').lower()} "
+                f"status=exception "
+                f"exc_type={type(e).__name__} "
+                f"reason=exception"
+            )
             self.rate_tracker.record_outcome(
                 engine_type=engine_type,
                 wait_time=wait_time,
