@@ -206,10 +206,30 @@ class HTMLDownloader(BaseDownloader):
                 )
                 return None
             logger.warning(f"HTTP {response.status_code} fetching {url}")
+            # OBS-G failure_mode partition. .onion HTTP 400 has two
+            # distinct root causes verified 2026-08-20 on research
+            # 3b848b79:
+            #   (a) onion-connect-proxy rejected the GET (CONNECT-only
+            #       proxy returned 400 Bad Request because the
+            #       client sent GET instead of CONNECT method)
+            #   (b) the .onion site itself returned 400 (deadlink /
+            #       anti-bot) — the proxy tunnel succeeded but the
+            #       remote server rejected the request
+            # Clearnet HTTP 400 is treated as a generic http_error
+            # (no onion-specific classification possible without
+            # additional probes).
+            host = (urlparse(url).hostname or "").lower()
+            failure_mode = (
+                "onion_proxy_rejected_get"
+                if (host == "onion" or host.endswith(".onion"))
+                and response.status_code == 400
+                else "http_error"
+            )
             logger.info(
                 f"[OBS-G] FETCH_STATUS url={url} "
-                f"host={(urlparse(url).hostname or '-').lower()} "
+                f"host={host} "
                 f"status={response.status_code} "
+                f"failure_mode={failure_mode} "
                 f"reason=http_error"
             )
             self.rate_tracker.record_outcome(
@@ -223,11 +243,29 @@ class HTMLDownloader(BaseDownloader):
 
         except Exception as e:
             logger.exception(f"Error fetching HTML from {url}")
+            # OBS-G failure_mode partition for the exception path.
+            # ``OnionConnectProxyError`` from onion-connect-proxy.py
+            # signals the SOCKS5 handshake or .onion CONNECT to the
+            # tor daemon failed; any other exception is a generic
+            # fetch_exception (DNS, TLS, connection reset, etc.).
+            host = (urlparse(url).hostname or "").lower()
+            exc_class_name = type(e).__name__
+            failure_mode = (
+                "onion_tor_socks_failed"
+                if exc_class_name == "OnionConnectProxyError"
+                else (
+                    "onion_proxy_unreachable"
+                    if exc_class_name in {"ConnectionError", "ConnectionRefusedError"}
+                    and (host == "onion" or host.endswith(".onion"))
+                    else "fetch_exception"
+                )
+            )
             logger.info(
                 f"[OBS-G] FETCH_STATUS url={url} "
-                f"host={(urlparse(url).hostname or '-').lower()} "
+                f"host={host} "
                 f"status=exception "
-                f"exc_type={type(e).__name__} "
+                f"exc_type={exc_class_name} "
+                f"failure_mode={failure_mode} "
                 f"reason=exception"
             )
             self.rate_tracker.record_outcome(
