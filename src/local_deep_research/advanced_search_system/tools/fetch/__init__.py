@@ -275,13 +275,43 @@ def _make_full_fetch_tool(
                             f"[IMG-TRACE-DARKWEB] LLMCALL url={url} "
                             f"mode=full llm_called=1"
                         )
+                    # OBS-B: success outcome (mirrors the IMG-TRACE
+                    # schema but at uniform level for both kept and
+                    # dropped paths; lets a single grep
+                    #   grep '\[OBS-B\] FETCH_OUTCOME'
+                    # reconstruct a per-fetch table without forking on
+                    # the IMG-TRACE event name).
+                    logger.info(
+                        f"[OBS-B] FETCH_OUTCOME url={url} mode=full "
+                        f"status=success body_bytes={len(content)} "
+                        f"cite_idx={cite_idx} title={(title or '')[:80]!r}"
+                    )
                     # Image extraction moved entirely to the
                     # post-report _deferred_image_fill pass (fix #5).
                     return (
                         f"[{cite_idx}] Title: {title}\nURL: {url}\n\n{content}"
                     )
-                return f"Failed to fetch {url}: {result.get('error', 'unknown error')}"
+                # OBS-B: non-success ContentFetcher result (timeout /
+                # 5xx / proxy refused / empty body, etc.) — the IMG-TRACE
+                # schema above only logs success, so this closes the
+                # failure half of the per-fetch table.
+                err = result.get("error", "unknown error")
+                logger.info(
+                    f"[OBS-B] FETCH_OUTCOME url={url} mode=full "
+                    f"status=failed body_bytes=0 err={(err or '')[:200]!r}"
+                )
+                return f"Failed to fetch {url}: {err}"
         except Exception as exc:
+            # OBS-B: uncaught exception path — distinguishes a
+            # ContentFetcher exception from a "gracefully reported"
+            # failure above; the exc_type field is the cheapest signal
+            # for whether the cause was SSRF / Tor / network.
+            logger.info(
+                f"[OBS-B] FETCH_OUTCOME url={url} mode=full "
+                f"status=exception body_bytes=0 "
+                f"exc_type={type(exc).__name__} "
+                f"err={(str(exc) or '')[:200]!r}"
+            )
             logger.exception("fetch_content tool error")
             return f"Error fetching {url}: {exc}"
 
@@ -337,7 +367,15 @@ def _make_summary_fetch_tool(
             ) as fetcher:
                 result = fetcher.fetch(url, max_length=CONTENT_MAX_LENGTH)
                 if result.get("status") != "success":
-                    return f"Failed to fetch {url}: {result.get('error', 'unknown error')}"
+                    # OBS-B: summary-mode fetch failure (parallel to the
+                    # full-mode failed event).
+                    err = result.get("error", "unknown error")
+                    logger.info(
+                        f"[OBS-B] FETCH_OUTCOME url={url} mode=summary "
+                        f"status=failed body_bytes=0 "
+                        f"err={(err or '')[:200]!r}"
+                    )
+                    return f"Failed to fetch {url}: {err}"
 
                 title = result.get("title", "")
                 content = result.get("content", "")
@@ -358,6 +396,16 @@ def _make_summary_fetch_tool(
                         summary_msg, "content", str(summary_msg)
                     ).strip()
                 except Exception as exc:
+                    # OBS-B: summarizer-LLM exception (distinct from
+                    # ContentFetcher exception above — the page may have
+                    # been fetched fine but the LLM summarise step blew
+                    # up).
+                    logger.info(
+                        f"[OBS-B] FETCH_OUTCOME url={url} mode=summary "
+                        f"status=exception body_bytes=0 "
+                        f"exc_type={type(exc).__name__} "
+                        f"err={(str(exc) or '')[:200]!r}"
+                    )
                     logger.exception("fetch_content summary LLM error")
                     return f"Error summarizing {url}: {exc}"
 
@@ -397,8 +445,18 @@ def _make_summary_fetch_tool(
                 if is_darkweb_url(url):
                     logger.info(
                         f"[IMG-TRACE-DARKWEB] LLMCALL url={url} "
-                        f"mode=summary llm_called=1"
+                        f"mode={mode_label} llm_called=1"
                     )
+                # OBS-B: summary-mode success. Body bytes are the
+                # post-summary length when the LLM produced output, else
+                # the raw page length — both come from `len(content)`
+                # which is the page text the LLM was handed.
+                logger.info(
+                    f"[OBS-B] FETCH_OUTCOME url={url} mode=summary "
+                    f"status=success body_bytes={len(content)} "
+                    f"summary_bytes={len(summary or '')} "
+                    f"cite_idx={cite_idx} title={(title or '')[:80]!r}"
+                )
                 # Image extraction moved entirely to the
                 # post-report _deferred_image_fill pass (fix #5).
                 return f"[{cite_idx}] Title: {title}\nURL: {url}\n\n{summary}"
