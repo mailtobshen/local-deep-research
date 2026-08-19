@@ -27,6 +27,7 @@ from . import semantic_matcher
 from .serialize import loads_images
 from .store import ImageStore, _IMG_RE
 from .extractor import pop_channel_coverage
+from local_deep_research.utilities.is_darkweb_url import is_darkweb_url
 
 
 def _log_end(research_id: str, status: str) -> None:
@@ -627,6 +628,21 @@ def enhance_report_with_images(
             f"[IMG-TRACE] INSERT research={research_id} "
             f"placements={len(placements)}"
         )
+        # Darkweb-only MDINSERT probe: same counters as the existing
+        # INSERT line under the darkweb namespace. Gated on at least
+        # one placement source_url being .onion so clearnet runs emit
+        # no event. ``sections`` is the count of distinct section
+        # indices that received at least one image. The placement
+        # tuple is unpacked positionally as
+        # ``(alt, img_url, source_url, cite_num, ref_url, sec_idx)``
+        # matching the PLACEMENT log line at line 618 above.
+        _src_urls = [p[2] for p in placements]
+        if any(is_darkweb_url(u) for u in _src_urls):
+            _sections_with_img = len({p[5] for p in placements})
+            logger.info(
+                f"[IMG-TRACE-DARKWEB] MDINSERT research={research_id} "
+                f"placements={len(placements)} sections={_sections_with_img}"
+            )
 
         # Stage 4: dedupe across the whole document.
         enhanced, _orig, _uniq = _dedupe_images(enhanced)
@@ -675,6 +691,18 @@ def enhance_report_with_images(
             f"chosen={len(chosen)} succeeded={succeeded_count} "
             f"failed={len(failed_persist)}"
         )
+        # Darkweb-only PERSIST probe: emit a parallel rollup under the
+        # IMG-TRACE-DARKWEB namespace so a single grep reconstructs the
+        # chosen/succeeded/failed counters for one task. Gated on at
+        # least one chosen URL being .onion — same shape as the
+        # existing PERSIST line, no value duplication, just a
+        # darkweb-grep-friendly mirror.
+        if any(is_darkweb_url(u) for u in chosen):
+            logger.info(
+                f"[IMG-TRACE-DARKWEB] PERSIST research={research_id} "
+                f"chosen={len(chosen)} succeeded={succeeded_count} "
+                f"failed={len(failed_persist)}"
+            )
         if failed_persist:
             logger.warning(
                 f"[IMG-TRACE] PERSIST_BROKEN_LINKS research={research_id} "

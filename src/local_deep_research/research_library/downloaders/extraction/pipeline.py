@@ -852,6 +852,26 @@ def _fetch_content_dispatcher(
                 f"extract_scope={extract_scope} "
                 f"elapsed_s={time.monotonic() - _t_url_start:.3f}"
             )
+            # Darkweb-only HTML fetch outcome. Same gate as the
+            # existing onion_downloader short-circuit above — uses the
+            # inline _is_onion_url helper to avoid a circular import
+            # through is_darkweb_url. Clearnet URLs produce no event
+            # here so the darkweb grep filter is precise.
+            if url_is_onion:
+                _html_bytes = len(raw_html) if raw_html else 0
+                logger.info(
+                    f"[IMG-TRACE-DARKWEB] HTMLFETCH url={url} via={via} "
+                    f"text={text_status} bytes={_html_bytes} "
+                    f"elapsed_s={time.monotonic() - _t_url_start:.3f}"
+                )
+                # Darkweb-only image-pick aggregate: one rollup line
+                # per URL after the per-image FETCHED_IMG loop, so
+                # ``grep IMG-TRACE-DARKWEB.*IMAGEPICK`` returns one
+                # row per fetched .onion page.
+                logger.info(
+                    f"[IMG-TRACE-DARKWEB] IMAGEPICK src_url={url} "
+                    f"count={len(images)}"
+                )
             # Per-image inventory on the fetcher path. The page-level
             # ``url=`` line above only counts images; the per-image lines
             # below carry the alt / source_url for every image that the

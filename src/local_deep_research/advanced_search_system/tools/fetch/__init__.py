@@ -266,6 +266,15 @@ def _make_full_fetch_tool(
                         f"url={url} mode=full "
                         f"result_status=success html_len={len(content)}"
                     )
+                    # Darkweb-only LLM-call probe: same is_darkweb_url
+                    # gate already used for the JS-off override above
+                    # (line ~243). Clearnet URLs emit no event so the
+                    # darkweb grep filter is precise.
+                    if is_darkweb_url(url):
+                        logger.info(
+                            f"[IMG-TRACE-DARKWEB] LLMCALL url={url} "
+                            f"mode=full llm_called=1"
+                        )
                     # Image extraction moved entirely to the
                     # post-report _deferred_image_fill pass (fix #5).
                     return (
@@ -384,6 +393,12 @@ def _make_summary_fetch_tool(
                     f"url={url} mode=summary "
                     f"result_status=success html_len={len(summary or content)}"
                 )
+                # Darkweb-only LLM-call probe (summary variant).
+                if is_darkweb_url(url):
+                    logger.info(
+                        f"[IMG-TRACE-DARKWEB] LLMCALL url={url} "
+                        f"mode=summary llm_called=1"
+                    )
                 # Image extraction moved entirely to the
                 # post-report _deferred_image_fill pass (fix #5).
                 return f"[{cite_idx}] Title: {title}\nURL: {url}\n\n{summary}"

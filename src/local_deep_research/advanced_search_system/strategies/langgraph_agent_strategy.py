@@ -360,6 +360,13 @@ def _make_web_search_tool(
         "variants, call research_subtopic to summarise what little "
         "evidence you have instead of repeating failed searches."
     )
+    DARKWEB_FETCH_CONTENT_HINT = (
+        "[HINT] SearXNG returns .onion URLs as search results but the "
+        "snippets are typically only the page title and a 1-line "
+        "description. Call fetch_content(url) on any .onion URL you "
+        "actually want to cite — the snippet alone is rarely enough "
+        "to support a substantive claim.\n"
+    )
 
     @tool
     def web_search(query: str) -> str:
@@ -993,6 +1000,12 @@ class LangGraphAgentStrategy(BaseSearchStrategy):
             "without subtopic follow-up is not an acceptable answer.\n"
             f"{fetch_line}"
             f"{engine_step}"
+            # Darkweb-only fetch_content nudge: clearnet runs leave this
+            # as the empty string so the prompt text below is unchanged
+            # for non-darkweb engines. Built off the same
+            # search_engine_name gate as the loop-break state above (line
+            # 350) and the CJK fan-out (line 378).
+            f"{DARKWEB_FETCH_CONTENT_HINT if self._search_engine_name == 'darkweb' else ''}"
             "5. When you have enough information, provide a comprehensive answer "
             "citing sources as [1], [2], etc.\n"
         )

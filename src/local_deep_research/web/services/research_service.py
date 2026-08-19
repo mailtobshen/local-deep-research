@@ -776,6 +776,19 @@ def _deferred_image_fill(
                 f"cite_num={cite_num_for_url} "
                 f"ref_url={url}"
             )
+        # Darkweb-only cite-URL bind rollup. One line per (cite, url)
+        # pair so a single grep recovers the bind table. Gated on
+        # the URL itself — by definition, all .onion runs surface
+        # .onion URLs here so the gate is exact.
+        from local_deep_research.utilities.is_darkweb_url import (
+            is_darkweb_url,
+        )
+        if is_darkweb_url(url):
+            logger.info(
+                f"[IMG-TRACE-DARKWEB] CITEBIND research={research_id} "
+                f"cite_num={cite_num_for_url} ref_url={url} "
+                f"bound={len(images)}"
+            )
         canonical_hit: str | None = None
         attached = False
         findings_scanned = 0
