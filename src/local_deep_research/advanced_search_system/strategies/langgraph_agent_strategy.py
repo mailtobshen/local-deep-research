@@ -1000,7 +1000,33 @@ class LangGraphAgentStrategy(BaseSearchStrategy):
                     msgs = chunk["tools"].get("messages", [])
                     for msg in msgs:
                         tool_name = getattr(msg, "name", "tool")
-                        tool_content = str(getattr(msg, "content", ""))
+                        raw_content = getattr(msg, "content", "")
+                        # LangGraph prebuilt 1.1+ may deliver tool
+                        # results as either a plain ``str`` or as a
+                        # ``list[dict]`` of content blocks (e.g.
+                        # ``[{"type": "text", "text": "..."}]``).
+                        # Normalise to a single string so both the
+                        # preview log and the sentinel-detection below
+                        # work regardless of shape.
+                        if isinstance(raw_content, list):
+                            parts = []
+                            for block in raw_content:
+                                if isinstance(block, dict):
+                                    parts.append(
+                                        str(
+                                            block.get(
+                                                "text",
+                                                block.get(
+                                                    "content", block
+                                                ),
+                                            )
+                                        )
+                                    )
+                                else:
+                                    parts.append(str(block))
+                            tool_content = "".join(parts)
+                        else:
+                            tool_content = str(raw_content)
                         preview = tool_content[:150].replace("\n", " ")
                         self._update_progress(
                             f"Result from {tool_name}: {preview}",
