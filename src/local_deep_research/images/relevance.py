@@ -761,19 +761,25 @@ def build_citation_index(
                     nums.append(n)
         section_to_nums[idx] = nums
         # OBS-E: per-section citation→source mapping. Emits one line
-        # per section after all [[N]] / [N] / [N,M] markers have been
+        # per cite_num after all [[N]] / [N] / [N,M] markers have been
         # merged, so cite_nums here match the final report. Heading
         # comes from ``sections[idx][0]`` (heading line). ref_url comes
         # from num_to_url; empty when the cite number has no row in the
-        # References block (orphan citation). Lets one grep
+        # References block (orphan citation). Cardinality: one line per
+        # cite_num per section, so ~N_lines per research — too high for
+        # default info level. Demoted to debug; enable with
+        # ``LOGURU_LEVEL=DEBUG`` to reconstruct the full
+        # (section_idx, heading, cite_num, ref_url) table without
+        # reading the report markdown:
         #   grep '\[OBS-E\] SEC_CITE_MAP'
-        # rebuild a (section_idx, heading, cite_num, ref_url) table
-        # without reading the report markdown.
+        # The info-level SEC_HTML_COVERAGE aggregate below carries the
+        # default diagnostic signal (cited_n / html_covered / orphan_n
+        # / unresolved_n per section).
         heading_line = (
             sections[idx][0] if idx < len(sections) and sections[idx] else ""
         )
         for n in nums:
-            logger.info(
+            logger.debug(
                 f"[OBS-E] SEC_CITE_MAP sec={idx} "
                 f"heading={(heading_line or '')[:120]!r} "
                 f"cite_num={n} "
@@ -809,8 +815,11 @@ def build_citation_index(
     #   cited_n       = number of unique [[N]]/[N] cite markers
     #   html_covered  = how many of those cite_num resolved to a URL
     #                   that has non-empty html_content
-    #   orphan_n      = how many cite_num resolved to a URL but with
-    #                   empty/missing html_content (the 0-byte class)
+    #   orphan_n      = how many cite_num resolved to a URL but that
+    #                   URL is missing from url_to_html (the dict only
+    #                   stores entries with non-empty html_content, per
+    #                   the ``if url and html`` gate in the loop above;
+    #                   so 'missing' is the only way to be in this class)
     #   unresolved_n  = how many cite_num had no row in the References
     #                   block at all
     # This is the single log line that, in one grep, distinguishes
