@@ -320,7 +320,46 @@ def _make_web_search_tool(
     tool emits ``LDR_NO_RESULTS_PREFIX + json`` instead of the usual
     human-readable "No results found" message. The strategy layer
     parses that sentinel and aborts the run to avoid hallucination.
+
+    Darkweb loop-break (see task a5f52f0a / 83a26e94 trace)
+    -------------------------------------------------------
+    On darkweb runs the LLM can get stuck retrying the *same* query up
+    to nine times even when every attempt returns no_results — observed
+    on 83a26e94 with the exact query "fentanyl trafficking organized
+    crime cartels Mexico Sinaloa Gulf Cartel 2024 UNODC World Drug
+    Report" repeated 9× in a row. The existing ``no_results_abort``
+    sentinel fires only on the next iteration of the outer
+    ``analyze_topic`` loop, so it does not break the inner LangGraph
+    agent's reflection loop.
+
+    ``darkweb_loop_state`` is a per-tool closure dict that counts how
+    many times each query has come back empty. After 3 no_results on
+    the same query the tool result is augmented with a planning
+    override: instead of just returning the sentinel, the tool tells
+    the agent to **plan a fundamentally different query** (different
+    angle, different entity, different time window) and stops emitting
+    further empty iterations. Clearnet engines never touch this state —
+    ``darkweb_loop_state`` only exists when ``search_engine_name ==
+    "darkweb"``, so clearnet web_search behaviour is unchanged.
     """
+
+    # Per-tool loop-break state, darkweb only. Maps ``query`` ->
+    # ``count`` of consecutive no_results responses. The key is the
+    # raw query string the LLM passed; different queries don't collide.
+    # Only constructed when the engine is darkweb — see below.
+    darkweb_loop_state: dict[str, int] | None = (
+        {"queries": {}} if search_engine_name == "darkweb" else None
+    )
+    DARKWEB_NO_RESULTS_REPLAN_HINT = (
+        "[LOOP-BREAK] This exact query has returned 0 results "
+        "{count} times in a row. Stop re-issuing it verbatim. "
+        "Plan a fundamentally different query: pick a different "
+        "entity (a specific drug name, a specific country or cartel), "
+        "a different angle (supply chain vs. law-enforcement response), "
+        "or a different time window. If you have exhausted reasonable "
+        "variants, call research_subtopic to summarise what little "
+        "evidence you have instead of repeating failed searches."
+    )
 
     @tool
     def web_search(query: str) -> str:
@@ -399,15 +438,43 @@ def _make_web_search_tool(
                     f"engine={search_engine_name!r} "
                     f"sub_queries={attempted_queries}"
                 )
+                # Darkweb-only loop-break: count consecutive no_results
+                # for this exact query. Clearnet paths leave
+                # ``darkweb_loop_state`` as None and skip the whole
+                # block, so the existing clearnet web_search behaviour
+                # is byte-for-byte unchanged.
+                loop_break_note = ""
+                if darkweb_loop_state is not None:
+                    seen = darkweb_loop_state.setdefault("queries", {})
+                    seen[query] = seen.get(query, 0) + 1
+                    count = seen[query]
+                    if count >= 3:
+                        logger.warning(
+                            f"[LOOP-BREAK] darkweb query repeated "
+                            f"{count}× with no_results; injecting "
+                            f"replan hint for query={query!r}"
+                        )
+                        loop_break_note = (
+                            DARKWEB_NO_RESULTS_REPLAN_HINT.format(
+                                count=count
+                            )
+                        )
                 # Return a sentinel the strategy layer can detect to
                 # abort the rest of the run. The previous plain-text
                 # "No results found" message was indistinguishable
                 # from a legitimate empty response and let the LLM
                 # hallucinate freely on Tor-isolated runs.
-                return _format_no_results_payload(
+                payload = _format_no_results_payload(
                     original_query=query,
                     sub_queries_attempted=attempted_queries,
                 )
+                if loop_break_note:
+                    # The strategy layer still sees the sentinel
+                    # prefix and aborts on its own schedule; we just
+                    # append a human-readable replan hint that the LLM
+                    # reads before deciding its next move.
+                    payload = f"{payload}\n\n{loop_break_note}"
+                return payload
 
             start = collector.add_results(
                 results, engine_name=search_engine_name
