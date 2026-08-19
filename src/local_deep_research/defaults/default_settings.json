@@ -5589,5 +5589,19 @@
         "ui_element": "number",
         "value": 10,
         "visible": true
+    },
+    "search.engine.web.darkweb.default_params.instance_url": {
+        "category": "search_engines",
+        "description": "The SearXNG API endpoint URL used for darkweb searches. Defaults to the in-network sidecar hostname 'searxng-ldr:8080'; override only when running the LDR app outside Docker or pointing at an external SearXNG instance. Without this entry the factory path falls back to 'http://localhost:8080' which is unreachable inside the container, causing every agent web_search to short-circuit with an empty result.",
+        "editable": true,
+        "max_value": null,
+        "min_value": null,
+        "name": "Endpoint URL",
+        "options": null,
+        "step": null,
+        "type": "SEARCH",
+        "ui_element": "text",
+        "value": "http://searxng-ldr:8080",
+        "visible": true
     }
 }
