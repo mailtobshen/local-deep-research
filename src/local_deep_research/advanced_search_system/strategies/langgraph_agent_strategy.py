@@ -261,12 +261,29 @@ def _format_results(results: list[dict], start_idx: int) -> str:
 
 
 # Tool-level sentinel string returned by ``web_search`` when the engine
-# yielded zero results across all sub-queries. The strategy layer (and
+# yielded no results across all sub-queries. The strategy layer (and
 # the MCP strategy) look for this prefix to decide whether to abort the
 # rest of the research to prevent LLM hallucination on a Tor-isolated
 # run where every query came back empty. See ``_make_web_search_tool``
 # for how the sentinel is emitted.
 LDR_NO_RESULTS_PREFIX = "__LDR_NO_RESULTS__|"
+
+
+# Darkweb-only prompt hint injected into the analyze_topic system
+# prompt when the primary engine is the darkweb engine. Tells the LLM
+# that SearXNG .onion snippets are sparse (page title + 1-line
+# description) and that any .onion URL the LLM actually wants to cite
+# should first be fetched via ``fetch_content(url)``. Defined at module
+# scope (not inside ``_make_web_search_tool``) because the analyze_topic
+# prompt-construction site is in a different function and needs to
+# read this string as a module-level binding.
+DARKWEB_FETCH_CONTENT_HINT = (
+    "[HINT] SearXNG returns .onion URLs as search results but the "
+    "snippets are typically only the page title and a 1-line "
+    "description. Call fetch_content(url) on any .onion URL you "
+    "actually want to cite — the snippet alone is rarely enough "
+    "to support a substantive claim.\n"
+)
 
 
 def _format_no_results_payload(
@@ -359,13 +376,6 @@ def _make_web_search_tool(
         "or a different time window. If you have exhausted reasonable "
         "variants, call research_subtopic to summarise what little "
         "evidence you have instead of repeating failed searches."
-    )
-    DARKWEB_FETCH_CONTENT_HINT = (
-        "[HINT] SearXNG returns .onion URLs as search results but the "
-        "snippets are typically only the page title and a 1-line "
-        "description. Call fetch_content(url) on any .onion URL you "
-        "actually want to cite — the snippet alone is rarely enough "
-        "to support a substantive claim.\n"
     )
 
     @tool
