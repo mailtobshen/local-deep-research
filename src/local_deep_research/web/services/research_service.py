@@ -691,6 +691,21 @@ def _deferred_image_fill(
                     break
         if matched_entry:
             structural_skipped.setdefault(matched_entry, []).append(u)
+            # OBS-F: per-URL structural-skip probe. The aggregate
+            # STRUCTURAL_SKIP event above names domain classes but
+            # not the specific URLs that hit them. Without this, an
+            # operator sees "domains=social.example.com:8" but can't
+            # tell which 8 of the 8 cited URLs were dropped or
+            # whether some were filtered by the eTLD+1 vs host-suffix
+            # arms. One grep over `[OBS-F] STRUCTURAL_SKIP_URL` lists
+            # every URL the fetch stage never touched, tagged with
+            # its filter reason (matched_entry) and cite_num.
+            cite_num_for_skip = _url_to_cite_num.get(u, "-")
+            logger.info(
+                f"[OBS-F] STRUCTURAL_SKIP_URL research={research_id} "
+                f"url={u} cite_num={cite_num_for_skip} "
+                f"matched_entry={matched_entry}"
+            )
         else:
             filtered.append(u)
     if structural_skipped:
@@ -734,10 +749,28 @@ def _deferred_image_fill(
             titles={},
             settings_snapshot=settings_snapshot,
         )
-    except Exception:
+    except Exception as exc:
+        # OBS-F: log the attempted URL set alongside the exception
+        # so the operator can correlate the traceback to the cited
+        # URLs the pipeline was given. logger.exception captures
+        # exc_info but loses the URL list; the per-URL log line
+        # below pairs with DEFERRED_FETCH_EMPTY to fully partition
+        # the "url_to_html empty" failure class into three sub-
+        # classes: (1) fetch raised, (2) fetch OK but no images,
+        # (3) attach URL didn't match any record.
         logger.exception(
             "Deferred image fill: fetch_content_with_images raised; "
             "continuing with text-only report"
+        )
+        cite_nums_for_attempted = sorted(
+            {_url_to_cite_num.get(u, "-") for u in urls_to_fetch}
+        )
+        logger.info(
+            f"[OBS-F] DEFERRED_FETCH_RAISED research={research_id} "
+            f"attempted_n={len(urls_to_fetch)} "
+            f"cite_nums={cite_nums_for_attempted} "
+            f"exc_type={type(exc).__name__} "
+            f"urls={list(urls_to_fetch)}"
         )
         return 0
 
@@ -746,6 +779,22 @@ def _deferred_image_fill(
     for url, entry in (data or {}).items():
         images = (entry or {}).get("images", []) if entry else []
         if not images:
+            # OBS-F: per-URL zero-images probe. fetch_content_with_images
+            # returned the URL but with an empty images list — the
+            # fetch pipeline ran end-to-end without error yet produced
+            # nothing attachable. Silent `continue` previously left
+            # this class invisible, indistinguishable from "fetch
+            # raised" or "URL was never attempted". One grep over
+            # `[OBS-F] DEFERRED_FETCH_EMPTY` lists every URL that
+            # entered the pipeline and came out empty, tagged with
+            # cite_num so the operator can map back to report [[N]].
+            cite_num_for_empty = _url_to_cite_num.get(url, "-")
+            logger.info(
+                f"[OBS-F] DEFERRED_FETCH_EMPTY research={research_id} "
+                f"url={url} cite_num={cite_num_for_empty} "
+                f"reason=no_images entry_keys="
+                f"{list((entry or {}).keys())}"
+            )
             continue
         try:
             payload = dumps_images(images)
