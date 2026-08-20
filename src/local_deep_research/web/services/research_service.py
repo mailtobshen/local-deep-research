@@ -608,6 +608,41 @@ def _deferred_image_fill(
         num_to_url, _section_to_nums, url_to_html = build_citation_index(
             final_markdown, results
         )
+        # Plan B: drop LLM-hallucinated URLs that are not in the real
+        # search results set. The LLM is free to cite URLs in
+        # ``## Sources`` that never came back from the search engine
+        # — typically hallucinated darkweb marketplace / forum URLs
+        # generated from the LLM's pretraining. Verified 2026-08-20
+        # on research d2ac1028: 216 cited URLs but only 155 unique,
+        # 0 OBS-A hits — the LLM is generating most of the
+        # ``## Sources`` entries from memory. Without this filter the
+        # deferred image fill would point at URLs that the search
+        # engine never returned, all of which fail to fetch, masking
+        # the real failure modes in the OBS-G / OBS-F probe stream.
+        # The filter does NOT delete LLM-cited URLs from the
+        # rendered markdown — only from the *fetch set* the image
+        # pass iterates over, so the user-visible Sources block
+        # keeps every entry the LLM wrote.
+        real_search_urls: set[str] = set()
+        for finding in results.get("findings", []) or []:
+            for sr in finding.get("search_results", []) or []:
+                u = sr.get("url") or sr.get("link")
+                if u:
+                    real_search_urls.add(u)
+        if real_search_urls:
+            before_count = len(num_to_url)
+            num_to_url = {
+                num: url
+                for num, url in num_to_url.items()
+                if url in real_search_urls
+            }
+            dropped = before_count - len(num_to_url)
+            if dropped:
+                logger.warning(
+                    f"[CITATION-DEDUP] dropped {dropped} LLM-cited URLs "
+                    f"not in search results "
+                    f"(num_to_url: {before_count} -> {len(num_to_url)})"
+                )
         cited_urls = set(num_to_url.values())
         # Per-URL inverse: {url: citation_number_str}. One URL
         # may appear under multiple cite numbers in pathological
