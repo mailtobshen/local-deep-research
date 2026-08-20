@@ -670,7 +670,19 @@ def _fetch_content_dispatcher(
     # per-call override). The two instances share the same Crawl4AI /
     # Playwright browser cache internally, so the cost is one extra
     # downloader object, not a second Chromium.
-    ONION_TIMEOUT = 8
+    # Onion-specific download timeout. Originally set to 8s in commit
+    # 9e9965da to prevent one slow .onion from stalling a whole batch,
+    # but Path B (commit c685a332) restored plain GET forward-proxy
+    # mode for .onion URLs, so the slow .onion sites that previously
+    # failed fast with onion_proxy_rejected_get=400 now reach the
+    # downloader and time out at 8s. Verified 2026-08-20 on research
+    # 84dfa8be: 130/216 .onion URLs failed with exc_type=ReadTimeout
+    # after the Path B fix exposed them. Bumping to 30s lets real
+    # slow .onion sites (anti-bot-throttled, Tor circuit rebuild)
+    # complete; the trade-off — a single 30s-stalled URL adds 30s
+    # to the batch — is acceptable for the darkweb research mode
+    # which is the only consumer of this downloader instance.
+    ONION_TIMEOUT = 30
     downloader = dl_cls(
         timeout=30,
         language=language,
