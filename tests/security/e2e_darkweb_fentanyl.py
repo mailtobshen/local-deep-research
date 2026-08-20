@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-MANUAL INTEGRATION TEST — do NOT run under pytest.
+MANUAL INTEGRATION TEST -- do NOT run under pytest.
 
 End-to-end test script for the darkweb research pipeline. Verifies
 the three core flow phases of ``_deferred_image_fill``:
@@ -14,7 +14,7 @@ the three core flow phases of ``_deferred_image_fill``:
             -> uses BeautifulSoup (same as ldr-local images/extractor.py)
 
 The script also runs a raw SOCKS5h probe via ldr-tor:9050 as a
-diagnostic fallback — if onion-connect-proxy returns 502 but direct
+diagnostic fallback -- if onion-connect-proxy returns 502 but direct
 SOCKS5h succeeds, the failure is in onion-connect-proxy; if both
 fail, the .onion host itself is dead.
 
@@ -27,7 +27,7 @@ ldr-tor:9050 are reachable on the loopback network. Execute via::
 ORIGINAL CONTEXT: Verified 2026-08-20 on research d2ac1028 and 84dfa8be
 (146+ .onion URLs failing with status=400 / 502 / REP=0x05). The test
 distinguishes "onion-connect-proxy broken" from ".onion host dead"
-from "LLM hallucinated URL" — three failure modes that look identical
+from "LLM hallucinated URL" -- three failure modes that look identical
 from the OBS-G probe alone.
 
 Not auto-run under CI: requires a running ldr-local stack with
@@ -36,12 +36,6 @@ change to:
   - local_deep_research/research_library/downloaders/html.py
   - local_deep_research/security/onion_connect_proxy.py
   - local_deep_research/utilities/search_utilities.py
-"""
-
-  docker exec -w /tmp ldr-local python3 /tmp/e2e_darkweb_fentanyl.py
-
-Reports per-URL outcomes in a clean table so failures are easy to
-attribute to one of the three phases.
 """
 import re
 import socket
@@ -259,7 +253,7 @@ def phase_25_direct_socks5_test(host):
     fails, the .onion itself is dead and the failure is unrelated to
     ldr-local code. Uses raw socket because PySocks is not installed
     in the ldr-local container (requests direct SOCKS raises
-    InvalidSchema — which would give a false "Direct FAILED" signal).
+    InvalidSchema -- which would give a false "Direct FAILED" signal).
     """
     try:
         s = socket.create_connection(("ldr-tor", 9050), timeout=15)
@@ -326,7 +320,7 @@ def main():
             print(f"  Path C: URL-encoded spaces")
 
         # Phase 2.5: also test the raw .onion host (SOCKS5h direct)
-        # for comparison — this distinguishes 'onion-connect-proxy bug'
+        # for comparison -- this distinguishes 'onion-connect-proxy bug'
         # from '.onion host dead'.
         host = r["url"].split("//", 1)[1].split("/", 1)[0].encode()
         direct = phase_25_direct_socks5_test(host)
@@ -371,13 +365,13 @@ def main():
         print(f"         (LLM-cached ahmia URLs; current tor circuit rejects)")
         print(f"  - 0/{MAX} success + direct SOCKS5h OK:")
         print(f"      -> onion-connect-proxy is broken")
-        print(f"         (Phase B should have shipped — verify 18080 listener)")
+        print(f"         (Phase B should have shipped -- verify 18080 listener)")
     elif success_img == 0:
         print(f"\n  DIAGNOSIS: all {success} reachable but no <img> tags.")
         print(f"  -> pages are text-only (no images). Fix at image-extraction")
         print(f"     layer or research scope (not a fetch bug).")
     else:
-        print(f"\n  DIAGNOSIS: pipeline OK — {success_img} URLs had images")
+        print(f"\n  DIAGNOSIS: pipeline OK -- {success_img} URLs had images")
     return 0
 
 
