@@ -682,7 +682,21 @@ def _fetch_content_dispatcher(
     # complete; the trade-off — a single 30s-stalled URL adds 30s
     # to the batch — is acceptable for the darkweb research mode
     # which is the only consumer of this downloader instance.
-    ONION_TIMEOUT = 30
+    # Onion-specific download timeout. Three revisions:
+    #   9e9965da set it to 8s  — fast fail when only SOCKS5 was used.
+    #   b314794b bumped to 30s — Path B (c685a332) restored plain GET
+    #     forward-proxy mode for .onion URLs, exposing slow sites
+    #     that previously failed fast with onion_proxy_rejected_get=400.
+    #     Verified 2026-08-20 on research 84dfa8be: 130/216 .onion
+    #     URLs failed with exc_type=ReadTimeout.
+    #   current — bumped to 60s. Verified 2026-08-21 on
+    #     experiments 4/4b: 60s timeout + 1 retry gave 16/20 (80%)
+    #     reachable over 3 consecutive runs vs 9/20 (45%) at 30s
+    #     timeout. The +78% improvement is stable and the +9%
+    #     wall-clock cost (single slow .onion can stall up to 120s)
+    #     is acceptable for the darkweb research mode which is the
+    #     only consumer of this downloader instance.
+    ONION_TIMEOUT = 60
     downloader = dl_cls(
         timeout=30,
         language=language,

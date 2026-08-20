@@ -189,23 +189,53 @@ class HTMLDownloader(BaseDownloader):
 
         wait_time = self.rate_tracker.apply_rate_limit(engine_type)
 
-        try:
-            # Darkweb-only: ``.onion`` URLs must egress through the
-            # local CONNECT proxy (started by ``app_factory.create_app``)
-            # which tunnels to ldr-tor:9050. Without ``proxies=`` the
-            # request goes direct, the kernel resolver returns
-            # ``Failed to resolve hostname`` at the SSRF validator, and
-            # the whole batch stalls (see task 83a26e94 — 44.7 min for
-            # 111 .onion URLs). ``get_onion_proxies`` returns ``None``
-            # for clearnet URLs so the existing behaviour is preserved.
-            onion_proxies = get_onion_proxies(url)
-            response = fetch_with_cert_fallback(
-                self.session,
-                url,
-                timeout=self.timeout,
-                allow_redirects=True,
-                proxies=onion_proxies,
-            )
+        # Path B+retry: wrap the fetch in a 1-retry loop. Verified
+        # 2026-08-21 on experiments 4/4b: 60s timeout + 1 retry
+        # gives 16/20 (80%) reachable over 3 consecutive runs vs
+        # 9/20 (45%) at 30s no-retry. Only TimeoutError triggers a
+        # retry — REP=0x05 (Tor refused) and HTML errors don't,
+        # because retrying those doesn't help. OnionConnectProxyError
+        # also retries because tor sometimes recovers a burned
+        # circuit between attempts.
+        response = None
+        last_exc: BaseException | None = None
+        for _retry_attempt in range(2):  # initial + 1 retry
+            try:
+                # Darkweb-only: ``.onion`` URLs must egress through
+                # the local CONNECT proxy (started by
+                # ``app_factory.create_app``) which tunnels to
+                # ldr-tor:9050. Without ``proxies=`` the request
+                # goes direct, the kernel resolver returns ``Failed to
+                # resolve hostname`` at the SSRF validator, and the
+                # whole batch stalls (see task 83a26e94 — 44.7 min
+                # for 111 .onion URLs). ``get_onion_proxies`` returns
+                # ``None`` for clearnet URLs so the existing behaviour
+                # is preserved.
+                onion_proxies = get_onion_proxies(url)
+                response = fetch_with_cert_fallback(
+                    self.session,
+                    url,
+                    timeout=self.timeout,
+                    allow_redirects=True,
+                    proxies=onion_proxies,
+                )
+                last_exc = None
+                break  # success — exit retry loop
+            except (
+                requests.exceptions.Timeout,
+                requests.exceptions.ConnectionError,
+                OnionConnectProxyError,
+            ) as exc:
+                last_exc = exc
+                if _retry_attempt == 0:
+                    logger.info(
+                        f"[OBS-G] FETCH_RETRY url={url} "
+                        f"reason={type(exc).__name__}"
+                    )
+                    continue  # one retry
+                break  # second attempt also failed — propagate
+            # other exception types (SSL, decode, etc.) propagate immediately
+            # (no retry needed — not a transient error)
 
             if response.status_code == 200:
                 content_type = response.headers.get("content-type", "").lower()
@@ -289,13 +319,13 @@ class HTMLDownloader(BaseDownloader):
             )
             return None
 
-        except Exception as e:
+        # If we exhausted retries with a captured transient exception,
+        # surface it through the same OBS-G failure_mode partition as
+        # the no-retry path. Non-transient exceptions (SSL, decode,
+        # etc.) propagate naturally as last_exc.
+        if last_exc is not None:
+            e = last_exc
             logger.exception(f"Error fetching HTML from {url}")
-            # OBS-G failure_mode partition for the exception path.
-            # ``OnionConnectProxyError`` from onion-connect-proxy.py
-            # signals the SOCKS5 handshake or .onion CONNECT to the
-            # tor daemon failed; any other exception is a generic
-            # fetch_exception (DNS, TLS, connection reset, etc.).
             host = (urlparse(url).hostname or "").lower()
             exc_class_name = type(e).__name__
             failure_mode = (
@@ -324,6 +354,10 @@ class HTMLDownloader(BaseDownloader):
                 error_type=type(e).__name__,
             )
             return None
+        # Non-transient exception (no last_exc captured) — should not
+        # happen because the only path out of the retry loop is
+        # success (response is set) or last_exc set. Defensive return.
+        return None
 
     def _extract_content(self, html: str, url: str) -> Optional[Dict[str, Any]]:
         """Extract clean content and metadata from HTML.
