@@ -308,6 +308,56 @@ def format_findings(
                 logger.exception("Error processing search results/links")
 
     # Start with the synthesized content (passed as synthesized_content)
+    # — but first compress runs of duplicate inline cite markers
+    # ([1][1][1] -> [1]). Verified 2026-08-20 on research d2ac1028:
+    # the local LLM (qwen3.5-opus:9b) emitted these duplicates in
+    # response to the strong "INLINE CITATIONS ARE REQUIRED" prompt
+    # (commits 99e8dc38 / 869f1313). Three identical numbers
+    # stacked next to each other are visually noisy and inflate
+    # cited_n in the OBS-E SEC_HTML_COVERAGE counter beyond the
+    # actual source count. The compress pass is purely cosmetic —
+    # the LLM still emitted them; we just deduplicate the surface
+    # form before Sources-block render and before the dedup that
+    # build_first_cite_order runs.
+    if synthesized_content:
+        # Compress runs of 2+ identical adjacent [N] markers into a
+        # single [N]. Verified 2026-08-20 on research d2ac1028: the
+        # local LLM (qwen3.5-opus:9b) emitted these duplicates in
+        # response to the strong "INLINE CITATIONS ARE REQUIRED" prompt
+        # (commits 99e8dc38 / 869f1313). Three identical numbers
+        # stacked next to each other are visually noisy and inflate
+        # cited_n in the OBS-E SEC_HTML_COVERAGE counter beyond the
+        # actual source count. The compress pass is purely cosmetic —
+        # the LLM still emitted them; we just deduplicate the
+        # surface form before Sources-block render and before the
+        # dedup that build_first_cite_order runs.
+        #
+        # Implementation note: we use a single-capture backreference
+        # pattern (group 1 = full [N] marker, group 1+ = repetition)
+        # because Python's re module does not re-expand backreferences
+        # inside quantifier-expanded groups for separate capture
+        # groups (verified empirically — the previous
+        # ``(\[【])(\d+)([\]】])(\s*\1\2\3){1,}`` pattern returned
+        # the input unchanged for all test cases).
+        compressed = re.sub(
+            r"(\[[0-9]+\])\1+",
+            r"\1",
+            synthesized_content,
+        )
+        if compressed != synthesized_content:
+            extras = 0
+            for match in re.finditer(
+                r"(\[[0-9]+\])\1+", synthesized_content
+            ):
+                full = match.group(0)
+                marker = match.group(1)
+                extras += full.count(marker) - 1
+            logger.info(
+                f"Compressing duplicate inline cite markers: "
+                f"removed {extras} duplicate markers from synthesized body"
+            )
+            synthesized_content = compressed
+
     parts.append(f"{synthesized_content}\n\n")
 
     # Add sources section after synthesized content if sources exist
