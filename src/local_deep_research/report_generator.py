@@ -586,6 +586,16 @@ class IntegratedReportGenerator:
                         f"Build upon the research findings from earlier sections to create a cohesive narrative. "
                         f"{self._get_language_directive()}"
                         f"{self._build_no_boilerplate_directive()}"
+                        f"\n=== INLINE CITATIONS (REQUIRED) ===\n"
+                        f"After each factual claim, insert a source marker like "
+                        f"[1], [2], etc. inline in the body. Example format: "
+                        f"'According to [1], the fentanyl supply chain…'. "
+                        f"DO NOT put citations only in a References block at the "
+                        f"end — every fact must carry an inline marker. "
+                        f"Verified 2026-08-20 on research 4abe603c: the previous "
+                        f"wording let the LLM emit a References block with 239 "
+                        f"numbered entries and zero body markers, which broke "
+                        f"build_first_cite_order and left all cites unlinked.\n"
                     )
                 else:
                     # Subsection-level prompt - more focused
@@ -605,6 +615,16 @@ class IntegratedReportGenerator:
                         f"Previous research exists - find specific angles for this subsection. "
                         f"{self._get_language_directive()}"
                         f"{self._build_no_boilerplate_directive()}"
+                        f"\n=== INLINE CITATIONS (REQUIRED) ===\n"
+                        f"After each factual claim, insert a source marker like "
+                        f"[1], [2], etc. inline in the body. Example format: "
+                        f"'According to [1], the fentanyl supply chain…'. "
+                        f"DO NOT put citations only in a References block at the "
+                        f"end — every fact must carry an inline marker. "
+                        f"Verified 2026-08-20 on research 4abe603c: the previous "
+                        f"wording let the LLM emit a References block with 239 "
+                        f"numbered entries and zero body markers, which broke "
+                        f"build_first_cite_order and left all cites unlinked.\n"
                     )
 
                 logger.info(
