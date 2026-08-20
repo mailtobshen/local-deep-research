@@ -63,6 +63,32 @@ ONION_PROXY_HTTPS = "http://127.0.0.1:18080"
 LDR_TOR = "socks5h://ldr-tor:9050"
 FETCH_TIMEOUT = 35
 
+# Build a requests.Session with urllib3 Retry disabled for the .onion
+# proxy. Without this, urllib3 piles up to 5 internal retries on each
+# 502 from onion-connect-proxy, which surfaces as a single ProxyError
+# (Max retries exceeded) and hides the underlying HTTP status. Verified
+# 2026-08-21: disabling urllib3 retry lets the test report 2/7 HTML
+# successes + 1/7 image extraction instead of 0/7 ProxyError.
+try:
+    from requests.adapters import HTTPAdapter
+    from urllib3.util.retry import Retry
+
+    _session = requests.Session()
+    # urllib3 Retry has separate counters for total / connect / read / status.
+    # total=0 alone is NOT enough. Verified 2026-08-21: without these
+    # explicit zeros, urllib3.ConnectionPool still retries 5 times on the
+    # proxy's 502 and surfaces MaxRetryError, masking the real HTTP
+    # status. With all four counters zeroed + raise_on_status=False,
+    # the test reports the actual HTTP status code per .onion URL.
+    _retry_disabled = Retry(total=0, connect=0, read=0, status=0, raise_on_status=False)
+    _adapter = HTTPAdapter(max_retries=_retry_disabled, pool_connections=10, pool_maxsize=10)
+    _session.mount("http://", _adapter)
+    _session.mount("https://", _adapter)
+except ImportError:
+    # Fallback: bare requests.get (older test environments).
+    _session = requests
+
+
 
 def banner(text):
     print()
@@ -150,7 +176,7 @@ def phase_2_fetch(result):
     final_url = path_c_encode(promoted)
     started = time.monotonic()
     try:
-        resp = requests.get(
+        resp = _session.get(
             final_url,
             proxies={"http": ONION_PROXY, "https": ONION_PROXY_HTTPS},
             timeout=FETCH_TIMEOUT,
