@@ -501,4 +501,56 @@ def start_onion_connect_proxy(
 
     state["_listener_started"] = True
     state["_bound_address"] = (host, port)
+
+    # Block until the listener is actually accepting connections.
+    # Verified 2026-08-20 on research d2ac1028: the previous
+    # implementation returned as soon as ``server.bind`` returned,
+    # which fires before ``server.listen`` has the kernel mark the
+    # socket as ready. The research batch then issued the first
+    # .onion HTTP request within 10s of create_app() returning,
+    # found the listener still cold-starting under thread-init, and
+    # 49+ requests all surfaced as
+    # ``onion-connect-proxy client handshake crashed`` (logger
+    # exception path) before the listener ever accepted a single
+    # connection. Polling the bound address with a short-timeout
+    # connect blocks here until the kernel reports LISTEN, so
+    # create_app() does not return until the proxy is actually
+    # servicing requests. Bounded by 5 s so a failing bind does not
+    # hang app startup.
+    deadline = time.monotonic() + 5.0
+    while time.monotonic() < deadline:
+        try:
+            with socket.create_connection((host, port), timeout=0.5):
+                break
+        except OSError:
+            time.sleep(0.05)
+    else:
+        logger.warning(
+            f"[onion-connect-proxy] listener at {host}:{port} did not "
+            f"become ready within 5s; create_app() returning anyway"
+        )
+
     return host, port
+
+
+def is_healthy(timeout: float = 2.0) -> bool:
+    """True iff the onion-connect-proxy is currently bound and accepting
+    connections. Verified 2026-08-20 on research d2ac1028: the
+    preflight ldr-tor probe (commit b8afe435) tests tor reachability
+    but not whether onion-connect-proxy itself is listening on 18080
+    — 30+ client_handshake_crashed exceptions in d2ac1028 were
+    caused by clients hitting 18080 before the listener was ready.
+    A ldr-local health-check helper lets the preflight surface this
+    early instead of discovering it as a stream of fetch failures.
+    """
+    state = start_onion_connect_proxy.__dict__
+    if not state.get("_listener_started"):
+        return False
+    addr = state.get("_bound_address")
+    if addr is None:
+        return False
+    try:
+        with socket.create_connection(addr, timeout=timeout):
+            return True
+    except OSError:
+        return False
