@@ -227,19 +227,32 @@ def _handle_client(client: socket.socket) -> None:
     """
     try:
         client.settimeout(10)
+        # Read the request line + headers.
+        buf = b""
+        while b"\r\n\r\n" not in buf and len(buf) < 65536:
+            chunk = client.recv(4096)
+            if not chunk:
+                return
+            buf += chunk
+
         # Per-request diagnostic log. Verified 2026-08-20 on
         # research d2ac1028: the 33 onion_proxy_unreachable + 30+
         # client_handshake_crashed exceptions all shared the same
-        # shape — the requests lib inside ldr-local opens a fresh
+        # shape -- the requests lib inside ldr-local opens a fresh
         # TCP connection to 127.0.0.1:18080 per .onion URL and
         # onion-connect-proxy handles each on its own worker thread.
         # Logging the method line here (CONNECT vs GET forward) lets
         # a later grep correlate each onion-connect-proxy event with
-        # the corresponding OBS-G fetch status in ldr-local logs —
+        # the corresponding OBS-G fetch status in ldr-local logs --
         # the OBS-G line alone doesn't show which proxy path was
         # taken. Logged at info level so a single
         # ``grep '[onion-connect-proxy]'`` covers the full
-        # request stream.
+        # request stream. The log emission MUST come after the recv
+        # loop above -- the previous placement caused an
+        # UnboundLocalError on every request (line 243 referenced
+        # ``buf`` before the assignment on line 256), which forced
+        # the inbound TCP connection to RST before reaching SOCKS5
+        # and masked the 60s + 1-retry behaviour added in fb6befa9.
         if buf.startswith(b"CONNECT "):
             target_dbg = buf.split(b" ", 2)[1].rsplit(b" ", 1)[0]
             logger.info(
@@ -252,13 +265,6 @@ def _handle_client(client: socket.socket) -> None:
                 f"[onion-connect-proxy] FORWARD method="
                 f"{request_line_dbg.decode('ascii', errors='replace')[:200]!r}"
             )
-        # Read the request line + headers.
-        buf = b""
-        while b"\r\n\r\n" not in buf and len(buf) < 65536:
-            chunk = client.recv(4096)
-            if not chunk:
-                return
-            buf += chunk
 
         if buf.startswith(b"CONNECT "):
             _handle_connect_tunnel(client, buf)
