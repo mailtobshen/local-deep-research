@@ -1016,8 +1016,16 @@ class LangGraphAgentStrategy(BaseSearchStrategy):
             # search_engine_name gate as the loop-break state above (line
             # 350) and the CJK fan-out (line 378).
             f"{DARKWEB_FETCH_CONTENT_HINT if self._search_engine_name == 'darkweb' else ''}"
-            "5. When you have enough information, provide a comprehensive answer "
-            "citing sources as [1], [2], etc.\n"
+            "5. When you have enough information, write a comprehensive answer. "
+            "INLINE CITATIONS ARE REQUIRED: after each factual claim, "
+            "insert a source marker like [1], [2], etc. inline in the text. "
+            "Example format: 'According to [1], the fentanyl supply chain…'. "
+            "DO NOT put citations only in a References block at the end — "
+            "every fact must carry an inline marker. Verified 2026-08-20 on "
+            "research 4abe603c: the previous wording let the LLM emit a "
+            "References block with 239 numbered entries and zero body "
+            "markers, which broke build_first_cite_order and left all cites "
+            "unlinked.\n"
         )
 
         # Create agent — may fail if model doesn't support tool calling
