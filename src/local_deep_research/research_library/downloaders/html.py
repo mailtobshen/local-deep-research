@@ -135,6 +135,29 @@ class HTMLDownloader(BaseDownloader):
 
     def _fetch_html(self, url: str) -> Optional[str]:
         """Fetch raw HTML content from URL."""
+        # Path C: percent-encode literal spaces in URLs the search
+        # results layer hands us as-is. Verified 2026-08-20 on
+        # research 4abe603c: 14 URLs hit exc_type=ValueError because
+        # they contained spaces (e.g.
+        # ``cathug2kyi4.../Alien Nine OST/...``); the requests lib
+        # passes the raw URL to ``http.client`` which raises
+        # ``InvalidURL`` on the unencoded space. The OBS-G probe
+        # classifies this as failure_mode=fetch_exception and the
+        # URL is dropped entirely — even when the underlying .onion
+        # site is up.
+        # We only quote the space character (and other RFC 3986
+        # unsafe chars) — already-encoded URLs are passed through
+        # unchanged. ``quote`` is idempotent: ``quote(quote(s)) ==
+        # quote(s)`` for safe-by-default characters, so passing a
+        # URL through twice doesn't double-encode.
+        from urllib.parse import quote
+
+        if " " in url:
+            url = quote(url, safe=":/?&=#@!$%'()*+,;=-._~")
+            logger.info(
+                f"[OBS-G] URL_ENCODED reason=contains_space encoded={url}"
+            )
+
         # OBS-G Path A: promote http://...onion to https://...onion so
         # the requests lib auto-uses HTTP CONNECT through the local
         # onion-connect-proxy (which only accepts CONNECT method per

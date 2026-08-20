@@ -152,23 +152,159 @@ def _pipe(src: socket.socket, dst: socket.socket) -> None:
 
 
 def _handle_client(client: socket.socket) -> None:
-    """Process one HTTP CONNECT request then tunnel until EOF."""
+    """Process one HTTP request then tunnel until EOF.
+
+    Two request shapes are accepted (both RFC 7230):
+
+    * ``CONNECT host:port HTTP/1.1`` — classic HTTP CONNECT tunnel.
+      The proxy opens a SOCKS5 to tor and pipes raw bytes. This is the
+      path used when the HTTP client is configured with
+      ``https://...onion`` (the client itself opens the TLS tunnel
+      through us).
+
+    * ``GET host/path HTTP/1.1`` (also POST/PUT/HEAD/etc.) — plain
+      forward-proxy mode. The proxy rewrites the request line so
+      tor sees an absolute URI it can route via SOCKS5, then opens
+      the SOCKS5 connection and pipes raw bytes. This is the path
+      used when the HTTP client is configured with
+      ``http://...onion`` (the client expects the proxy to fetch
+      the resource on its behalf).
+
+    The previous behaviour (400 Bad Request for non-CONNECT) is
+    what made every plain HTTP GET against an .onion return 400,
+    producing 134/193 / 146/239 onion_proxy_rejected_get failures
+    in the darkweb research runs (research 4abe603c and earlier).
+    Forward-proxy mode fixes that class entirely.
+    """
     try:
         client.settimeout(10)
-        # Read the request line: ``CONNECT host:port HTTP/1.1``.
+        # Read the request line + headers.
         buf = b""
-        while b"\r\n\r\n" not in buf and len(buf) < 8192:
-            chunk = client.recv(1024)
+        while b"\r\n\r\n" not in buf and len(buf) < 65536:
+            chunk = client.recv(4096)
             if not chunk:
                 return
             buf += chunk
-        if not buf.startswith(b"CONNECT "):
+
+        if buf.startswith(b"CONNECT "):
+            _handle_connect_tunnel(client, buf)
+            return
+
+        # Anything that isn't CONNECT gets forward-proxy mode. This
+        # includes GET, POST, PUT, HEAD, DELETE, OPTIONS, PATCH,
+        # etc. — all share the same forward-shape.
+        request_line = buf.split(b"\r\n", 1)[0]
+        # Parse ``METHOD request-target HTTP/1.x``. ``request-target``
+        # may be ``origin-form`` ("/path?q") or ``absolute-form``
+        # ("http://host/path?q"); both carry the path we need.
+        parts = request_line.split(b" ", 2)
+        if len(parts) < 3:
             client.sendall(
                 b"HTTP/1.1 400 Bad Request\r\n"
                 b"Content-Length: 0\r\n"
                 b"Connection: close\r\n\r\n"
             )
             return
+        method, target, _version = parts[0], parts[1], parts[2]
+
+        # Extract host from absolute-form, falling back to Host:
+        # header for origin-form. The Host: header is mandatory in
+        # HTTP/1.1 so it must be present.
+        host = None
+        port = 80
+        if target.startswith(b"http://") or target.startswith(b"https://"):
+            # absolute-form — parse with urlparse
+            from urllib.parse import urlparse
+
+            u = urlparse(target.decode("ascii", errors="replace"))
+            host = (u.hostname or "").lower()
+            port = u.port or (443 if u.scheme == "https" else 80)
+            # Rewrite origin-form path component back into the
+            # request line so tor sees a well-formed absolute URI.
+            new_target = target
+        else:
+            # origin-form — find Host: header (case-insensitive).
+            for line in buf.split(b"\r\n")[1:]:
+                if b":" not in line:
+                    continue
+                k, _, v = line.partition(b":")
+                if k.strip().lower() == b"host":
+                    hv = v.strip().decode("ascii", errors="replace")
+                    if hv.startswith("["):  # IPv6 literal
+                        h, _, p = hv.partition("]")
+                        host = h.lstrip("[").lower() or None
+                        port = int(p.lstrip(":") or "80") if p else 80
+                    else:
+                        h, _, p = hv.partition(":")
+                        host = h.strip().lower() or None
+                        try:
+                            port = int(p.strip()) if p.strip() else 80
+                        except ValueError:
+                            port = 80
+                    break
+            # Rewrite origin-form to absolute-form so tor knows
+            # the target host without the Host: header.
+            if host:
+                scheme = "https" if port == 443 else "http"
+                new_target = f"{scheme}://{host}:{port}{target.decode('ascii', errors='replace')}".encode("ascii", errors="replace")
+
+        if not host or not (1 <= port <= 65535):
+            client.sendall(
+                b"HTTP/1.1 400 Bad Request\r\n"
+                b"Content-Length: 0\r\n"
+                b"Connection: close\r\n\r\n"
+            )
+            return
+        # Only forward .onion targets — this proxy exists for one job.
+        if not (host == "onion" or host.endswith(".onion")):
+            client.sendall(
+                b"HTTP/1.1 403 Forbidden\r\n"
+                b"Content-Length: 0\r\n"
+                b"Connection: close\r\n\r\n"
+            )
+            logger.warning(
+                f"[onion-connect-proxy] refused non-.onion target {host}:{port}"
+            )
+            return
+        tor = _socks5_connect(host, port)
+        # Replace the request-target so tor sees an absolute URI.
+        if new_target != target:
+            new_request_line = b" ".join([method, new_target, _version])
+            buf = new_request_line + buf.split(b"\r\n", 1)[1]
+        # Also strip the Connection: close header if present so tor
+        # can keep the socket open while we pipe.
+        # Send the request, then pipe the response back.
+        tor.sendall(buf)
+        _pipe(tor, client)
+    except OnionConnectProxyError as exc:
+        logger.warning(f"[onion-connect-proxy] forward failed: {exc}")
+        try:
+            client.sendall(
+                b"HTTP/1.1 502 Bad Gateway\r\n"
+                b"Content-Length: 0\r\n"
+                b"Connection: close\r\n\r\n"
+            )
+        except OSError:
+            pass
+        client.close()
+        return
+    except Exception:
+        logger.exception("[onion-connect-proxy] client handshake crashed")
+        try:
+            client.close()
+        except OSError:
+            pass
+        return
+
+
+def _handle_connect_tunnel(client: socket.socket, buf: bytes) -> None:
+    """Original CONNECT-tunnel path — RFC 2817 HTTP CONNECT.
+
+    Extracted from ``_handle_client`` so the two paths can be read
+    independently. Behaviour is unchanged from the previous
+    monolithic handler.
+    """
+    try:
         request_line = buf.split(b"\r\n", 1)[0]
         target = request_line[len(b"CONNECT ") :].rsplit(b" ", 1)[0]
         host_b, _, port_b = target.partition(b":")
