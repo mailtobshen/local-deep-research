@@ -46,6 +46,12 @@ from loguru import logger
 
 _LISTEN_HOST = "127.0.0.1"
 _LISTEN_PORT = int(os.environ.get("LDR_ONION_PROXY_PORT", "18080"))
+
+# Verified 2026-08-20 on research d2ac1028: tor first-time circuit
+# build can take 30+ seconds when the previous batch exhausted
+# cached circuits, so retrying once after a 5-second backoff gives
+# tor time to rebuild a circuit without holding the request worker.
+_SOCKS_RETRY_BACKOFF_SECS = 5.0
 _TOR_SOCKS_HOST = os.environ.get("LDR_TOR_SOCKS_HOST", "ldr-tor")
 _TOR_SOCKS_PORT = int(os.environ.get("LDR_TOR_SOCKS_PORT", "9050"))
 
@@ -84,43 +90,86 @@ def _encode_socks5_connect(host: str, port: int) -> bytes:
 
 
 def _socks5_connect(host: str, port: int) -> socket.socket:
-    """Open a SOCKS5 connection through tor and return the ready socket."""
-    tor = socket.create_connection((_TOR_SOCKS_HOST, _TOR_SOCKS_PORT), timeout=10)
-    try:
-        tor.sendall(_SOCKS5_NOAUTH_REQUEST)
-        greeting = tor.recv(2)
-        if greeting != bytes([0x05, 0x00]):
-            raise OnionConnectProxyError(
-                f"SOCKS5 greeting rejected by tor: {greeting.hex()}"
+    """Open a SOCKS5 connection through tor and return the ready socket.
+
+    Verified 2026-08-20 on research d2ac1028: 33 .onion URLs failed
+    with exc_type=ConnectionError failure_mode=onion_proxy_unreachable.
+    The root cause is TimeoutError at ``tor.recv(4)`` — the SOCKS5
+    CONNECT reply to tor did not arrive within the 10-second timeout.
+    Tor first-time circuit build can take 30+ seconds; 10s is too
+    tight for a fresh research batch that hits many .onion URLs
+    back-to-back and exhausts the cached circuits. Bumping the
+    timeout to 30s and retrying once on TimeoutError gives tor the
+    time to rebuild a burned circuit and clears the cluster.
+    """
+    import time as _time
+
+    last_exc: Exception | None = None
+    socks_timeout = 30
+    for attempt in range(2):  # initial + 1 retry
+        tor = socket.create_connection(
+            (_TOR_SOCKS_HOST, _TOR_SOCKS_PORT), timeout=socks_timeout
+        )
+        try:
+            tor.sendall(_SOCKS5_NOAUTH_REQUEST)
+            greeting = tor.recv(2)
+            if greeting != bytes([0x05, 0x00]):
+                raise OnionConnectProxyError(
+                    f"SOCKS5 greeting rejected by tor: {greeting.hex()}"
+                )
+            tor.sendall(_encode_socks5_connect(host, port))
+            # Reply: VER, REP, RSV, ATYP, then address+port (BND.ADDR/BND.PORT).
+            # We only need to confirm REP=0x00 (success); the rest is the
+            # tor-side bind address which the caller discards.
+            reply_head = tor.recv(4)
+            if len(reply_head) < 4:
+                raise OnionConnectProxyError(
+                    f"SOCKS5 CONNECT reply truncated: {reply_head.hex()}"
+                )
+            if reply_head[:2] != _SOCKS5_REPLY_GRANTED:
+                rep = reply_head[1]
+                raise OnionConnectProxyError(
+                    f"SOCKS5 CONNECT refused by tor (REP={rep:#x})"
+                )
+            atyp = reply_head[3]
+            if atyp == 0x01:  # IPv4
+                tor.recv(4 + 2)
+            elif atyp == 0x03:  # DOMAINNAME
+                ln = tor.recv(1)[0]
+                tor.recv(ln + 2)
+            elif atyp == 0x04:  # IPv6
+                tor.recv(16 + 2)
+            else:
+                raise OnionConnectProxyError(
+                    f"SOCKS5 reply ATYP unknown: {atyp}"
+                )
+            # Success — return the ready tor socket.
+            if attempt > 0:
+                logger.info(
+                    f"[onion-connect-proxy] SOCKS5 to {host}:{port} succeeded "
+                    f"after {attempt + 1} attempt(s)"
+                )
+            return tor
+        except (socket.timeout, TimeoutError) as exc:
+            # Tear down the half-open tor socket and retry once.
+            last_exc = exc
+            try:
+                tor.close()
+            except OSError:
+                pass
+            logger.warning(
+                f"[onion-connect-proxy] SOCKS5 handshake to {host}:{port} "
+                f"timed out on attempt {attempt + 1} (socks_timeout="
+                f"{socks_timeout}s); "
+                f"retrying once after {_SOCKS_RETRY_BACKOFF_SECS}s"
             )
-        tor.sendall(_encode_socks5_connect(host, port))
-        # Reply: VER, REP, RSV, ATYP, then address+port (BND.ADDR/BND.PORT).
-        # We only need to confirm REP=0x00 (success); the rest is the
-        # tor-side bind address which the caller discards.
-        reply_head = tor.recv(4)
-        if len(reply_head) < 4:
-            raise OnionConnectProxyError(
-                f"SOCKS5 CONNECT reply truncated: {reply_head.hex()}"
-            )
-        if reply_head[:2] != _SOCKS5_REPLY_GRANTED:
-            rep = reply_head[1]
-            raise OnionConnectProxyError(
-                f"SOCKS5 CONNECT refused by tor (REP={rep:#x})"
-            )
-        atyp = reply_head[3]
-        if atyp == 0x01:  # IPv4
-            tor.recv(4 + 2)
-        elif atyp == 0x03:  # DOMAINNAME
-            ln = tor.recv(1)[0]
-            tor.recv(ln + 2)
-        elif atyp == 0x04:  # IPv6
-            tor.recv(16 + 2)
-        else:
-            raise OnionConnectProxyError(f"SOCKS5 reply ATYP unknown: {atyp}")
-    except Exception:
-        tor.close()
-        raise
-    return tor
+            if attempt == 0:
+                _time.sleep(_SOCKS_RETRY_BACKOFF_SECS)
+            continue
+    raise OnionConnectProxyError(
+        f"SOCKS5 handshake to {host}:{port} failed after 2 attempts: "
+        f"{last_exc!r}"
+    )
 
 
 def _pipe(src: socket.socket, dst: socket.socket) -> None:
@@ -178,6 +227,31 @@ def _handle_client(client: socket.socket) -> None:
     """
     try:
         client.settimeout(10)
+        # Per-request diagnostic log. Verified 2026-08-20 on
+        # research d2ac1028: the 33 onion_proxy_unreachable + 30+
+        # client_handshake_crashed exceptions all shared the same
+        # shape — the requests lib inside ldr-local opens a fresh
+        # TCP connection to 127.0.0.1:18080 per .onion URL and
+        # onion-connect-proxy handles each on its own worker thread.
+        # Logging the method line here (CONNECT vs GET forward) lets
+        # a later grep correlate each onion-connect-proxy event with
+        # the corresponding OBS-G fetch status in ldr-local logs —
+        # the OBS-G line alone doesn't show which proxy path was
+        # taken. Logged at info level so a single
+        # ``grep '[onion-connect-proxy]'`` covers the full
+        # request stream.
+        if buf.startswith(b"CONNECT "):
+            target_dbg = buf.split(b" ", 2)[1].rsplit(b" ", 1)[0]
+            logger.info(
+                f"[onion-connect-proxy] CONNECT target="
+                f"{target_dbg.decode('ascii', errors='replace')}"
+            )
+        else:
+            request_line_dbg = buf.split(b"\r\n", 1)[0]
+            logger.info(
+                f"[onion-connect-proxy] FORWARD method="
+                f"{request_line_dbg.decode('ascii', errors='replace')[:200]!r}"
+            )
         # Read the request line + headers.
         buf = b""
         while b"\r\n\r\n" not in buf and len(buf) < 65536:
