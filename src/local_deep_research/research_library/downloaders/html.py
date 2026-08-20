@@ -7,6 +7,7 @@ Extraction is handled by the shared pipeline in extraction/pipeline.py.
 
 from typing import Optional, Dict, Any
 from urllib.parse import urlparse
+import requests
 from loguru import logger
 from bs4 import BeautifulSoup
 
@@ -17,6 +18,7 @@ from ...security.proxy_config import (
     fetch_with_cert_fallback,
     get_onion_proxies,
 )
+from ...security.onion_connect_proxy import OnionConnectProxyError
 
 
 class HTMLDownloader(BaseDownloader):
