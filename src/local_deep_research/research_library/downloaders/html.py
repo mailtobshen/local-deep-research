@@ -19,6 +19,7 @@ from ...security.proxy_config import (
     get_onion_proxies,
 )
 from ...security.onion_connect_proxy import OnionConnectProxyError
+from ._onion_socks5 import fetch_onion as _fetch_onion_direct_socks5
 
 
 class HTMLDownloader(BaseDownloader):
@@ -195,21 +196,48 @@ class HTMLDownloader(BaseDownloader):
         # 2026-08-21 on experiments 4/4b: 60s timeout + 1 retry
         # gives 16/20 (80%) reachable over 3 consecutive runs vs
         # 9/20 (45%) at 30s no-retry. Only TimeoutError triggers a
-        # retry — REP=0x05 (Tor refused) and HTML errors don't,
+        # retry -- REP=0x05 (Tor refused) and HTML errors don't,
         # because retrying those doesn't help. OnionConnectProxyError
         # also retries because tor sometimes recovers a burned
         # circuit between attempts.
+        #
+        # For ``.onion`` URLs the primary path is direct SOCKS5h to
+        # ldr-tor:9050 (verified 2026-08-21 -- in-process
+        # onion-connect-proxy :443 CONNECT path is flaky with
+        # tor REP=0x1/0x5, while direct SOCKS5 on :80 from a fresh
+        # circuit consistently succeeds in 2-15s). The proxy path is
+        # retried only if the direct path returns None.
         response = None
         last_exc: BaseException | None = None
+        host = (urlparse(url).hostname or "").lower()
+        is_onion_url = bool(host) and (host == "onion" or host.endswith(".onion"))
         for _retry_attempt in range(2):  # initial + 1 retry
             try:
+                if is_onion_url:
+                    # Direct SOCKS5h primary path. fetch_onion returns
+                    # None on any SOCKS5 / HTTP failure; in that case we
+                    # fall through to the proxy path on the next
+                    # iteration.
+                    _direct = _fetch_onion_direct_socks5(url, timeout=self.timeout)
+                    if _direct is not None:
+                        response = _direct
+                        last_exc = None
+                        break  # success -- exit retry loop
+                    if _retry_attempt == 0:
+                        logger.info(
+                            f"[OBS-G] FETCH_RETRY url={url} "
+                            f"reason=onion_socks5_miss"
+                        )
+                        continue  # try proxy path on second attempt
+                    # Both paths failed -- exhaust with no last_exc.
+                    break
                 # Darkweb-only: ``.onion`` URLs must egress through
                 # the local CONNECT proxy (started by
                 # ``app_factory.create_app``) which tunnels to
                 # ldr-tor:9050. Without ``proxies=`` the request
                 # goes direct, the kernel resolver returns ``Failed to
                 # resolve hostname`` at the SSRF validator, and the
-                # whole batch stalls (see task 83a26e94 — 44.7 min
+                # whole batch stalls (see task 83a26e94 -- 44.7 min
                 # for 111 .onion URLs). ``get_onion_proxies`` returns
                 # ``None`` for clearnet URLs so the existing behaviour
                 # is preserved.
@@ -222,7 +250,7 @@ class HTMLDownloader(BaseDownloader):
                     proxies=onion_proxies,
                 )
                 last_exc = None
-                break  # success — exit retry loop
+                break  # success -- exit retry loop
             except (
                 requests.exceptions.Timeout,
                 requests.exceptions.ConnectionError,
@@ -240,52 +268,59 @@ class HTMLDownloader(BaseDownloader):
             # other exception types (SSL, decode, etc.) propagate immediately
             # (no retry needed — not a transient error)
 
-            if response.status_code == 200:
-                content_type = response.headers.get("content-type", "").lower()
-                if (
-                    "text/html" in content_type
-                    or "application/xhtml" in content_type
-                ):
-                    self.rate_tracker.record_outcome(
-                        engine_type=engine_type,
-                        wait_time=wait_time,
-                        success=True,
-                        retry_count=1,
-                        search_result_count=1,
-                    )
-                    # OBS-G: per-fetch outcome probe. Emits one line per
-                    # successful HTTP response so an operator can grep
-                    # `[OBS-G] FETCH_STATUS` to partition darkweb batch
-                    # failures (HTTP 200 + non-html / HTTP !=200 /
-                    # exception) without correlating against
-                    # downstream logs. Verified 2026-08-20 on research
-                    # 2a603351: 193 .onion URLs all returned via=none
-                    # text=SKIP(fc_onion_unsupported) images=0 — the
-                    # IMG-TRACE probe alone couldn't distinguish
-                    # 'never received HTML' from 'received non-html'.
-                    # content_len exposes the latter so the next run
-                    # can attribute the 0 images correctly.
-                    logger.info(
-                        f"[OBS-G] FETCH_STATUS url={url} "
-                        f"host={(urlparse(url).hostname or '-').lower()} "
-                        f"status=200 content_type={content_type!r} "
-                        f"content_len={len(response.text)} "
-                        f"elapsed_s=0"
-                    )
-                    return response.text
-                # Non-HTML 200 — common on darkweb (binary, captcha
-                # challenge, JS-only page that returns 1-line stub).
-                logger.warning(
-                    f"Unexpected content type for HTML download: {content_type}"
+        # Verify the response. Verified 2026-08-21: the original
+        # code had this entire block indented inside the for loop,
+        # which made it unreachable -- the `break` in the loop body
+        # always exits before the response.status_code check runs.
+        # Dedenting the block to live AFTER the loop is the actual
+        # fix that makes fb6befa9's 60s + 1 retry functional.
+        if response is not None and response.status_code == 200:
+            content_type = response.headers.get("content-type", "").lower()
+            if (
+                "text/html" in content_type
+                or "application/xhtml" in content_type
+            ):
+                self.rate_tracker.record_outcome(
+                    engine_type=engine_type,
+                    wait_time=wait_time,
+                    success=True,
+                    retry_count=1,
+                    search_result_count=1,
                 )
+                # OBS-G: per-fetch outcome probe. Emits one line per
+                # successful HTTP response so an operator can grep
+                # `[OBS-G] FETCH_STATUS` to partition darkweb batch
+                # failures (HTTP 200 + non-html / HTTP !=200 /
+                # exception) without correlating against
+                # downstream logs. Verified 2026-08-20 on research
+                # 2a603351: 193 .onion URLs all returned via=none
+                # text=SKIP(fc_onion_unsupported) images=0 -- the
+                # IMG-TRACE probe alone couldn't distinguish
+                # 'never received HTML' from 'received non-html'.
+                # content_len exposes the latter so the next run
+                # can attribute the 0 images correctly.
                 logger.info(
                     f"[OBS-G] FETCH_STATUS url={url} "
                     f"host={(urlparse(url).hostname or '-').lower()} "
                     f"status=200 content_type={content_type!r} "
-                    f"content_len={len(getattr(response, 'text', '') or '')} "
-                    f"reason=non_html_content_type"
+                    f"content_len={len(response.text)} "
+                    f"elapsed_s=0"
                 )
-                return None
+                return response.text
+            # Non-HTML 200 -- common on darkweb (binary, captcha
+            # challenge, JS-only page that returns 1-line stub).
+            logger.warning(
+                f"Unexpected content type for HTML download: {content_type}"
+            )
+            logger.info(
+                f"[OBS-G] FETCH_STATUS url={url} "
+                f"host={(urlparse(url).hostname or '-').lower()} "
+                f"status=200 content_type={content_type!r} "
+                f"content_len={len(getattr(response, 'text', '') or '')} "
+                f"reason=non_html_content_type"
+            )
+            return None
+        if response is not None:
             logger.warning(f"HTTP {response.status_code} fetching {url}")
             # OBS-G failure_mode partition. .onion HTTP 400 has two
             # distinct root causes verified 2026-08-20 on research
@@ -294,7 +329,7 @@ class HTMLDownloader(BaseDownloader):
             #       proxy returned 400 Bad Request because the
             #       client sent GET instead of CONNECT method)
             #   (b) the .onion site itself returned 400 (deadlink /
-            #       anti-bot) — the proxy tunnel succeeded but the
+            #       anti-bot) -- the proxy tunnel succeeded but the
             #       remote server rejected the request
             # Clearnet HTTP 400 is treated as a generic http_error
             # (no onion-specific classification possible without
@@ -321,6 +356,7 @@ class HTMLDownloader(BaseDownloader):
                 error_type=f"HTTP_{response.status_code}",
             )
             return None
+        return None
 
         # If we exhausted retries with a captured transient exception,
         # surface it through the same OBS-G failure_mode partition as
