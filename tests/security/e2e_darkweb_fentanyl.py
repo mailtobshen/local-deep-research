@@ -218,8 +218,15 @@ def phase_3_extract_images(fetch_result):
     - find_all('img')
     - skip if src empty / data: URI
     - require http(s) absolute URL
-    - skip if width or height < 50 px
+    - skip if width or height is explicitly set AND < 50 px
     - drop empty src / data: URLs
+
+    Note: the <50px guard only drops images whose dimensions are
+    explicitly declared in the HTML. Lazy-loaded images (no width/
+    height attribute) pass through -- the production extractor
+    decides at fetch time whether to pull them. This matches
+    production semantics: don't pre-filter images whose rendered
+    size you can't yet know.
     """
     if not fetch_result.get("html"):
         return {
@@ -246,9 +253,9 @@ def phase_3_extract_images(fetch_result):
                 h = int(img.get("height") or 0) or None
             except (ValueError, TypeError):
                 w = h = None
-            if w is not None and w < 50:
-                continue
-            if h is not None and h < 50:
+            # Only drop images whose dimensions are EXPLICITLY small.
+            # Lazy-loaded images (no width/height) are kept.
+            if w is not None and h is not None and w < 50 and h < 50:
                 continue
             kept.append({
                 "src": absolute,
