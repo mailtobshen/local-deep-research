@@ -311,9 +311,19 @@ class ImageStore:
         # escalate to Firecrawl before propagating. 404/410 mean the
         # resource is genuinely gone — no fallback will help.
         if resp.status_code in (401, 403, 407):
+            # Darkweb: never escalate to Firecrawl for .onion URLs —
+            # its egress (direct or via Privoxy) cannot reach .onion,
+            # so the fallback is a guaranteed fail that only burns a
+            # round-trip. The Playwright-fetched page already gave us
+            # the image URL; a 401/403/407 from the onion host is a
+            # real dead-end, not an anti-hotlink quirk Firecrawl's
+            # browser rendering could bypass.
+            _onion = (urlparse(url).hostname or "").lower()
+            _is_onion = _onion == "onion" or _onion.endswith(".onion")
             if (
                 self._firecrawl_client is not None
                 and source_url
+                and not _is_onion
             ):
                 logger.info(
                     f"[IMG-TRACE] PERSIST_FALLBACK url={url} via=firecrawl "
