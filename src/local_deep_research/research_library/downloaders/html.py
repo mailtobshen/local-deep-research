@@ -226,6 +226,7 @@ class HTMLDownloader(BaseDownloader):
             except (
                 requests.exceptions.Timeout,
                 requests.exceptions.ConnectionError,
+                requests.exceptions.ProxyError,
                 OnionConnectProxyError,
             ) as exc:
                 last_exc = exc
