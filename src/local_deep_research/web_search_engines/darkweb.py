@@ -64,12 +64,22 @@ def _make_darkweb_engine(
         any user-customised engine list (e.g. adding ``haystak``);
         falls back to ``DARKWEB_DEFAULT_ENGINES`` when missing.
     """
-    return SearXNGSearchEngine(
+    engine = SearXNGSearchEngine(
         instance_url=instance_url or DARKWEB_DEFAULT_INSTANCE_URL,
         engines=list(_resolve_darkweb_engines(settings_snapshot)),
         categories=list(DARKWEB_DEFAULT_CATEGORIES),
         max_results=DARKWEB_DEFAULT_MAX_RESULTS,
     )
+    # Enable LLM-based relevance filtering. Verified 2026-08-21:
+    # darkweb returns mixed Ahmia/torch results where unrelated .onion
+    # sites (e.g. marxists.org.onion, generic-language mirrors) appear
+    # in the same result set as topic-relevant URLs. Native SearXNG
+    # ranking does not perform cross-lingual topic filtering, so we
+    # delegate the second-pass filter to the engine's LLM, which
+    # understands the original query and the URLs and drops the
+    # off-topic ones before they reach the LLM writing the report.
+    engine.enable_llm_relevance_filter = True
+    return engine
 
 
 def tag_darkweb(results: list[dict]) -> list[dict]:

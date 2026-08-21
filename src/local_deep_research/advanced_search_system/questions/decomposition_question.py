@@ -128,6 +128,19 @@ What are the security implications of X?
             f"Generating sub-questions for query: '{query}', subject: '{subject}'"
         )
 
+        # Skip decomposition for CJK queries. Verified 2026-08-21:
+        # when the query is in Chinese (e.g. "芬太尼及精神药物非法交易产业链")
+        # the LLM decomposes into broad single-word tokens like "运作模式"
+        # / "组织结构" which return unrelated Ahmia results. The original
+        # compound topic is already a tight, well-formed search query for
+        # Chinese. English question-format queries still decompose; this
+        # early-return only fires for queries containing CJK characters.
+        if any("一" <= ch <= "鿿" for ch in query):
+            logger.info(
+                f"CJK query detected, skipping decomposition: {query!r}"
+            )
+            return [query]
+
         try:
             # Get response from LLM
             response = self.model.invoke(prompt)
