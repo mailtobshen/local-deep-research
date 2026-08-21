@@ -143,6 +143,17 @@ def canonical_url_key(url: str) -> str:
         port = ""
     netloc = f"{host}:{port}" if port else host
 
+    # .onion hosts: scheme-insensitive canonical key. The same onion
+    # service is routinely handed out as http:// and https:// (search
+    # results mirror both; the fetcher promotes http→https for the
+    # CONNECT proxy). Treating them as different URLs defeats Sources-
+    # row dedup — observed 2026-08-21 research 19988de2: cite 39 and
+    # cite 150 pointed at the same page under different schemes and
+    # produced duplicate rows. Safe globally: an onion service serves
+    # the same content on 80 and 443 by design.
+    if host and (host.endswith(".onion") or host == "onion"):
+        scheme = "http"
+
     # Filter query params case-insensitively on key; preserve order/values.
     if parsed.query:
         pairs = parse_qsl(parsed.query, keep_blank_values=True)

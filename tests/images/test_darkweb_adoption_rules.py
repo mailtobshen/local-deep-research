@@ -94,3 +94,20 @@ def test_darkweb_missing_dimensions_kept(monkeypatch):
     # No width/height attributes -> extractor's "unknown size" leniency.
     out = _run(monkeypatch, _img_json())
     assert f"![listing photo]({_ONION_IMG})" in out
+
+
+def test_darkweb_meaningless_alt_dropped(monkeypatch):
+    """Theme-artifact alts ('300x300', 'shop', 'Placeholder') are
+    dropped by the darkweb fast path — no semantic gate exists there,
+    so alt quality is the only caption signal."""
+    import json
+    out = _run(monkeypatch, json.dumps([
+        {"url": _ONION_IMG, "alt": "300x300",
+         "source_url": _ONION, "source_title": "t",
+         "width": 600, "height": 400},
+        {"url": _ONION_IMG + "?2", "alt": "real product photo",
+         "source_url": _ONION, "source_title": "t",
+         "width": 600, "height": 400},
+    ]))
+    assert "300x300" not in out
+    assert "![real product photo]" in out

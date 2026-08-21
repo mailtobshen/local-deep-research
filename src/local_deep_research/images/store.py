@@ -266,6 +266,7 @@ class ImageStore:
         self, url: str, source_url: Optional[str] = None
     ) -> Optional[Tuple[bytes, str]]:
         from ..security.safe_requests import safe_get
+        from ..security.proxy_config import get_onion_proxies
         from urllib.parse import urlparse
 
         # Many CDNs gate images behind basic anti-hotlink checks that only
@@ -279,6 +280,13 @@ class ImageStore:
             if parsed.scheme and parsed.netloc:
                 headers["Referer"] = f"{parsed.scheme}://{parsed.netloc}/"
 
+        # .onion image URLs must egress through the in-process onion
+        # CONNECT proxy (127.0.0.1:18080 → ldr-tor:9050). Without this
+        # the request goes to Privoxy, which cannot resolve .onion and
+        # returns 500 — observed 2026-08-21 as 6/6 PERSIST_FAIL on
+        # every adopted darkweb image. Returns None for clearnet URLs
+        # so those keep the existing proxy behaviour.
+        onion_proxies = get_onion_proxies(url)
         try:
             resp = safe_get(
                 url,
@@ -286,6 +294,7 @@ class ImageStore:
                 timeout=30,
                 allow_private_ips=False,
                 trusted_host_suffixes=_IMAGE_URL_TRUSTED_HOST_SUFFIXES,
+                proxies=onion_proxies,
             )
         except Exception as e:
             # Network-level failures (DNS / TCP / TLS / proxy hiccups).
@@ -346,6 +355,7 @@ class ImageStore:
         the rendered <img src>.
         """
         from ..security.safe_requests import safe_get
+        from ..security.proxy_config import get_onion_proxies
         from bs4 import BeautifulSoup
         from urllib.parse import urljoin, urlparse
 
@@ -390,6 +400,7 @@ class ImageStore:
             timeout=30,
             allow_private_ips=False,
             trusted_host_suffixes=_IMAGE_URL_TRUSTED_HOST_SUFFIXES,
+            proxies=get_onion_proxies(matched_src),
         )
         resp.raise_for_status()
         ctype = (

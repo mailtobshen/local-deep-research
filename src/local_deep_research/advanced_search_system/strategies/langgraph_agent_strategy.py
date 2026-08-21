@@ -1415,7 +1415,41 @@ class LangGraphAgentStrategy(BaseSearchStrategy):
                 if all_links:
                     sources_md = format_links_to_markdown(all_links)
                     if sources_md:
-                        formatted_output = f"{synthesized_content}\n\n## Sources\n\n{sources_md}"
+                        # Localized Sources heading: zh-CN reports use
+                        # ## 参考文献 so the scaffolding matches the
+                        # body language (report_generator already does
+                        # this; this path had a hardcoded English
+                        # heading — observed 2026-08-21 research
+                        # 19988de2). find_sources_section matches both
+                        # variants, so downstream enforcers are
+                        # unaffected.
+                        _lang = "en"
+                        try:
+                            from ...config.thread_settings import (
+                                get_setting_from_snapshot,
+                            )
+
+                            _lang = (
+                                get_setting_from_snapshot(
+                                    "report.language",
+                                    default="zh-CN",
+                                    settings_snapshot=(
+                                        self.settings_snapshot or {}
+                                    ),
+                                )
+                                or "en"
+                            )
+                        except Exception:
+                            pass
+                        _sources_heading = (
+                            "## 参考文献"
+                            if str(_lang).startswith("zh")
+                            else "## Sources"
+                        )
+                        formatted_output = (
+                            f"{synthesized_content}\n\n"
+                            f"{_sources_heading}\n\n{sources_md}"
+                        )
             except Exception:
                 logger.exception("Failed to format source links")
 

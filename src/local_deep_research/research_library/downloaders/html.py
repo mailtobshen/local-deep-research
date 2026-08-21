@@ -21,6 +21,13 @@ from ...security.proxy_config import (
 from ...security.onion_connect_proxy import OnionConnectProxyError
 from ._onion_socks5 import fetch_onion as _fetch_onion_direct_socks5
 
+# Circuit-breaker threshold: consecutive dead .onion fetches (each a
+# full 2×60 s retry burn) on the SAME host before further URLs to
+# that host fail fast. 2 = "miss twice → dead" — tuned for the
+# observed 2026-08-21 batch where dead hosts were re-attempted up to
+# 12 times each.
+_ONION_HOST_FAIL_LIMIT = 2
+
 
 class HTMLDownloader(BaseDownloader):
     """Downloader for HTML web pages - extracts clean text content."""
@@ -34,6 +41,20 @@ class HTMLDownloader(BaseDownloader):
         super().__init__(timeout)
         self.session.headers.update({"User-Agent": BROWSER_USER_AGENT})
         self.language = language
+        # Per-.onion-host circuit breaker. A dead .onion site burns
+        # 2 × 60 s (SOCKS5 miss + proxy retry) per URL, and the same
+        # dead host appears many times in one batch (observed
+        # 2026-08-21 research 19988de2: one host × 12 URLs = 24 min
+        # of dead waits; 58 dead URLs total = 93 min). After
+        # ``_ONION_HOST_FAIL_LIMIT`` consecutive full-timeout failures
+        # on the SAME host, further URLs to that host fail fast with
+        # no network call. Any success on the host resets the counter
+        # (Tor circuits are volatile — a host that recovered should
+        # be retried on a later research run; the breaker is
+        # per-downloader-instance, i.e. per-batch, so it never
+        # persists across researches).
+        self._onion_host_fails: dict = {}
+        self._onion_host_last_fail: dict = {}
 
     def can_handle(self, url: str) -> bool:
         """
@@ -211,6 +232,18 @@ class HTMLDownloader(BaseDownloader):
         last_exc: BaseException | None = None
         host = (urlparse(url).hostname or "").lower()
         is_onion_url = bool(host) and (host == "onion" or host.endswith(".onion"))
+        # Circuit breaker: skip the network entirely for a .onion host
+        # that already burned _ONION_HOST_FAIL_LIMIT full retries in
+        # this batch. See __init__ for the observed cost this avoids.
+        if is_onion_url and (
+            self._onion_host_fails.get(host, 0) >= _ONION_HOST_FAIL_LIMIT
+        ):
+            logger.info(
+                f"[OBS-G] FETCH_CIRCUIT_OPEN host={host} "
+                f"fails={self._onion_host_fails[host]} "
+                f"reason=onion_host_dead"
+            )
+            return None
         for _retry_attempt in range(2):  # initial + 1 retry
             try:
                 if is_onion_url:
@@ -306,6 +339,9 @@ class HTMLDownloader(BaseDownloader):
                     f"content_len={len(response.text)} "
                     f"elapsed_s=0"
                 )
+                # Circuit breaker: success resets the host's counter.
+                if is_onion_url:
+                    self._onion_host_fails.pop(host, None)
                 return response.text
             # Non-HTML 200 -- common on darkweb (binary, captcha
             # challenge, JS-only page that returns 1-line stub).
@@ -356,6 +392,18 @@ class HTMLDownloader(BaseDownloader):
                 error_type=f"HTTP_{response.status_code}",
             )
             return None
+        # No response at all — for .onion URLs this is the
+        # "SOCKS5 miss + proxy retry both burned full timeouts"
+        # case. Count it toward the host's circuit breaker.
+        if is_onion_url:
+            _fails = self._onion_host_fails.get(host, 0) + 1
+            self._onion_host_fails[host] = _fails
+            if _fails == _ONION_HOST_FAIL_LIMIT:
+                logger.info(
+                    f"[OBS-G] FETCH_CIRCUIT_TRIP host={host} "
+                    f"fails={_fails} "
+                    f"reason=onion_host_dead_reached_limit"
+                )
         return None
 
         # If we exhausted retries with a captured transient exception,

@@ -30,6 +30,26 @@ from .store import ImageStore, _IMG_RE
 from .extractor import _MIN_DIM, pop_channel_coverage
 from local_deep_research.utilities.is_darkweb_url import is_darkweb_url
 
+# Meaningless-alt patterns for the darkweb adoption fast path. With
+# the semantic gate removed, alt quality is the only caption signal —
+# these patterns (observed 2026-08-21 research 19988de2: '300x300',
+# 'shop', 'bookc', 'Placeholder', 'image 300x213') are WordPress
+# theme/media-library artifacts with zero descriptive value. A darkweb
+# image whose alt matches one of these is dropped instead of being
+# adopted with a useless caption.
+_MEANINGLESS_ALT_RE = re.compile(
+    r"^(?:placeholder|shop|bookc|image)$"
+    r"|^\d+\s*x\s*\d+$"          # bare dimensions: 300x300, 150x150
+    r"|^image\s+\d+\s*x\s*\d+$"  # "image 300x213"
+    r"|^photo$|^picture$|^img$",
+    re.IGNORECASE,
+)
+
+
+def _alt_is_meaningless(alt: str) -> bool:
+    """True when the alt carries no descriptive value (see patterns above)."""
+    return bool(_MEANINGLESS_ALT_RE.match((alt or "").strip()))
+
 
 def _log_end(research_id: str, status: str) -> None:
     """Emit END plus the run's alt-channel coverage rollup.
@@ -466,6 +486,7 @@ def enhance_report_with_images(
                 dropped_low = 0
                 dropped_src = 0
                 dropped_small = 0
+                dropped_alt = 0
                 # Loaded lazily: on a darkweb citation no image ever
                 # reaches the semantic path below, so the sentence-
                 # transformer model is never touched.
@@ -488,6 +509,23 @@ def enhance_report_with_images(
                                 f"ref_url={url} "
                                 f"sec={sidx} score=0.00 "
                                 f"reason=source_not_same_origin"
+                            )
+                            continue
+                        # Meaningless alt (theme artifacts like
+                        # '300x300' / 'shop' / 'Placeholder') — the
+                        # fast path has no semantic gate, so a bad
+                        # alt means a useless caption. Drop.
+                        if _alt_is_meaningless(img.alt or ""):
+                            dropped_alt += 1
+                            logger.info(
+                                f"[IMG-TRACE] CANDIDATE_DROPPED research={research_id} "
+                                f"img_alt={(img.alt or '')!r} "
+                                f"img_url={img.url} "
+                                f"img_source_url={img.source_url} "
+                                f"cite_num={num} "
+                                f"ref_url={url} "
+                                f"sec={sidx} score=0.00 "
+                                f"reason=meaningless_alt"
                             )
                             continue
                         if (
@@ -680,7 +718,8 @@ def enhance_report_with_images(
                     f"num={num} imgs={len(imgs)} kept={kept} "
                     f"low_similarity={dropped_low} "
                     f"source_not_same_origin={dropped_src} "
-                    f"too_small={dropped_small}"
+                    f"too_small={dropped_small} "
+                    f"meaningless_alt={dropped_alt}"
                 )
 
         if not bank.all_urls():
