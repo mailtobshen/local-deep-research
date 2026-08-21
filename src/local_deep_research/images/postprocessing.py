@@ -14,6 +14,7 @@ from .relevance import (
     _section_levels,
     _split_sections,
     build_citation_index,
+    domains_match,
 )
 from .semantic_matcher import (
     DEFAULT_MIN_MARGIN as _DEFAULT_MIN_MARGIN,
@@ -26,7 +27,7 @@ from .semantic_matcher import (
 from . import semantic_matcher
 from .serialize import loads_images
 from .store import ImageStore, _IMG_RE
-from .extractor import pop_channel_coverage
+from .extractor import _MIN_DIM, pop_channel_coverage
 from local_deep_research.utilities.is_darkweb_url import is_darkweb_url
 
 
@@ -336,11 +337,26 @@ def enhance_report_with_images(
         # Now that section_phrases is populated, fire Event 1 (SEC_CITE_INDEX)
         # defined above (lazy emit to avoid UnboundLocalError).
         _emit_sec_cite_index()
+        # Sections whose citations are ALL darkweb take the fast path
+        # below and never need a section embedding — excluding them
+        # here means a darkweb-only run never loads the sentence-
+        # transformer model. Sections with no citations at all (e.g.
+        # the References block, which leaks into the entity pool) are
+        # also skipped: they can never bind an image. Sections with at
+        # least one clearnet citation keep the semantic gate (their
+        # darkweb citations still take the per-image fast path).
+        _dark_sec = {
+            sidx
+            for sidx, nums in section_to_nums.items()
+            if nums
+            and all(is_darkweb_url(num_to_url.get(n) or "") for n in nums)
+        }
         # Pre-embed section phrases (one vector per cited section).
         try:
             section_vecs: dict[int, list[float]] = {
                 sidx: list(_encode_phrase_cached(p))
                 for sidx, p in section_phrases.items()
+                if sidx not in _dark_sec and section_to_nums.get(sidx)
             }
         except Exception as exc:
             logger.warning(
@@ -367,17 +383,32 @@ def enhance_report_with_images(
 
         # Stage 2: extract images from each cited source, single-section
         # semantic gate against the citation's section.
+        # Darkweb (.onion) sources take a two-check fast path: no
+        # alt-vs-section semantic gate at all. An image is adopted iff
+        # (1) the cite_num's ref_url is same-origin (eTLD+1, i.e. the
+        # same .onion site) as the page the image was extracted from,
+        # and (2) it survives the same min-dimension logo/icon filter
+        # the extractor applies on clearnet. Clearnet citations keep
+        # the threshold pipeline below.
         for sidx, nums in section_to_nums.items():
-            if not nums or sidx not in section_vecs:
+            if not nums:
                 continue
-            sec_vec = section_vecs[sidx]
+            if not any(
+                is_darkweb_url(num_to_url.get(n) or "") for n in nums
+            ):
+                if sidx not in section_vecs:
+                    continue
+            if sidx in section_vecs:
+                sec_vec = section_vecs[sidx]
+            else:
+                sec_vec = None
             # Pre-canonicalised section phrase (heading + entities
             # joined with spaces). Captured here so the CANDIDATE_SCORED
             # event below can log the original text the model encoded
             # for this section, instead of an opaque hash. Truncated
             # to 200 chars so a long entity list doesn't blow up the
             # log.
-            sec_phrase_text = (section_phrases.get(sidx) or "")[:200]
+            sec_phrase_text = (section_phrases.get(sidx, "") or "")[:200]
             for num in nums:
                 url = num_to_url.get(num)
                 html = url_to_html.get(url) if url else None
@@ -433,8 +464,84 @@ def enhance_report_with_images(
                 )
                 kept = 0
                 dropped_low = 0
-                model = semantic_matcher.get_model()
+                dropped_src = 0
+                dropped_small = 0
+                # Loaded lazily: on a darkweb citation no image ever
+                # reaches the semantic path below, so the sentence-
+                # transformer model is never touched.
+                dark_cite = is_darkweb_url(url or "")
+                # Loaded lazily: on a darkweb citation no image ever
+                # reaches the semantic path below, so the sentence-
+                # transformer model is never touched.
+                model = None if dark_cite else semantic_matcher.get_model()
                 for img in imgs:
+                    if dark_cite:
+                        # Darkweb fast path — two checks only.
+                        if not domains_match(img.source_url, url):
+                            dropped_src += 1
+                            logger.info(
+                                f"[IMG-TRACE] CANDIDATE_DROPPED research={research_id} "
+                                f"img_alt={(img.alt or '')!r} "
+                                f"img_url={img.url} "
+                                f"img_source_url={img.source_url} "
+                                f"cite_num={num} "
+                                f"ref_url={url} "
+                                f"sec={sidx} score=0.00 "
+                                f"reason=source_not_same_origin"
+                            )
+                            continue
+                        if (
+                            img.width is not None and img.width < _MIN_DIM
+                        ) or (
+                            img.height is not None and img.height < _MIN_DIM
+                        ):
+                            dropped_small += 1
+                            logger.info(
+                                f"[IMG-TRACE] CANDIDATE_DROPPED research={research_id} "
+                                f"img_alt={(img.alt or '')!r} "
+                                f"img_url={img.url} "
+                                f"img_source_url={img.source_url} "
+                                f"cite_num={num} "
+                                f"ref_url={url} "
+                                f"sec={sidx} score=0.00 "
+                                f"reason=too_small"
+                            )
+                            continue
+                        logger.info(
+                            f"[IMG-TRACE] CANDIDATE_SCORED research={research_id} "
+                            f"img_alt={(img.alt or '')!r} "
+                            f"img_url={img.url} "
+                            f"img_source_url={img.source_url} "
+                            f"cite_num={num} ref_url={url} sec={sidx} "
+                            f"sec_phrase_text={sec_phrase_text!r}"
+                        )
+                        logger.info(
+                            f"[IMG-TRACE] CANDIDATE_KEPT research={research_id} "
+                            f"img_alt={(img.alt or '')!r} "
+                            f"img_url={img.url} "
+                            f"img_source_url={img.source_url} "
+                            f"cite_num={num} "
+                            f"ref_url={url} "
+                            f"sec={sidx} score=0.00"
+                        )
+                        bank.add([img])
+                        binding.setdefault(img.url, []).append((num, sidx, 0.0))
+                        logger.info(
+                            f"[IMG-TRACE] CANDIDATE_SCORED_DETAIL research={research_id} "
+                            f"sec={sidx} cite_num={num} ref_url={url} "
+                            f"img_alt={(img.alt or '')!r} img_url={img.url} "
+                            f"score=0.00 decision=keep reason=darkweb_same_origin"
+                        )
+                        logger.info(
+                            f"[IMG-TRACE] BIND_ADOPTED research={research_id} "
+                            f"sec={sidx} cite_num={num} ref_url={url} "
+                            f"img_alt={(img.alt or '')!r} "
+                            f"img_url={img.url} "
+                            f"img_source_url={img.source_url} "
+                            f"action=attach reason=darkweb_same_origin"
+                        )
+                        kept += 1
+                        continue
                     if not (img.alt and img.alt.strip()):
                         # Event 6: CANDIDATE_NO_ALT — promoted from
                         # DEBUG to INFO (closes G4 alt-missing path).
@@ -571,7 +678,9 @@ def enhance_report_with_images(
                 logger.info(
                     f"[IMG-TRACE] CITATION_MATCH research={research_id} "
                     f"num={num} imgs={len(imgs)} kept={kept} "
-                    f"low_similarity={dropped_low}"
+                    f"low_similarity={dropped_low} "
+                    f"source_not_same_origin={dropped_src} "
+                    f"too_small={dropped_small}"
                 )
 
         if not bank.all_urls():
