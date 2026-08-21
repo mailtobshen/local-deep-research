@@ -681,6 +681,16 @@ def enforce_sources_ascending_and_drop_orphans(content: str) -> str:
     # rebuilt output preserves the same separator as upstream.
     line_start = content.rfind("\n", 0, start) + 1
     body = content[:line_start].rstrip() + "\n"
+    # Dedup + range-compress citation markers in the body BEFORE the
+    # orphan-drop/hyperlink rewrite. The langgraph synthesis path
+    # (citation_handler.analyze_followup) emits the body directly and
+    # never passes through report_generator's dedup_section_citations
+    # call, so this is the single funnel where both report paths can
+    # be guaranteed duplicate-free. Without it the LLM's ``[1], [1]``
+    # style doubles survive into the final report (each copy even
+    # hyperlinked separately). Idempotent for bodies that were already
+    # deduped upstream.
+    body = dedup_section_citations(body)
     sources_block = content[start:]
     # Trim the Sources block to start exactly at the heading line.
     heading_line_offset = start - line_start
