@@ -357,6 +357,185 @@ def renumber_citations(body: str, sources: dict, old_to_new: dict) -> str:
     return body
 
 
+# Match a single citation token in a comma-group: either ``[N]`` or the
+# range form ``[N]-[M]``. Group 1 is the start, group 3 is the end (or
+# None for a single). The range form lets LLMs collapse lists like
+# ``[4], [5], [6]`` into ``[4]-[6]``. Verified 2026-08-21 in the
+# darkweb report: the LLM emitted ``[13], [24], [19], [21], [20], [22]``
+# in a Sources table cell, mixing single and range forms — the dedup
+# pass needs to handle both. Negative lookbehind/lookahead keep this
+# from matching already-hyperlinked tokens ``[[N]](url)``.
+_CITE_TOKEN_RE = re.compile(
+    r"(?<![\[【])[\[【](\d+)(\s*-\s*(\d+))?[\]】](?![\]】])"
+)
+
+
+def _compress_cite_list(nums: List[int]) -> str:
+    """Compress a deduplicated list of citation numbers into a compact
+    string.
+
+    Single-number form is ``[N]``; consecutive runs collapse to
+    ``[N]-[M]``. The result is stable for the same input (sort then
+    dedup before passing). Empty input returns the empty string.
+
+    Verified 2026-08-21: this is the helper used by dedup_section_citations
+    to turn ``[1, 3, 4, 5, 6, 7]`` into ``[1], [3]-[7]`` and to drop
+    ``[12], [12]`` duplicates from the LLM's per-section table.
+    """
+    if not nums:
+        return ""
+    nums = sorted(set(nums))
+    parts: List[str] = []
+    run_start = nums[0]
+    run_end = nums[0]
+    for n in nums[1:]:
+        if n == run_end + 1:
+            run_end = n
+        else:
+            parts.append(
+                f"[{run_start}]" if run_start == run_end else f"[{run_start}]-[{run_end}]"
+            )
+            run_start = n
+            run_end = n
+    parts.append(
+        f"[{run_start}]" if run_start == run_end else f"[{run_start}]-[{run_end}]"
+    )
+    return ", ".join(parts)
+
+
+# Splits a comma-group of citation tokens: each token is either
+# ``[N]`` or ``[N]-[M]``. Returns a flat list of integers (with
+# the range endpoints included). Tolerance to whitespace matches
+# the LLM's emission style.
+def _split_cite_tokens(text: str) -> List[int]:
+    """Extract a sorted, deduplicated list of citation numbers from a
+    citation token string.
+
+    Accepts three LLM emission styles:
+      - ``[N]`` and ``[N]-[M]`` (closed-bracket tokens)
+      - ``[N, M, ...]`` (open-bracket comma-group, e.g. ``[1, 2, 3]``)
+      - bare numbers separated by commas (rare; only as a fallback)
+
+    Empty input returns an empty list. Tokens that don't match the
+    expected shape are skipped silently — the caller is responsible
+    for handling the raw text separately if those tokens carry
+    semantic meaning.
+    """
+    out: List[int] = []
+    seen: set = set()
+
+    def _add(n: int) -> None:
+        if n not in seen:
+            seen.add(n)
+            out.append(n)
+
+    # First pass: extract every bracketed integer range via the
+    # token regex. ``[N]``, ``[N]-[M]``, and the embedded single
+    # numbers inside ``[1, 2, 3]`` all match (the outer brackets
+    # pass; the inner numbers match as soon as the surrounding
+    # brackets are stripped). Walk left-to-right so we don't
+    # double-count tokens that overlap.
+    for m in re.finditer(r"\[(\d+)(?:\s*-\s*(\d+))?\]", text):
+        start = int(m.group(1))
+        end = int(m.group(2)) if m.group(2) else start
+        if end < start:
+            continue
+        for n in range(start, end + 1):
+            _add(n)
+
+    # Second pass: if the text has the open-bracket comma-group shape
+    # ``[N, M, ...]`` (no closing bracket on individual elements),
+    # the regex above missed them. Pick them up: leading ``[``
+    # followed by digits/commas/trailing ``]``. We only do this if
+    # the first pass was empty to avoid double-counting when the LLM
+    # emits the same numbers both as a group and as individual tokens.
+    if not out:
+        for m in re.finditer(r"\[\s*([\d,\s]+?)\s*\]", text):
+            inner = m.group(1)
+            if "," in inner:
+                for tok in inner.split(","):
+                    tok = tok.strip()
+                    if tok.isdigit():
+                        _add(int(tok))
+    return out
+
+
+def dedup_section_citations(body: str) -> str:
+    """Deduplicate and compress citation markers in a section body.
+
+    Walks every comma-group of citation tokens (e.g. ``[1, 2, 3]``,
+    ``[4], [5], [6]``, ``[8]-[10]``) and rewrites it as a
+    deduplicated, range-compressed string. Single-number cells
+    (``[12]``) and short lists (``[1], [3]``) are left untouched
+    unless a duplicate is present.
+
+    Operates on the *raw* body before renumbering, so the dedup
+    works on the LLM's original numbers. After this pass, the
+    renumber_citations step can run as before.
+
+    Verified 2026-08-21 in the darkweb report: the LLM emitted
+    ``[12], [12]`` and ``[13], [14], [15], [16], [17], [18], [18]``
+    in section table cells. After dedup the cells become
+    ``[12]`` and ``[13]-[18]``.
+
+    Tokens whose raw form is not a comma-group (i.e. a single
+    ``[N]`` alone) are also handled: if two adjacent single
+    tokens reference the same number, the second is dropped. The
+    counter is per-comma-group, not per-chapter, so the LLM's
+    repetitive table rows each get cleaned up independently.
+    """
+    def _replace_group(match: "re.Match[str]") -> str:
+        nums = _split_cite_tokens(match.group(0))
+        return _compress_cite_list(nums)
+
+    # Comma-group first: full match ``[1, 2, 3]``.
+    def _replace_inline_pipe(match: "re.Match[str]") -> str:
+        # The inner string is things like ``[1], [3]-[4]`` separated
+        # by ``, `` or just commas. Walk the whole match and rewrite
+        # every comma-delimited token.
+        nums: List[int] = []
+        seen: set = set()
+        for tok in re.split(r",\s*", match.group(0)):
+            tok = tok.strip()
+            for n in _split_cite_tokens(tok):
+                if n not in seen:
+                    seen.add(n)
+                    nums.append(n)
+        return _compress_cite_list(nums)
+
+    # First pass: groups like ``[1, 2, 3]``.
+    out = CITE_INLINE_GROUP_RE.sub(_replace_group, body)
+    # Second pass: independent tokens glued together by the LLM
+    # without internal commas, e.g. ``[4] [5] [6]`` (no comma between
+    # them). The detector is a permissive run of two or more
+    # isolated tokens separated by whitespace, optional commas, or
+    # both. Repro for the LLM's actual emission style: ``[12], [12]``
+    # (catches duplicates within a tight run) and ``[4] [5] [6]``
+    # (no commas at all) and ``[13], [14], [15]`` (already a real
+    # comma-group; this regex still matches the whole thing as one
+    # so the dedup is uniform).
+    INLINE_RUN_RE = re.compile(
+        r"(?<![\[【])(?P<run>(?:[\[【]\d+[\]】]\s*,?\s*){2,})(?![\]】])"
+    )
+
+    def _replace_inline_run(match: "re.Match[str]") -> str:
+        nums: List[int] = []
+        seen: set = set()
+        for tok in re.findall(r"[\[【](\d+)[\]】]", match.group("run")):
+            n = int(tok)
+            if n not in seen:
+                seen.add(n)
+                nums.append(n)
+        return _compress_cite_list(nums)
+
+    out = INLINE_RUN_RE.sub(_replace_inline_run, out)
+    # Third pass: collapse tight inline runs separated only by
+    # `, ` (this is the comma-group regex above; keep the order so
+    # any single-token output that re-merged isn't re-double-touched).
+    return out
+
+
+
 # Regex for parsing a single row in the trailing Sources block.
 # Anchored at the start of a line so it does not match body prose
 # that happens to contain ``[N]`` substrings. Matches the same shape

@@ -843,6 +843,22 @@ class IntegratedReportGenerator:
                     sections[name], valid_indices
                 )
 
+            # 2b) Deduplicate and compress citation markers in each
+            #     section body. Verified 2026-08-21 in the darkweb
+            #     report: the LLM emitted `-[1], [2]-[3], [4], [5],
+            #     [6], [7]` and `[13], [14], [15], [16], [17], [18],
+            #     [18]` in per-section table cells. After dedup those
+            #     become `[1]-[7]` and `[13]-[18]`, halving the cell
+            #     length and removing the duplicate. Runs after
+            #     strip_hallucinated_citations (so the dedup only
+            #     touches valid indices) and before the renumber step
+            #     (so the dedup operates on the LLM's original numbers).
+            from .text_optimization.citation_formatter import (
+                dedup_section_citations,
+            )
+            for name in list(sections.keys()):
+                sections[name] = dedup_section_citations(sections[name])
+
             # 3) First-cite order across all sections, in TOC order.
             body_order: List[int] = []
             seen: set = set()
