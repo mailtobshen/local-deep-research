@@ -747,14 +747,14 @@ class LangGraphAgentStrategy(BaseSearchStrategy):
         self.collector = SearchResultsCollector(self.all_links_of_system)
 
         fetch_mode = self.get_setting(
-            "search.fetch.mode", "summary_focus_query"
+            "search.fetch.mode", "full"
         )
         if fetch_mode not in FETCH_MODES:
             logger.warning(
                 f"Unknown search.fetch.mode={fetch_mode!r}, falling back to "
-                f"'summary_focus_query'. Valid modes: {FETCH_MODES}"
+                f"'full'. Valid modes: {FETCH_MODES}"
             )
-            fetch_mode = "summary_focus_query"
+            fetch_mode = "full"
         self.fetch_mode = fetch_mode
         logger.info(f"LangGraph agent fetch_mode={self.fetch_mode}")
 
