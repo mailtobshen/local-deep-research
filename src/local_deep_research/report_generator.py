@@ -1015,6 +1015,20 @@ class IntegratedReportGenerator:
                     sections[name], valid_indices
                 )
 
+            # 3b) Deduplicate + range-compress citation markers. The
+            #     primary path (per_subsection_docs) already calls
+            #     dedup_section_citations after step 2. The legacy
+            #     format_links_to_markdown path was missing this call,
+            #     which is why the user reported ``[7], [7]`` /
+            #     ``[15], [15]`` / ``[4], [4]`` / ``[17], [17]``
+            #     surviving in the report. Verified 2026-08-21: with
+            #     this line, both paths produce the same dedup'd output.
+            from .text_optimization.citation_formatter import (
+                dedup_section_citations,
+            )
+            for name in list(sections.keys()):
+                sections[name] = dedup_section_citations(sections[name])
+
             # 4) First-cite order across all sections, in TOC order.
             body_order: List[int] = []
             seen: set = set()
