@@ -165,50 +165,49 @@ def path_c_encode(url):
 
 
 def phase_2_fetch(result):
-    """Phase 2: fetch URL via onion-connect-proxy:18080.
+    """Phase 2: fetch URL via the production HTMLDownloader.
 
-    Applies Path A (http->https promote) and Path C (URL encode spaces)
-    matching the live code in HTMLDownloader._fetch_html. Returns:
-      {url_final, status_code, body_bytes, headers, error}
+    Exercises the live HTMLDownloader._fetch_html (which, since
+    2026-08-21, uses direct SOCKS5h to ldr-tor:9050 as the primary
+    path for .onion URLs). Returns:
+      {url_raw, status_code, body_bytes, html, elapsed, error}
+
+    The test previously called requests.get(url, proxies=...) directly,
+    which routed through the in-process onion-connect-proxy and
+    missed the production fixes for direct SOCKS5 + the dedented
+    response check. Calling HTMLDownloader directly validates the
+    production code path end-to-end.
     """
     raw_url = result["url"]
-    promoted = path_a_promote(raw_url)
-    final_url = path_c_encode(promoted)
     started = time.monotonic()
+    html = None
+    status = None
+    error = None
     try:
-        resp = _session.get(
-            final_url,
-            proxies={"http": ONION_PROXY, "https": ONION_PROXY_HTTPS},
-            timeout=FETCH_TIMEOUT,
-            verify=False,
+        from local_deep_research.research_library.downloaders.html import (
+            HTMLDownloader,
         )
-        elapsed = time.monotonic() - started
-        return {
-            "url_raw": raw_url,
-            "url_final": final_url,
-            "promoted": raw_url != promoted,
-            "encoded": promoted != final_url,
-            "status": resp.status_code,
-            "body_bytes": len(resp.text),
-            "headers": dict(resp.headers),
-            "html": resp.text if resp.status_code == 200 else None,
-            "elapsed": elapsed,
-            "error": None,
-        }
+        _dl = HTMLDownloader(timeout=FETCH_TIMEOUT)
+        html = _dl._fetch_html(raw_url)
+        # _fetch_html returns the body text on success, None on
+        # failure. We don't have a status code on this path; report
+        # 200 if html is non-empty, else None.
+        status = 200 if html else None
     except Exception as e:
-        elapsed = time.monotonic() - started
-        return {
-            "url_raw": raw_url,
-            "url_final": final_url,
-            "promoted": raw_url != promoted,
-            "encoded": promoted != final_url,
-            "status": None,
-            "body_bytes": 0,
-            "headers": {},
-            "html": None,
-            "elapsed": elapsed,
-            "error": f"{type(e).__name__}: {str(e)[:120]}",
-        }
+        error = f"{type(e).__name__}: {str(e)[:120]}"
+    elapsed = time.monotonic() - started
+    return {
+        "url_raw": raw_url,
+        "url_final": raw_url,
+        "promoted": False,
+        "encoded": False,
+        "status": status,
+        "body_bytes": len(html) if html else 0,
+        "headers": {},
+        "html": html,
+        "elapsed": elapsed,
+        "error": error,
+    }
 
 
 def phase_3_extract_images(fetch_result):
