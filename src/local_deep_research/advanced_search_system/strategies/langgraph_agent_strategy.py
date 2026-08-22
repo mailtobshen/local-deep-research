@@ -396,8 +396,17 @@ def _make_web_search_tool(
             try:
                 from local_deep_research.utilities.cjk_query_split import (
                     plan_darkweb_queries,
+                    shorten_english_query,
                 )
                 sub_queries = plan_darkweb_queries(query)
+                if not sub_queries:
+                    # Non-CJK query. The darkweb index misses long
+                    # English compound queries (observed 2026-08-21
+                    # research 46976715: 8 consecutive long-English
+                    # queries all returned 0 results), so degrade to
+                    # short content-word probes instead of issuing the
+                    # miss verbatim.
+                    sub_queries = shorten_english_query(query)
             except Exception:
                 logger.exception(
                     "cjk_query_split failed for darkweb web_search"
@@ -1143,7 +1152,19 @@ class LangGraphAgentStrategy(BaseSearchStrategy):
 
             # If web_search emitted the no-results sentinel, stop here
             # so we never enter research_subtopic on a dead collector.
-            if no_results_abort:
+            # Gate on the collector actually being empty: the sentinel
+            # fires on ANY single empty web_search call, but earlier
+            # calls may have already accumulated results (observed
+            # 2026-08-22 research 46976715: the first CJK fan-out
+            # collected 84 sources, then 8 consecutive long-English
+            # no-result queries aborted the run — the report collapsed
+            # to a stub synthesized from the abort message). With
+            # sources in hand the loop must continue so
+            # research_subtopic can still structure them.
+            _collector_has_results = bool(
+                getattr(self.collector, "results", None)
+            )
+            if no_results_abort and not _collector_has_results:
                 logger.warning(
                     f"web_search returned no_results sentinel; aborting "
                     f"agent loop before research_subtopic for query={query!r}"

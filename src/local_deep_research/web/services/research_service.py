@@ -836,7 +836,16 @@ def _deferred_image_fill(
                 )
                 continue
         elif text:
-            payload = text
+            # Text-only page (no <img> survived extraction). Write a
+            # canonical EMPTY image list, not the raw markdown: the
+            # only downstream consumer of html_content is
+            # loads_images, which expects image JSON and logs a
+            # JSONDecodeError warning for every text payload
+            # (observed 2026-08-21 research 46976715: 3 LONELY ROAD
+            # pages produced LOADS_FAIL noise). "[]" is still a
+            # truthy string, so url_to_html keeps the URL and
+            # html_covered>0 semantics from d7866f38 intact.
+            payload = "[]"
         else:
             # OBS-F: per-URL zero-images probe. fetch_content_with_images
             # returned the URL with empty images AND empty text — the

@@ -319,3 +319,85 @@ def plan_darkweb_queries(query: str, max_queries: int = 6) -> List[str]:
                 seen.add(alias)
                 plan.append(alias)
     return plan[:max_queries]
+
+
+# English stopwords for the darkweb English-query degradation path.
+# These are the words that carry no match value against the onion
+# index sites (which are Chinese-content mirrors with shallow
+# English tokenization) — dropping them turns a long miss like
+# "fentanyl trafficking supply chain manufacturing distribution
+# criminal organizations UNODC reports 2023 2024" into the short
+# content-word probes that actually hit.
+_EN_STOPWORDS = frozenset(
+    """
+    a an the and or of in on for to with by from about into over
+    after before during under between against through
+    reports report said says according latest new recent
+    organizations organization networks network criminal
+    international global united nations office drugs crime
+    dea fbi unodc indictments indictment charges
+    2023 2024 2025 2026
+    is are was were be been being have has had do does did
+    will would can could should may might must
+    this that these those it its their there here
+    what which who whom when where why how
+    """.split()
+)
+
+
+def shorten_english_query(query: str, max_terms: int = 2) -> List[str]:
+    """Degrade a long English query into short content-word probes.
+
+    The darkweb SearXNG index (Chinese-content onion mirrors) matches
+    short noun probes, not long compound queries — verified 2026-08-21
+    research 46976715: every long English query (8 of them, with
+    qualifiers like "UNODC reports 2023 2024") returned 0 results while
+    the short aliases ("fentanyl", "trade") from the CJK plan hit.
+
+    Strategy: tokenize, drop stopwords, then emit up to ``max_terms``
+    probes — each a single highest-value content word (rarest first:
+    domain nouns like "fentanyl" before generic ones like "trade").
+    The original query is NOT included (it already missed; re-issuing
+    it wastes a round-trip).
+
+    Returns ``[]`` for queries that are pure stopwords or empty.
+    """
+    import re as _re
+
+    if not query or contains_cjk(query):
+        return []
+    tokens = [
+        t.lower().strip(".,;:!?\"'()[]")
+        for t in _re.split(r"\s+", query.strip())
+        if t.strip(".,;:!?\"'()[]")
+    ]
+    content = [
+        t for t in tokens if t not in _EN_STOPWORDS and len(t) > 2
+    ]
+    if not content:
+        return []
+    # Domain-noun priority first: the onion index mirrors carry
+    # product/market vocabulary, so drug names and market terms hit
+    # far more reliably than generic long words (verified 2026-08-21:
+    # "fentanyl"/"psychedelic" hit, "manufacturing"/"distribution"
+    # style abstraction does not). Remaining ties break by length
+    # (longer = more specific).
+    def _priority(tok: str) -> tuple:
+        prio = 0 if tok in _EN_DOMAIN_NOUNS else 1
+        return (prio, -len(tok))
+
+    content.sort(key=_priority)
+    return content[:max_terms]
+
+
+# Domain nouns that the darkweb index reliably matches. Drawn from
+# the observed hits/misses of research 46976715 plus the values in
+# ``_DARKWEB_KEYWORD_ALIASES`` (which map the same concepts from
+# Chinese).
+_EN_DOMAIN_NOUNS = frozenset({
+    "fentanyl", "morphine", "heroin", "opium", "opioids", "cocaine",
+    "methamphetamine", "mdma", "lsd", "ketamine", "xanax", "oxycodone",
+    "trafficking", "smuggling", "darknet", "cartel", "syndicate",
+    "bitcoin", "cryptocurrency", "laundering", "market", "vendor",
+    "pill", "pills", "powder", "gram", "grams", "kg",
+})
