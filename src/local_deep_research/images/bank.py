@@ -35,6 +35,15 @@ class ImageBank:
     def candidates_with_alt(self) -> List[ExtractedImage]:
         return [i for i in self._by_url.values() if i.alt]
 
+    def all_images(self) -> List[ExtractedImage]:
+        """Every stored image, including empty-alt ones.
+
+        The darkweb fast path deliberately adopts empty-alt images
+        (size rules decide, not alt text — 2026-08-22 policy); the
+        placement stage falls back to source_title for their captions.
+        """
+        return list(self._by_url.values())
+
     def candidates_without_alt(self, limit: int = 20) -> List[ExtractedImage]:
         no_alt = [i for i in self._by_url.values() if not i.alt]
         return no_alt[:limit]

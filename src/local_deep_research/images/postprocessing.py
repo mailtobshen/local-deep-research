@@ -30,24 +30,37 @@ from .store import ImageStore, _IMG_RE
 from .extractor import _MIN_DIM, pop_channel_coverage
 from local_deep_research.utilities.is_darkweb_url import is_darkweb_url
 
-# Meaningless-alt patterns for the darkweb adoption fast path. With
-# the semantic gate removed, alt quality is the only caption signal —
-# these patterns (observed 2026-08-21 research 19988de2: '300x300',
-# 'shop', 'bookc', 'Placeholder', 'image 300x213') are WordPress
-# theme/media-library artifacts with zero descriptive value. A darkweb
-# image whose alt matches one of these is dropped instead of being
-# adopted with a useless caption.
+# Meaningless-alt patterns for the darkweb adoption fast path. Keep
+# this STRICT (drop only truly content-free alts): per the 2026-08-22
+# policy decision, dimension-style alts ('300x300', 'image 300x213')
+# and ambiguous short tokens ('shop', 'bookc') may belong to real
+# content images — the place to kill small/icon images is the SIZE
+# filter (which now also applies to dimension-hinted alts), not the
+# alt text. Only pure UI/navigation vocabulary is dropped here.
 _MEANINGLESS_ALT_RE = re.compile(
-    r"^(?:placeholder|shop|bookc|image|home)$"
-    r"|^\d+\s*x\s*\d+$"          # bare dimensions: 300x300, 150x150
-    r"|^image\s+\d+\s*x\s*\d+$"  # "image 300x213"
-    # "Thumbnail" / "Thumbnail for X" — WP list-thumb artifact; strip
-    # the prefix and keep the image only when the inner text alone is
-    # still meaningful (handled below in _alt_is_meaningless).
+    r"^(?:placeholder|home|logo|icon|banner|button|arrow|search|menu|next|previous|prev|back|close|avatar)$"
     r"|^thumbnail(\s+for)?\s*$"
     r"|^photo$|^picture$|^img$",
     re.IGNORECASE,
 )
+
+# Alt strings that embed the image's pixel dimensions, e.g. '300x300'
+# or 'image 740x555'. Not dropped (they can be real content images),
+# but the embedded size is authoritative when the width/height
+# attributes are missing — a dimension-hinted alt below the icon
+# threshold is a logo/badge and IS dropped by the size rule.
+_DIM_IN_ALT_RE = re.compile(r"(\d+)\s*[x×]\s*(\d+)")
+
+
+def _dims_from_alt(alt: str) -> tuple[int, int] | None:
+    """Extract (w, h) from a dimension-style alt like '300x300'.
+
+    Returns None when the alt carries no embedded dimensions.
+    """
+    m = _DIM_IN_ALT_RE.search(alt or "")
+    if not m:
+        return None
+    return int(m.group(1)), int(m.group(2))
 
 
 def _alt_is_meaningless(alt: str) -> bool:
@@ -90,13 +103,28 @@ def _build_placements(
     binding: dict,
     bank_by_url: dict,
     cap: int = SECTION_IMAGE_CAP,
+    _caption_fallback: bool = False,
 ) -> list[tuple[int, str, str]]:
     """Build (sidx, url, alt) placements, capped at ``cap`` per section.
 
     Within each section, keeps the top-``cap`` images by binding score
     (desc). Emits a SECTION_CAP IMG-TRACE per over-cap section. Caller
     must hold the research_id logger context.
+
+    When ``_caption_fallback`` is set, an empty alt is replaced by the
+    source page's title (truncated) so the image still renders with a
+    meaningful caption instead of being skipped at insert time.
     """
+
+    def _caption_for(img) -> str:
+        alt = (img.alt or "").strip()
+        if alt:
+            return alt
+        if _caption_fallback:
+            t = (getattr(img, "source_title", "") or "").strip()
+            if t:
+                return t[:80]
+        return ""
     # Gather per-section candidates with scores.
     by_sec: dict[int, list[tuple[float, str]]] = {}
     for url, pairs in binding.items():
@@ -114,7 +142,7 @@ def _build_placements(
                 f"candidates={len(cands_sorted)} kept={cap} dropped={dropped}"
             )
         for _score, url in cands_sorted[:cap]:
-            placements.append((sidx, url, bank_by_url[url].alt))
+            placements.append((sidx, url, _caption_for(bank_by_url[url])))
     placements.sort(key=lambda p: (p[0], p[1]))
     return placements
 
@@ -515,10 +543,11 @@ def enhance_report_with_images(
                                 f"reason=source_not_same_origin"
                             )
                             continue
-                        # Meaningless alt (theme artifacts like
-                        # '300x300' / 'shop' / 'Placeholder') — the
-                        # fast path has no semantic gate, so a bad
-                        # alt means a useless caption. Drop.
+                        # Meaningless alt — STRICT list only (pure UI
+                        # vocabulary like 'home'/'logo'). Dimension-
+                        # style and short ambiguous alts pass through;
+                        # icon-sized images are killed by the size
+                        # check below instead (2026-08-22 policy).
                         if _alt_is_meaningless(img.alt or ""):
                             dropped_alt += 1
                             logger.info(
@@ -532,10 +561,21 @@ def enhance_report_with_images(
                                 f"reason=meaningless_alt"
                             )
                             continue
+                        # Size filter — STRICT: when the width/height
+                        # attributes are absent, a dimension embedded
+                        # in the alt ('300x300', 'image 740x555') is
+                        # authoritative; below the icon threshold it
+                        # is a logo/badge and dropped.
+                        _w, _h = img.width, img.height
+                        if (_w is None or _h is None) and img.alt:
+                            _alt_dims = _dims_from_alt(img.alt)
+                            if _alt_dims:
+                                _w = _w if _w is not None else _alt_dims[0]
+                                _h = _h if _h is not None else _alt_dims[1]
                         if (
-                            img.width is not None and img.width < _MIN_DIM
+                            _w is not None and _w < _MIN_DIM
                         ) or (
-                            img.height is not None and img.height < _MIN_DIM
+                            _h is not None and _h < _MIN_DIM
                         ):
                             dropped_small += 1
                             logger.info(
@@ -756,8 +796,15 @@ def enhance_report_with_images(
         # (``_dedupe_images`` below) collapses any duplicate
         # ``![alt](url)`` instances produced by the multi-bind,
         # keeping the FIRST occurrence in document order.
-        bank_by_url = {img.url: img for img in bank.candidates_with_alt()}
-        placements = _build_placements(binding, bank_by_url)
+        # Includes EMPTY-alt images (darkweb fast path adopts them by
+        # size rules — alt text is not a filter, 2026-08-22 policy);
+        # their caption falls back to the source page title.
+        bank_by_url = {img.url: img for img in bank.all_images()}
+        placements = _build_placements(
+            binding,
+            bank_by_url,
+            _caption_fallback=True,
+        )
         for sidx, p_url, p_alt in placements:
             # Find the (num, sec) pair for this placement. If the
             # URL is bound to multiple (num, sec), pick the one that

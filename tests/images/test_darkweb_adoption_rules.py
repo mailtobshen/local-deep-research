@@ -96,21 +96,33 @@ def test_darkweb_missing_dimensions_kept(monkeypatch):
     assert f"![listing photo]({_ONION_IMG})" in out
 
 
-def test_darkweb_meaningless_alt_dropped(monkeypatch):
-    """Theme-artifact alts ('300x300', 'shop', 'Placeholder') are
-    dropped by the darkweb fast path — no semantic gate exists there,
-    so alt quality is the only caption signal."""
+def test_darkweb_alt_policy_lenient_size_strict(monkeypatch):
+    """2026-08-22 policy: alt filter is LENIENT (only pure UI vocabulary
+    drops — 'home'/'logo'/'placeholder'); dimension-style alts pass and
+    their embedded size feeds the STRICT icon filter instead."""
     import json
     out = _run(monkeypatch, json.dumps([
+        # dimension alt + explicit big size -> kept (may be real content)
         {"url": _ONION_IMG, "alt": "300x300",
          "source_url": _ONION, "source_title": "t",
          "width": 600, "height": 400},
-        {"url": _ONION_IMG + "?2", "alt": "real product photo",
+        # UI vocabulary -> dropped regardless of size
+        {"url": _ONION_IMG + "?home", "alt": "Home",
          "source_url": _ONION, "source_title": "t",
-         "width": 600, "height": 400},
+         "width": 800, "height": 600},
+        # dimension alt, attrs missing, dims big -> kept
+        {"url": _ONION_IMG + "?dim", "alt": "image 740x555",
+         "source_url": _ONION, "source_title": "t",
+         "width": None, "height": None},
+        # dimension alt, attrs missing, dims tiny -> dropped as icon
+        {"url": _ONION_IMG + "?tiny", "alt": "40x40",
+         "source_url": _ONION, "source_title": "t",
+         "width": None, "height": None},
     ]))
-    assert "300x300" not in out
-    assert "![real product photo]" in out
+    assert "![300x300]" in out
+    assert "?home" not in out and "Home" not in out
+    assert "![image 740x555]" in out
+    assert "?tiny" not in out
 
 
 def test_darkweb_home_and_thumbnail_alts_dropped(monkeypatch):
