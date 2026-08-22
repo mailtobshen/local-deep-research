@@ -5,6 +5,8 @@ from enum import Enum
 from typing import Any, Dict, List, Tuple
 from urllib.parse import urlparse
 
+from loguru import logger
+
 _SOURCES_SECTION_PATTERNS = [
     # Heading variant: ``## Sources`` / ``## References`` / …,
     # optionally followed by a short suffix (Notes, List, Annotation
@@ -515,7 +517,20 @@ def dedup_section_citations(body: str) -> str:
     # comma-group; this regex still matches the whole thing as one
     # so the dedup is uniform).
     INLINE_RUN_RE = re.compile(
-        r"(?<![\[【])(?P<run>(?:[\[【]\d+[\]】]\s*,?\s*){2,})(?![\]】])"
+        # Separator between tokens is horizontal whitespace/commas
+        # ONLY — never newlines. Two fixes vs the previous
+        # ``\s*,?\s*`` separator, both observed 2026-08-22 in
+        # research 56ffdee8's market table:
+        #   (a) ``\s`` matched ``\n``, so ``[5], [5]\nNarcoShop``
+        #       swallowed the newline and glued the next line onto
+        #       the replacement (table rows merged).
+        #   (b) the run ends at a closing bracket, so a following
+        #       prose hyphen ("[1], [1]- 芬太尼药片") can't be
+        #       mis-bound into a bogus range by the compress step.
+        r"(?<![\[【])"
+        r"(?P<run>[\[【]\d+[\]】]"
+        r"(?:[ \t]*[,，]?[ \t]*[\[【]\d+[\]】])+)"
+        r"(?![\]】\d-])"
     )
 
     def _replace_inline_run(match: "re.Match[str]") -> str:
@@ -675,6 +690,10 @@ def enforce_sources_ascending_and_drop_orphans(content: str) -> str:
     """
     start = find_sources_section(content)
     if start < 0:
+        logger.info(
+            "[CITE-ENFORCE] no_sources_section "
+            f"len={len(content)} tail={content[-200:]!r}"
+        )
         return content
 
     # Locate the start of the line containing the heading so the
@@ -698,7 +717,16 @@ def enforce_sources_ascending_and_drop_orphans(content: str) -> str:
 
     rows = _split_sources_block(sources_only)
     if not rows:
-        # No parseable rows. Leave the block untouched.
+        # No parseable rows. Leave the block untouched. Log the block's
+        # first lines so the operator can see WHY it was unparseable
+        # (observed 2026-08-22 research 56ffdee8: enforce completed in
+        # 1 ms yet the final report kept raw ``[5], [5]`` duplicates —
+        # this branch is the prime suspect; without this log the no-op
+        # was invisible).
+        logger.info(
+            f"[CITE-ENFORCE] no_parseable_rows "
+            f"block_head={sources_only[:200]!r}"
+        )
         return content
 
     # Lazy import — ``utilities.url_utils`` transitively imports the
