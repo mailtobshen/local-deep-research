@@ -223,6 +223,7 @@ def safe_get(
     allow_localhost: bool = False,
     allow_private_ips: bool = False,
     trusted_host_suffixes: Optional[tuple] = None,
+    max_redirects: Optional[int] = None,
     **kwargs,
 ) -> requests.Response:
     """
@@ -300,10 +301,18 @@ def safe_get(
         # Callers needing cookie persistence across redirects should use
         # SafeSession instead, which preserves cookies via its cookie jar.
         if caller_wants_redirects:
+            # Caller-tightened redirect cap (e.g. darkweb image mirrors
+            # that loop: 10 hops × per-hop timeout burns ~15 s per dead
+            # image before the "Too many redirects" terminal raise).
+            _redirect_cap = (
+                max_redirects
+                if max_redirects is not None
+                else _MAX_REDIRECTS
+            )
             redirects_followed = 0
             while (
                 response.status_code in _REDIRECT_STATUS_CODES
-                and redirects_followed < _MAX_REDIRECTS
+                and redirects_followed < _redirect_cap
             ):
                 redirect_url = (response.headers.get("Location") or "").strip()
                 if not redirect_url:
@@ -344,14 +353,14 @@ def safe_get(
 
             if (
                 response.status_code in _REDIRECT_STATUS_CODES
-                and redirects_followed >= _MAX_REDIRECTS
+                and redirects_followed >= _redirect_cap
             ):
                 response.close()
                 # Note: raises ValueError here, while SafeSession raises
                 # requests.TooManyRedirects (delegated to the base class).
                 # Callers should catch ValueError for standalone functions.
                 raise ValueError(
-                    f"Too many redirects ({_MAX_REDIRECTS}) from {url}"
+                    f"Too many redirects ({_redirect_cap}) from {url}"
                 )
 
         _check_response_size(response)

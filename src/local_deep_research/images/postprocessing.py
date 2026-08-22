@@ -38,9 +38,13 @@ from local_deep_research.utilities.is_darkweb_url import is_darkweb_url
 # image whose alt matches one of these is dropped instead of being
 # adopted with a useless caption.
 _MEANINGLESS_ALT_RE = re.compile(
-    r"^(?:placeholder|shop|bookc|image)$"
+    r"^(?:placeholder|shop|bookc|image|home)$"
     r"|^\d+\s*x\s*\d+$"          # bare dimensions: 300x300, 150x150
     r"|^image\s+\d+\s*x\s*\d+$"  # "image 300x213"
+    # "Thumbnail" / "Thumbnail for X" — WP list-thumb artifact; strip
+    # the prefix and keep the image only when the inner text alone is
+    # still meaningful (handled below in _alt_is_meaningless).
+    r"|^thumbnail(\s+for)?\s*$"
     r"|^photo$|^picture$|^img$",
     re.IGNORECASE,
 )

@@ -111,3 +111,23 @@ def test_darkweb_meaningless_alt_dropped(monkeypatch):
     ]))
     assert "300x300" not in out
     assert "![real product photo]" in out
+
+
+def test_darkweb_home_and_thumbnail_alts_dropped(monkeypatch):
+    """Bare 'Home'/'Thumbnail' alts are theme artifacts; 'Thumbnail for X'
+    keeps the image (inner text is the real caption)."""
+    import json
+    out = _run(monkeypatch, json.dumps([
+        {"url": _ONION_IMG, "alt": "Home",
+         "source_url": _ONION, "source_title": "t",
+         "width": 600, "height": 400},
+        {"url": _ONION_IMG + "?2", "alt": "Thumbnail",
+         "source_url": _ONION, "source_title": "t",
+         "width": 600, "height": 400},
+        {"url": _ONION_IMG + "?3", "alt": "Thumbnail for FENTANYL | Fentanyl",
+         "source_url": _ONION, "source_title": "t",
+         "width": 600, "height": 400},
+    ]))
+    assert "![Home]" not in out
+    assert "![Thumbnail]" not in out
+    assert "![Thumbnail for FENTANYL | Fentanyl]" in out

@@ -295,6 +295,13 @@ class ImageStore:
                 allow_private_ips=False,
                 trusted_host_suffixes=_IMAGE_URL_TRUSTED_HOST_SUFFIXES,
                 proxies=onion_proxies,
+                # Tighter redirect cap for .onion mirrors: redirect
+                # loops there burn ~15 s (10 hops × per-hop timeout)
+                # per dead image before the terminal raise (observed
+                # 2026-08-22 research 56ffdee8: 2 narcos avif images
+                # each looped to the cap). 3 hops cover legitimate
+                # http→https and CDN shuffles.
+                max_redirects=3 if onion_proxies else None,
             )
         except Exception as e:
             # Network-level failures (DNS / TCP / TLS / proxy hiccups).
