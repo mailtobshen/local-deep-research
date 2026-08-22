@@ -689,6 +689,19 @@ def enforce_sources_ascending_and_drop_orphans(content: str) -> str:
         a ``## Sources`` header separator when one was present.
     """
     start = find_sources_section(content)
+    # Entry probe: unconditionally record what the funnel received so
+    # a silent no-op or unexpected input shape is visible in the next
+    # run's log (task4 2026-08-22: enforce ran in 1 ms, emitted neither
+    # no-op probe, yet the final report kept raw ``[2], [2]`` and
+    # non-hyperlinked ``[16]`` — the input at this point cannot have
+    # been the report the user saw).
+    _body_slice = content[:start] if start > 0 else ""
+    logger.info(
+        f"[CITE-ENFORCE] entry len={len(content)} "
+        f"sources_at={start} "
+        f"body_plain_cites={len(CITE_INLINE_RE.findall(_body_slice))} "
+        f"head={content[:120]!r}"
+    )
     if start < 0:
         logger.info(
             "[CITE-ENFORCE] no_sources_section "
