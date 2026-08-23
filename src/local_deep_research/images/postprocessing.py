@@ -56,6 +56,31 @@ _MEANINGLESS_ALT_RE = re.compile(
 # threshold is a logo/badge and IS dropped by the size rule.
 _DIM_IN_ALT_RE = re.compile(r"(\d+)\s*[x×]\s*(\d+)")
 
+# 2026-08-23 policy: on darkweb runs, images whose filename OR alt
+# references a messaging platform or an email address are contact-
+# channel evidence (vendor QQ/WeChat/Telegram cards, burner-email
+# screenshots) — core intelligence for darkweb research. They are
+# force-adopted: the meaningless-alt and size filters do not apply,
+# and the placement tie-break puts them at the very front.
+_MESSAGING_HINT_RE = re.compile(
+    r"qq|weixin|wechat|微信|\bq q\b|telegram|电报|tg[ _:-]"
+    r"|whatsapp|facebook|fb[ _:-]|messenger|linkedin|line[ _:-]"
+    r"|kakaotalk|kakao|viber|vibe[ _:-]|imessage|snapchat|discord"
+    r"|signal[ _:-]|email|e-mail|mailbox|邮件|邮箱|gmail|outlook"
+    r"|protonmail|@[a-z0-9.-]+\.(com|net|org|onion|ru|io|me)",
+    re.IGNORECASE,
+)
+
+
+def _is_messaging_evidence(img) -> bool:
+    """True when the image's alt or filename references a messaging
+    platform or email address (darkweb contact-channel evidence)."""
+    alt = (getattr(img, "alt", "") or "")
+    if _MESSAGING_HINT_RE.search(alt):
+        return True
+    name = (getattr(img, "url", "") or "").rsplit("/", 1)[-1]
+    return bool(_MESSAGING_HINT_RE.search(name))
+
 
 def _dims_from_alt(alt: str) -> tuple[int, int] | None:
     """Extract (w, h) from a dimension-style alt like '300x300'.
@@ -187,7 +212,16 @@ def _build_placements(
     def _sort_key(entry: tuple[float, str]):
         score, url = entry
         img = bank_by_url[url]
-        return (-score, -_area(img), _substance_rank(img), url)
+        # Messaging-evidence images (darkweb contact-channel intel)
+        # outrank everything, ahead of the score itself — they are the
+        # reason the rule exists (2026-08-23 policy).
+        return (
+            0 if _is_messaging_evidence(img) else 1,
+            -score,
+            -_area(img),
+            _substance_rank(img),
+            url,
+        )
 
     # Gather per-section candidates with scores.
     by_sec: dict[int, list[tuple[float, str]]] = {}
@@ -595,6 +629,35 @@ def enhance_report_with_images(
                 model = None if dark_cite else semantic_matcher.get_model()
                 for img in imgs:
                     if dark_cite:
+                        # Darkweb fast path — messaging-evidence
+                        # override (2026-08-23): alt/filename mentions
+                        # of messaging platforms / email addresses are
+                        # contact-channel intel — force-adopt BEFORE
+                        # any filter, even if same-origin fails (a
+                        # vendor's QQ card hotlinked from an image host
+                        # is still evidence).
+                        if _is_messaging_evidence(img):
+                            logger.info(
+                                f"[IMG-TRACE] CANDIDATE_KEPT research={research_id} "
+                                f"img_alt={(img.alt or '')!r} "
+                                f"img_url={img.url} "
+                                f"img_source_url={img.source_url} "
+                                f"cite_num={num} "
+                                f"ref_url={url} "
+                                f"sec={sidx} score=0.00"
+                            )
+                            logger.info(
+                                f"[IMG-TRACE] CANDIDATE_SCORED_DETAIL research={research_id} "
+                                f"sec={sidx} cite_num={num} ref_url={url} "
+                                f"img_alt={(img.alt or '')!r} img_url={img.url} "
+                                f"score=0.00 decision=keep reason=messaging_evidence"
+                            )
+                            bank.add([img])
+                            binding.setdefault(img.url, []).append(
+                                (num, sidx, 0.0)
+                            )
+                            kept += 1
+                            continue
                         # Darkweb fast path — two checks only.
                         if not domains_match(img.source_url, url):
                             dropped_src += 1

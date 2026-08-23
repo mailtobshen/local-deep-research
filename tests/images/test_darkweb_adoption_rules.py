@@ -175,3 +175,22 @@ def test_darkweb_cap5_and_tiebreak_order():
     # with cap=5 of 6 candidates, the UI icon (shop, tiny, no
     # substance) is the one eliminated — not the small-but-legit image
     assert all(not p[1].endswith("shop.png") for p in dark)
+
+
+def test_darkweb_messaging_evidence_force_adopted(monkeypatch):
+    """2026-08-23 policy: darkweb images whose alt/filename references a
+    messaging platform or email (QQ/WeChat/Telegram/... contact cards)
+    are force-adopted — immune to same-origin, size and alt filters —
+    and rank first in placement."""
+    import json
+    out = _run(monkeypatch, json.dumps([
+        # cross-origin + tiny + would-be junk: still adopted
+        {"url": "http://other.onion/qq-card.png", "alt": "QQ客服 123456",
+         "source_url": "http://other.onion/p", "source_title": "T",
+         "width": 40, "height": 40},
+        {"url": _ONION_IMG, "alt": "product photo",
+         "source_url": _ONION, "source_title": "t",
+         "width": 600, "height": 400},
+    ]))
+    assert "![QQ客服 123456]" in out
+    assert "![product photo]" in out
