@@ -111,7 +111,7 @@ def test_alt_falls_back_to_figcaption_when_img_has_no_alt():
         '<figure class="mw-default-size">'
         '  <a href="/wiki/File:The_HSBC_Building.jpg">'
         '    <img src="//upload.wikimedia.org/wikipedia/commons/thumb/4/41/The_HSBC_Building.jpg/250px-The_HSBC_Building.jpg"'
-        '         width="250" height="174">'
+        '         width="250" height="200">'
         '  </a>'
         '  <figcaption>第二代汇丰银行大楼以及建造中的江海关大楼</figcaption>'
         '</figure>'
@@ -138,7 +138,7 @@ def test_figcaption_fallback_scoped_to_wikipedia_only():
     the author's description only in the wiki/media context we tuned for)."""
     html = (
         '<figure>'
-        '  <img src="https://example.com/a/tower.jpg" width="250" height="174">'
+        '  <img src="https://example.com/a/tower.jpg" width="250" height="200">'
         '  <figcaption>some caption text</figcaption>'
         '</figure>'
     )
@@ -154,7 +154,7 @@ def test_figcaption_fallback_works_on_wikipedia_source():
     """Same DOM on wikipedia.org DOES use the figcaption."""
     html = (
         '<figure>'
-        '  <img src="//upload.wikimedia.org/wikipedia/commons/a/ab/Tower.jpg" width="250" height="174">'
+        '  <img src="//upload.wikimedia.org/wikipedia/commons/a/ab/Tower.jpg" width="250" height="200">'
         '  <figcaption>A famous tower</figcaption>'
         '</figure>'
     )
@@ -167,7 +167,7 @@ def test_figcaption_fallback_works_on_wikimedia_img_host():
     upload.wikimedia.org even if source_url parsing is ambiguous."""
     html = (
         '<figure>'
-        '  <img src="https://upload.wikimedia.org/wikipedia/commons/a/ab/Tower.jpg" width="250" height="174">'
+        '  <img src="https://upload.wikimedia.org/wikipedia/commons/a/ab/Tower.jpg" width="250" height="200">'
         '  <figcaption>wikimedia caption</figcaption>'
         '</figure>'
     )
@@ -303,7 +303,7 @@ def test_alt_resolve_probe_fires_for_figcaption_fallback(loguru_caplog):
     ALT_RESOLVE probe with via=figcaption from=figcaption and the alt text."""
     html = (
         '<figure><a href="/wiki/File:X">'
-        '  <img src="//upload.wikimedia.org/wikipedia/commons/a/ab/X.jpg" width="250" height="174">'
+        '  <img src="//upload.wikimedia.org/wikipedia/commons/a/ab/X.jpg" width="250" height="200">'
         '</a><figcaption>第二代汇丰银行大楼</figcaption></figure>'
     )
     with loguru_caplog.at_level(logging.INFO):
@@ -407,7 +407,7 @@ def test_alt_miss_reports_wiki_channel_open_but_no_figure(loguru_caplog):
     """
     html = (
         '<div><img src="//upload.wikimedia.org/wikipedia/commons/a/ab/x.jpg"'
-        ' width="250" height="174"></div>'
+        ' width="250" height="200"></div>'
     )
     with loguru_caplog.at_level(logging.INFO):
         extract_images(html, "https://zh.wikipedia.org/wiki/外滩", "外滩")

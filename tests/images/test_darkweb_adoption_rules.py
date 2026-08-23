@@ -187,7 +187,7 @@ def test_darkweb_messaging_evidence_force_adopted(monkeypatch):
         # cross-origin but >=50px: still adopted (messaging override)
         {"url": "http://other.onion/qq-card.png", "alt": "QQ客服 123456",
          "source_url": "http://other.onion/p", "source_title": "T",
-         "width": 200, "height": 150},
+         "width": 300, "height": 200},
         # messaging evidence but <50px: dropped by the absolute floor
         {"url": "http://other.onion/qq-tiny.png", "alt": "QQ客服 999",
          "source_url": "http://other.onion/p", "source_title": "T",
@@ -230,3 +230,42 @@ def test_unknown_area_defaults_to_300x300():
     assert _area(img()) == 90000          # unknown → default
     assert _area(img("", 100, 100)) == 10000  # small known < default
     assert _area(img("", 800, 600)) == 480000  # large known > default
+
+
+def test_entry_threshold_200px_both_dims():
+    """2026-08-23 policy: width AND height must both be >=200px
+    (extractor + fast path, darkweb and clearnet alike). Unknown
+    dimensions stay lenient."""
+    import json
+    out = _run(monkeypatch=None, html_json=json.dumps([
+        {"url": _ONION_IMG, "alt": "at200", "source_url": _ONION,
+         "source_title": "t", "width": 200, "height": 200},
+        {"url": _ONION_IMG + "?w199", "alt": "w199", "source_url": _ONION,
+         "source_title": "t", "width": 199, "height": 800},
+        {"url": _ONION_IMG + "?h199", "alt": "h199", "source_url": _ONION,
+         "source_title": "t", "width": 800, "height": 199},
+    ])) if False else None
+    from unittest.mock import MagicMock, patch
+    from local_deep_research.images import postprocessing as pp
+    md = "## S\n\n[[1]]\n\n## 参考文献\n\n[1] Src\n   URL: http://x.onion/p\n"
+    imgs = json.dumps([
+        {"url": "http://x.onion/ok.jpg", "alt": "at200", "source_url": "http://x.onion/p",
+         "source_title": "t", "width": 200, "height": 200},
+        {"url": "http://x.onion/w199.jpg", "alt": "w", "source_url": "http://x.onion/p",
+         "source_title": "t", "width": 199, "height": 800},
+        {"url": "http://x.onion/h199.jpg", "alt": "h", "source_url": "http://x.onion/p",
+         "source_title": "t", "width": 800, "height": 199},
+        {"url": "http://x.onion/unk.jpg", "alt": "", "source_url": "http://x.onion/p",
+         "source_title": "t", "width": None, "height": None},
+    ])
+    results = {"findings": [{"search_results": [{"url": "http://x.onion/p", "html_content": imgs}]}]}
+    def _boom(*a, **k): raise AssertionError
+    with patch.object(pp.semantic_matcher, "get_model", _boom), patch.object(pp, "ImageStore") as sm:
+        sm.return_value.persist.return_value = {}
+        sm.return_value.rewrite_markdown.side_effect = lambda md, m, **kw: md
+        out = pp.enhance_report_with_images(research_id="r", clean_markdown=md,
+            results=results, db_session=MagicMock(), enable_images=True, vision_model="")
+    assert "![at200]" in out          # exactly 200x200 passes
+    assert "w199.jpg" not in out      # width 199 < 200
+    assert "h199.jpg" not in out      # height 199 < 200
+    assert "unk.jpg" in out           # unknown dims lenient
