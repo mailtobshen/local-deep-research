@@ -232,10 +232,10 @@ def test_unknown_area_defaults_to_300x300():
     assert _area(img("", 800, 600)) == 480000  # large known > default
 
 
-def test_entry_threshold_200px_both_dims():
-    """2026-08-23 policy: width AND height must both be >=200px
-    (extractor + fast path, darkweb and clearnet alike). Unknown
-    dimensions stay lenient."""
+def test_entry_threshold_150px_both_dims():
+    """2026-08-23 policy: width AND height must both be >=150px
+    (extractor + fast path, darkweb and clearnet alike; 50→200→150
+    after tuning). Unknown dimensions stay lenient."""
     import json
     out = _run(monkeypatch=None, html_json=json.dumps([
         {"url": _ONION_IMG, "alt": "at200", "source_url": _ONION,
@@ -249,12 +249,14 @@ def test_entry_threshold_200px_both_dims():
     from local_deep_research.images import postprocessing as pp
     md = "## S\n\n[[1]]\n\n## 参考文献\n\n[1] Src\n   URL: http://x.onion/p\n"
     imgs = json.dumps([
-        {"url": "http://x.onion/ok.jpg", "alt": "at200", "source_url": "http://x.onion/p",
-         "source_title": "t", "width": 200, "height": 200},
-        {"url": "http://x.onion/w199.jpg", "alt": "w", "source_url": "http://x.onion/p",
-         "source_title": "t", "width": 199, "height": 800},
-        {"url": "http://x.onion/h199.jpg", "alt": "h", "source_url": "http://x.onion/p",
-         "source_title": "t", "width": 800, "height": 199},
+        {"url": "http://x.onion/ok.jpg", "alt": "at150", "source_url": "http://x.onion/p",
+         "source_title": "t", "width": 150, "height": 150},
+        {"url": "http://x.onion/w149.jpg", "alt": "w", "source_url": "http://x.onion/p",
+         "source_title": "t", "width": 149, "height": 800},
+        {"url": "http://x.onion/h149.jpg", "alt": "h", "source_url": "http://x.onion/p",
+         "source_title": "t", "width": 800, "height": 149},
+        {"url": "http://x.onion/w199.jpg", "alt": "w199", "source_url": "http://x.onion/p",
+         "source_title": "t", "width": 199, "height": 700},
         {"url": "http://x.onion/unk.jpg", "alt": "", "source_url": "http://x.onion/p",
          "source_title": "t", "width": None, "height": None},
     ])
@@ -265,7 +267,8 @@ def test_entry_threshold_200px_both_dims():
         sm.return_value.rewrite_markdown.side_effect = lambda md, m, **kw: md
         out = pp.enhance_report_with_images(research_id="r", clean_markdown=md,
             results=results, db_session=MagicMock(), enable_images=True, vision_model="")
-    assert "![at200]" in out          # exactly 200x200 passes
-    assert "w199.jpg" not in out      # width 199 < 200
-    assert "h199.jpg" not in out      # height 199 < 200
-    assert "unk.jpg" in out           # unknown dims lenient
+    assert "![at150]" in out         # exactly 150x150 passes
+    assert "w149.jpg" not in out     # width 149 < 150
+    assert "h149.jpg" not in out     # height 149 < 150
+    assert "w199.jpg" in out         # 199 now above the 150 floor
+    assert "unk.jpg" in out          # unknown dims lenient

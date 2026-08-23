@@ -79,10 +79,11 @@ _BLACKLIST_KEYWORDS = (
     "tracker",
     "blank.gif",
 )
-_MIN_DIM = 200  # px; entry threshold — width AND height must both be
-# >= this (2026-08-23 policy, raised from 50; any dimension < 200px
-# is an icon/thumb/logo and is filtered, darkweb AND clearnet alike).
-# Unknown dimensions (attrs missing, alt carries no dims) stay lenient.
+_MIN_DIM = 150  # px; entry threshold — width AND height must both be
+# >= this (2026-08-23 policy; 50 → 200 → 150 after tuning: any
+# dimension < 150px is an icon/thumb/logo and is filtered, darkweb
+# AND clearnet alike). Unknown dimensions (attrs missing, alt carries
+# no dims) stay lenient.
 
 # Default CSS selectors tried in order to find the page's main content
 # area. Tuned to cover the most common blog / news / wiki structures;
