@@ -32,7 +32,8 @@ Sources:
 Current time is {current_timestamp} UTC for verifying temporal references in sources.
 
 Provide a detailed analysis with citations. Do not create the bibliography, it will be provided automatically.  Never make up sources. Never write or create urls. Only write text relevant to the question. Example format: "According to the research [1], ..."
-"""
+
+CITATION FORMAT (REQUIRED, 2026-08-23 policy): every citation MUST be a hyperlink carrying the source's URL, in the form [[N]](url) — e.g. "According to the research [[1]](http://example.com/page), …". A bare [N] without a URL is NOT a valid citation and will be dropped. Copy the exact URL from the source entry you are citing."""
 
         response = self.llm.invoke(prompt)
         if not isinstance(response, str):
@@ -90,7 +91,9 @@ New Sources:
 Current time is {current_timestamp} UTC for verifying temporal references in sources.
 
 Reflect information from sources critically based on: {fact_check_response}. Never invent sources.
-Provide a detailed answer with citations. Do not create the bibliography, it will be provided automatically. Example format: "According to [1], ..." """
+Provide a detailed answer with citations. Do not create the bibliography, it will be provided automatically. Example format: "According to [1], ..."
+
+CITATION FORMAT (REQUIRED, 2026-08-23 policy): every citation MUST be a hyperlink carrying the source's URL, in the form [[N]](url) — e.g. "According to [[1]](http://example.com/page), …". A bare [N] without a URL is NOT a valid citation and will be dropped. Copy the exact URL from the source entry you are citing."""
 
         response = self.llm.invoke(prompt)
 

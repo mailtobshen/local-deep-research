@@ -131,7 +131,13 @@ PRECISION REQUIREMENTS:
 4. For measurements, ensure units and dimension types match the question
 5. Reconcile any conflicts by choosing the most frequently cited answer
 
-Provide the precise answer with citations. Do not create the bibliography, it will be provided automatically."""
+Provide the precise answer with citations. Do not create the bibliography, it will be provided automatically.
+
+CITATION FORMAT (REQUIRED, 2026-08-23 policy): every citation MUST be a
+hyperlink carrying the source's URL, in the form [[N]](url) — e.g.
+'According to [[3]](http://example.onion/page), …'. A bare [N] without
+a URL is NOT a valid citation and will be dropped. Copy the exact URL
+from the source entry you are citing."""
 
         response = self.llm.invoke(prompt)
         content = response.content

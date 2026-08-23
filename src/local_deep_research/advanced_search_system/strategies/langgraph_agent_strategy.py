@@ -1035,6 +1035,12 @@ class LangGraphAgentStrategy(BaseSearchStrategy):
             "References block with 239 numbered entries and zero body "
             "markers, which broke build_first_cite_order and left all cites "
             "unlinked.\n"
+            "CITATION MARKER FORMAT (REQUIRED, 2026-08-23 policy): each "
+            "inline marker MUST be a hyperlink carrying the source's URL: "
+            "[[N]](url) — e.g. 'According to [[3]](http://example.onion/page), "
+            "…'. A bare [N] without a URL is NOT a valid citation and will "
+            "be dropped. When you cite a source, copy the exact URL from "
+            "the tool result you are citing.\n"
         )
 
         # Create agent — may fail if model doesn't support tool calling
