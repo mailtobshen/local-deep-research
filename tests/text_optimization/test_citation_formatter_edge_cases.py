@@ -574,11 +574,10 @@ class TestEnforceSourcesAscending:
         assert body.count("[[1]](https://arxiv.org/abs/111)") == 1
         assert body.count("[[2]](https://arxiv.org/abs/111/?v=2)") == 1
 
-    def test_uncited_rows_get_appended_last(self):
-        """A Sources row whose displayed_n is never cited in the body
-        is still preserved in the rebuilt block (appended after cited
-        rows, in original row order). Its new number continues the
-        ascending sequence."""
+    def test_uncited_rows_are_dropped(self):
+        """2026-08-23 policy: the rebuilt block contains ONLY rows the
+        body cites (and that carry a URL), numbered 1..N ascending.
+        Uncited rows are dropped entirely."""
         content = (
             "# R\n\n"
             "Cite [3].\n\n"
@@ -588,12 +587,9 @@ class TestEnforceSourcesAscending:
         )
         out = self._enforce(content)
         sources_tail = out.split("## Sources")[1]
-        # Foo renumbers to [1]; Uncited (uncited) gets [2] appended.
         assert "[1] Foo" in sources_tail
-        assert sources_tail.index("[1] Foo") < sources_tail.index("[2] Uncited")
-        assert "[2] Uncited" in sources_tail
-        # The body must NOT have a [[2]] since [7] was uncited and
-        # the enforcer never writes body markers for uncited rows.
+        assert "Uncited" not in sources_tail
+        assert "[2]" not in sources_tail
         body = out.split("## Sources")[0]
         assert "[[2]]" not in body
 

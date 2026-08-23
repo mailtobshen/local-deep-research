@@ -822,18 +822,15 @@ def enforce_sources_ascending_and_drop_orphans(content: str) -> str:
     # reused the displayed N by accident), the LAST row's URL wins
     # so the same displayed_n resolves consistently in the body.
     displayed_n_to_url: Dict[int, str] = {}
-    # Rows the LLM emitted WITHOUT a ``URL:`` line (observed 2026-08-22
-    # research 808c9499: refs [8]/[9]/[12] etc. had title-only rows).
-    # Their body markers cannot be hyperlinked, but the citation is
-    # REAL — the orphan-drop must not delete the marker text. These
-    # numbers survive the cut as plain (non-hyperlink) markers.
-    url_less_ns: set = set()
     for row in rows:
         for n in row["displayed_n"]:
             if row["url"]:
                 displayed_n_to_url[n] = row["url"]
-            else:
-                url_less_ns.add(n)
+    # 2026-08-23 policy: a reference without a URL is NOT a citation.
+    # Body markers whose only row lacks a URL are orphan-dropped
+    # (they can never be hyperlinked), and the row itself never
+    # enters the rebuilt block. This supersedes the earlier keep-as-
+    # plain-marker behaviour.
 
     # Build a per-displayed_n set of valid URLs (any of which the
     # body marker for that N is allowed to match). When multiple
@@ -943,14 +940,11 @@ def enforce_sources_ascending_and_drop_orphans(content: str) -> str:
 
     def replace_plain_drop(match: "re.Match[str]") -> str:
         n = int(match.group(1))
-        # Plain `[N]` cannot carry a URL. Survive iff at least one
-        # Sources row references N — that row's URL is what
+        # Plain `[N]` survives iff at least one Sources row with a
+        # non-empty URL references N — that row's URL is what
         # ``renumber_citations`` will use to hyperlink the plain
-        # marker in the next step. A row WITHOUT a URL keeps the
-        # marker too (plain, unlinked) — the citation is real even
-        # though the LLM omitted the URL line.
-        if n in url_less_ns:
-            return match.group(0)
+        # marker in the next step. No-URL rows don't count: an
+        # unlinkable citation is not a citation (2026-08-23 policy).
         return (
             match.group(0)
             if n in displayed_n_to_canon_urls and displayed_n_to_canon_urls[n]
@@ -1054,21 +1048,22 @@ def enforce_sources_ascending_and_drop_orphans(content: str) -> str:
         # canon (plain marker with no row URL) just pick the first
         # matching row.
         accepted = displayed_n_to_canon_urls.get(old_n, set())
-        candidates = row_by_displayed_n.get(old_n, [])
+        candidates = [
+            ridx
+            for ridx in row_by_displayed_n.get(old_n, [])
+            if rows[ridx]["url"]
+        ]
         chosen = None
         for ridx in candidates:
             r = rows[ridx]
-            if not r["url"]:
-                continue
             row_canon = canonical_url_key(r["url"]) or r["url"]
             if not accepted or row_canon in accepted:
                 chosen = ridx
                 break
         if chosen is None:
-            # Plain marker whose displayed_n has no row URL — pick
-            # any row containing the number so renumber_citations
-            # can rewrite the number; the URL lookup will be empty
-            # so no link is emitted.
+            # All candidate rows for this number lack a URL (filtered
+            # above) — the marker was orphan-dropped in step 1, so
+            # this branch is unreachable for it; kept defensive.
             chosen = candidates[0] if candidates else None
         if chosen is None or chosen in seen_rows:
             continue
@@ -1080,16 +1075,11 @@ def enforce_sources_ascending_and_drop_orphans(content: str) -> str:
             continue
         ordered_rows.append(chosen)
 
-    # Third pass: append rows that the body never cited. They keep
-    # their own displayed_n in the new block (in original row order)
-    # so the bibliography is complete. Each gets its own new_n
-    # after the cited ones.
-    for ridx in range(len(rows)):
-        if ridx in seen_rows:
-            continue
-        if ridx in dedup_winner:
-            continue
-        ordered_rows.append(ridx)
+    # Third pass: rows the body never cited are DROPPED, not appended
+    # (2026-08-23 policy): the rebuilt 参考文献 block contains ONLY
+    # sources the body actually cites, numbered 1..N ascending in
+    # body-first-cite order. Rows without a URL are dropped here too
+    # — a citation that cannot be hyperlinked is not a citation.
 
     # Build old_to_new and new_sources_map together.
     old_to_new: Dict[int, int] = {}
