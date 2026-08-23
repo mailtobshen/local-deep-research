@@ -349,7 +349,12 @@ def strip_hallucinated_citations(body: str, valid_indices) -> str:
     return body
 
 
-def renumber_citations(body: str, sources: dict, old_to_new: dict) -> str:
+def renumber_citations(
+    body: str,
+    sources: dict,
+    old_to_new: dict,
+    delete_unmapped: bool = False,
+) -> str:
     """Rewrite ``[N]`` and hyperlinked markers per the *old_to_new* remap.
 
     Already-hyperlinked tokens (``[[N]](url)`` legacy or ``[N](url)``
@@ -359,17 +364,27 @@ def renumber_citations(body: str, sources: dict, old_to_new: dict) -> str:
     double brackets). Plain ``[N]`` tokens are rewritten using the URL
     from *sources* (a mapping of ``new_index -> (title, url)``) when one
     is present, or fall back to plain ``[new]``. Tokens whose old number
-    is not in *old_to_new* are left untouched — the caller is expected
-    to have stripped hallucinated numbers first.
+    is not in *old_to_new* are left untouched by default — the caller
+    is expected to have stripped hallucinated numbers first. With
+    ``delete_unmapped=True`` (enforce's post-orphan-drop pass) unmapped
+    markers are DELETED instead: inside enforce, unmapped means the
+    marker's only row was dropped, so keeping it would break the
+    enforce idempotency invariant (marker survives round 1, dies
+    round 2).
 
     Idempotent: re-running on already-renumbered text is a no-op — the
     rewritten ``[N](url)`` is re-matched by RENUMBER_HYPERLINK_RE and
     maps to itself.
     """
+    def _fate(old: int) -> str:
+        # Unmapped marker: keep (default) or delete (enforce).
+        return "" if delete_unmapped else None  # None = keep verbatim
+
     def replace_hyperlink(match):
         old = int(match.group(1))
         if old not in old_to_new:
-            return match.group(0)
+            fate = _fate(old)
+            return fate if fate is not None else match.group(0)
         new = old_to_new[old]
         url = match.group(2)
         return f"[{new}]({url})"
@@ -377,7 +392,8 @@ def renumber_citations(body: str, sources: dict, old_to_new: dict) -> str:
     def replace_plain(match):
         old = int(match.group(1))
         if old not in old_to_new:
-            return match.group(0)
+            fate = _fate(old)
+            return fate if fate is not None else match.group(0)
         new = old_to_new[old]
         entry = sources.get(new)
         if entry and entry[1]:
@@ -393,7 +409,8 @@ def renumber_citations(body: str, sources: dict, old_to_new: dict) -> str:
     def replace_bare_double(match):
         old = int(match.group(1))
         if old not in old_to_new:
-            return match.group(0)
+            fate = _fate(old)
+            return fate if fate is not None else match.group(0)
         new = old_to_new[old]
         entry = sources.get(new)
         if entry and entry[1]:
@@ -401,6 +418,8 @@ def renumber_citations(body: str, sources: dict, old_to_new: dict) -> str:
         return f"[{new}]"
 
     body = RENUMBER_BARE_DOUBLE_RE.sub(replace_bare_double, body)
+    if delete_unmapped:
+        body = re.sub(r" {2,}", " ", body)
     return body
 
 
@@ -1125,14 +1144,22 @@ def enforce_sources_ascending_and_drop_orphans(content: str) -> str:
             # above) — the marker was orphan-dropped in step 1, so
             # this branch is unreachable for it; kept defensive.
             chosen = candidates[0] if candidates else None
-        if chosen is None or chosen in seen_rows:
+        if chosen is None:
+            continue
+        # 2026-08-23 (idempotency, fuzz case): a dedup winner must be
+        # positioned at the FIRST marker that resolves to its canon —
+        # including a DROPPED TWIN's number. old_to_new rewires twin
+        # markers to the winner's URL, so the rewritten body shows the
+        # winner at the twin's position; ordering the winner only at
+        # its own number's first occurrence disagrees with the output
+        # body's URL order and a second pass would reorder the rows.
+        if chosen in dedup_winner:
+            # This candidate is a dropped twin; order its WINNER here
+            # (at the twin's first-occurrence position) instead.
+            chosen = dedup_winner[chosen]
+        if chosen in seen_rows:
             continue
         seen_rows.add(chosen)
-        # Skip rows that the dedup pass has marked as dropped —
-        # their winner already got picked first (winner precedes
-        # loser in body-first-cite order when both are cited).
-        if chosen in dedup_winner:
-            continue
         ordered_rows.append(chosen)
 
     # Third pass: rows the body never cited are DROPPED, not appended
@@ -1150,8 +1177,37 @@ def enforce_sources_ascending_and_drop_orphans(content: str) -> str:
     new_idx_for_ridx = {
         ridx: new_idx for new_idx, ridx in enumerate(ordered_rows, start=1)
     }
+    # A dedup winner that the body never cites (in its own right or via
+    # any dropped twin) never enters ordered_rows and has no new index.
+    # This happens when the winner lost the body-cite contest but a
+    # dropped twin's marker survived into the surviving set — the
+    # surviving marker then owns the canon URL and rewiring to the
+    # uncited winner would resurrect a row the rebuild drops (fuzz
+    # 2026-08-23: KeyError crash on refs blocks with dedup pairs where
+    # only the loser was cited). In that case the dropped row's
+    # displayed_n maps to the SURVIVING row that carries the same
+    # canon (found via ordered_rows scan), or is left unmapped — an
+    # unmapped marker is orphan-dropped later, which is the correct
+    # fate for a citation whose only materialisation is an uncited
+    # duplicate row.
+    canon_of_surviving_new: Dict[str, int] = {}
+    for new_idx, ridx in enumerate(ordered_rows, start=1):
+        row_canon = canonical_url_key(rows[ridx]["url"]) or rows[ridx]["url"]
+        canon_of_surviving_new.setdefault(row_canon, new_idx)
     for dropped_ridx, winner_ridx in dedup_winner.items():
-        winner_new = new_idx_for_ridx[winner_ridx]
+        if winner_ridx in new_idx_for_ridx:
+            winner_new = new_idx_for_ridx[winner_ridx]
+        else:
+            dropped_canon = canonical_url_key(
+                rows[dropped_ridx]["url"]
+            ) or rows[dropped_ridx]["url"]
+            winner_new = canon_of_surviving_new.get(dropped_canon)
+            if winner_new is None:
+                # No surviving row carries this canon: the citation
+                # has no home in the rebuilt block. Leave unmapped so
+                # the renumber pass drops the marker (it is orphaned
+                # by definition — the only row for its URL lost).
+                continue
         for n in rows[dropped_ridx]["displayed_n"]:
             old_to_new[n] = winner_new
     # Then: surviving rows map their own displayed_n to their own
@@ -1166,7 +1222,18 @@ def enforce_sources_ascending_and_drop_orphans(content: str) -> str:
             old_to_new[n] = new_idx
 
     # Step 3: rewrite body markers using the existing renumber helper.
-    new_body = renumber_citations(new_body, new_sources_map, old_to_new)
+    # Renumber with DELETE semantics for unmapped markers: unlike the
+    # general-purpose renumber_citations (which leaves unknown tokens
+    # untouched for reuse in other pipelines), inside enforce every
+    # marker still in the body at this point was vetted by the
+    # orphan-drop pass against the ORIGINAL rows — but a dedup-loser
+    # marker whose winner got dropped by the uncited-row cut can slip
+    # through with no old_to_new mapping (fuzz 2026-08-23: bare
+    # ``[[2]]`` survived round 1 and only died on round 2, breaking
+    # idempotency). Here, unmapped = orphaned = delete.
+    new_body = renumber_citations(
+        new_body, new_sources_map, old_to_new, delete_unmapped=True
+    )
 
     # Step 4: rebuild the Sources block. Emit ONE entry per row that
     # made it through, in body-first-cite order (uncited rows
@@ -1199,7 +1266,9 @@ def enforce_sources_ascending_and_drop_orphans(content: str) -> str:
     # tail (e.g. the ``trailing`` list can already end with a blank).
     new_sources_block = "\n".join(rebuilt_lines).rstrip() + "\n"
 
-    result = new_body.rstrip("\n") + "\n\n" + new_sources_block
+    result = (
+        new_body.rstrip(" \t\n") + "\n\n" + new_sources_block
+    )
     # Exit probe: pairs with the entry probe to bracket the funnel.
     # If a downstream stage reverts this output, out_len/out_cites will
     # disagree with what the saved report shows — pinpointing the

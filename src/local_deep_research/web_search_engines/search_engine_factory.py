@@ -304,7 +304,24 @@ def create_search_engine(
             )
         else:
             # Auto-detection based on engine attribute (medium priority)
-            if (
+            # 'darkweb' resolves to the plain SearXNGSearchEngine class
+            # (which carries no needs_llm flag), but every darkweb
+            # instance — including the agent web_search path — must get
+            # the LLM relevance filter: the onion index returns
+            # topically-unrelated mirrors for generic terms and native
+            # SearXNG ranking does no cross-lingual topic filtering.
+            # Matches the explicit flag already set in
+            # darkweb._make_darkweb_engine (2026-08-21). Without this,
+            # the agent path created its own SearXNG engine and 438
+            # unfiltered results flowed into the report (research
+            # 3e9ee493, 2026-08-23).
+            if engine_name == "darkweb":
+                should_filter = True
+                logger.info(
+                    "Auto-enabling LLM filtering for darkweb "
+                    "(engine-name policy: onion index needs topic filter)"
+                )
+            elif (
                 hasattr(engine_class, "needs_llm_relevance_filter")
                 and engine_class.needs_llm_relevance_filter
             ):

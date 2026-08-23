@@ -41,6 +41,15 @@ _MEANINGLESS_ALT_RE = re.compile(
     r"^(?:placeholder|home|logo|banner|button|arrow|search|menu|next|previous|prev|back|close|avatar)$"
     r"|^thumbnail(\s+for)?\s*$"
     r"|^photo$|^picture$|^img$"
+    # WooCommerce placeholder pattern (2026-08-23, research 3e9ee493):
+    # 'Awaiting product image' is the theme's not-yet-uploaded stub —
+    # same semantic as 'placeholder', adopted by mistake when it was
+    # the only image on a product page.
+    r"|awaiting\s+(product\s+)?image"
+    # Language-selector artifacts (2026-08-23): the same flag icon is
+    # titled 'Language selector icon' on one page and bare 'Lang' on
+    # another — 'icon' catches the first, this anchors the second.
+    r"|^lang$|\blang(?:uage)?\s+selector\b"
     # Substring rules (2026-08-22 policy): alts CONTAINING 'icon' or
     # 'shop' are theme/asset artifacts ('shop', 'shop icon',
     # 'Language selector icon') regardless of what else they say.

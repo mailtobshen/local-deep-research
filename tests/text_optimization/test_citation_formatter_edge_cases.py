@@ -744,3 +744,93 @@ class TestBareDoubleBracketCitations:
         )
         once = enforce_sources_ascending_and_drop_orphans(doc)
         assert enforce_sources_ascending_and_drop_orphans(once) == once
+
+
+class TestEnforceIdempotencyInvariant:
+    """Enforce must be idempotent across citation shapes and dedup ties.
+
+    Found by fuzzing 2026-08-23 (12000 random docs → 0 failures after
+    the fix; previously 768/3000 crashed with KeyError and hundreds
+    more were non-idempotent). Root causes fixed:
+    - dedup winner not in ordered_rows → KeyError in old_to_new build
+    - unmapped markers kept verbatim by renumber_citations (delete_
+      unmapped=True now deletes them inside enforce)
+    - winner ordered at its own number's position while the rewritten
+      body shows its URL at a dropped twin's earlier position
+    """
+
+    URLS = [
+        "http://a.onion/1",
+        "http://a.onion/1",  # canon tie with row 0
+        "http://b.onion/2",
+        "http://c.onion/3",
+    ]
+
+    def _doc(self, parts, rows):
+        refs = "\n\n".join(
+            f"[{i+1}] T{i}\n   URL: {self.URLS[i]}" for i in rows
+        )
+        return "x ".join(parts) + "\n\n## Sources\n\n" + refs
+
+    def test_twin_number_positions_the_winner(self):
+        from local_deep_research.text_optimization.citation_formatter import (
+            enforce_sources_ascending_and_drop_orphans,
+        )
+
+        # Canon-a pair (rows 0,1); twin number 1 occurs BEFORE the
+        # winner's own number 2. The winner must be ordered at the
+        # twin's position so a second pass doesn't reorder.
+        doc = self._doc(
+            ["[4](http://c.onion/3)", "[[1]]", "[3](http://b.onion/2)", "[2]"],
+            [0, 1, 2, 3],
+        )
+        once = enforce_sources_ascending_and_drop_orphans(doc)
+        assert enforce_sources_ascending_and_drop_orphans(once) == once
+        # The canon-a source sits at the twin's (2nd) position.
+        body = once.split("## Sources")[0]
+        assert body.index("a.onion/1") < body.index("b.onion/2")
+
+    def test_uncited_dedup_winner_no_crash(self):
+        """Dedup pair where only the loser is body-cited: no KeyError,
+        and the citation resolves to the surviving canon row."""
+        from local_deep_research.text_optimization.citation_formatter import (
+            enforce_sources_ascending_and_drop_orphans,
+        )
+
+        doc = self._doc(
+            ["[[4]](http://c.onion/3)"], [0, 1, 3]
+        )
+        out = enforce_sources_ascending_and_drop_orphans(doc)
+        assert "T3" in out
+        assert "http://c.onion/3" in out
+
+    def test_fuzz_smoke_idempotent(self):
+        """Deterministic mini-fuzz (3 seeds x 300 docs)."""
+        import random
+
+        from local_deep_research.text_optimization.citation_formatter import (
+            enforce_sources_ascending_and_drop_orphans,
+        )
+
+        for seed in (42, 7, 99):
+            random.seed(seed)
+            for _ in range(300):
+                rows = random.sample(range(4), random.randint(2, 4))
+                parts = []
+                for _ in range(random.randint(1, 4)):
+                    r = random.choice(rows)
+                    t = random.random()
+                    if t < 0.25:
+                        parts.append(f"[{r+1}]")
+                    elif t < 0.5:
+                        parts.append(f"[[{r+1}]]")
+                    elif t < 0.75:
+                        parts.append(f"[[{r+1}]]({self.URLS[r]})")
+                    else:
+                        parts.append(f"[{r+1}]({self.URLS[r]})")
+                random.shuffle(parts)
+                doc = self._doc(parts, rows)
+                once = enforce_sources_ascending_and_drop_orphans(doc)
+                assert enforce_sources_ascending_and_drop_orphans(
+                    once
+                ) == once, doc
