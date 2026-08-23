@@ -237,7 +237,20 @@ RENUMBER_SCAN_RE = re.compile(
     r"(?<!\[)\[(\d+)\](?!\]\()"
     r"|"
     r"\[\[(\d+)\]\]\([^)]*\)"
+    r"|"
+    r"\[\[(\d+)\]\](?!\()"
 )
+# Bare double-bracket ``[[N]]`` with NO trailing ``(url)`` — the
+# malformed form LLMs emit when they half-remember the hyperlink
+# format. Invisible to RENUMBER_HYPERLINK_RE (needs ``](url)``) and
+# deliberately skipped by RENUMBER_PLAIN_RE (negative lookbehind/
+# lookahead exclude the inner [N] of a double bracket), so before
+# 2026-08-23 these tokens survived every enforcement pass as plain
+# text, and their Sources rows were dropped as uncited (verified
+# research 3e9ee493: body full of raw ``[[73]]``, rows_rebuilt=2).
+# Negative lookahead ``(?!\()`` keeps it from eating the inner
+# bracket of a real ``[[N]](url)`` hyperlink.
+RENUMBER_BARE_DOUBLE_RE = re.compile(r"\[\[(\d+)\]\](?!\()")
 # Matches "Source N" / "source N" so hallucinated numbers there can be
 # stripped alongside the bracketed forms.
 SOURCE_WORD_NUMS_RE = re.compile(r"\b[Ss]ource\s+(\d+)\b")
@@ -263,9 +276,9 @@ def build_first_cite_order(body: str, valid_indices) -> list:
                 seen.append(n)
                 seen_set.add(n)
 
-    # Pass 2 — single numbers (plain `[N]` and `[[N]](url)`).
+    # Pass 2 — single numbers (plain `[N]`, `[[N]](url)`, bare `[[N]]`).
     for m in RENUMBER_SCAN_RE.finditer(body):
-        raw = m.group(1) or m.group(2)
+        raw = m.group(1) or m.group(2) or m.group(3)
         n = int(raw)
         if n in valid_indices and n not in seen_set:
             seen.append(n)
@@ -313,6 +326,12 @@ def strip_hallucinated_citations(body: str, valid_indices) -> str:
     body = RENUMBER_HYPERLINK_RE.sub(replace_hyperlink, body)
     body = CITE_INLINE_GROUP_RE.sub(replace_comma, body)
     body = RENUMBER_PLAIN_RE.sub(replace_plain, body)
+    # Bare ``[[N]]`` — same delete-if-hallucinated rule as the plain
+    # form (the bare form is invisible to the two regexes above).
+    body = RENUMBER_BARE_DOUBLE_RE.sub(
+        lambda m: "" if int(m.group(1)) not in valid_indices else m.group(0),
+        body,
+    )
     body = SOURCE_WORD_NUMS_RE.sub(replace_source_word, body)
     # Collapse runs of two or more spaces produced by removals. Do not
     # touch newlines so paragraph structure survives.
@@ -356,6 +375,19 @@ def renumber_citations(body: str, sources: dict, old_to_new: dict) -> str:
     # Hyperlink first to avoid double-touching the inner `[N]`.
     body = RENUMBER_HYPERLINK_RE.sub(replace_hyperlink, body)
     body = RENUMBER_PLAIN_RE.sub(replace_plain, body)
+    # Bare ``[[N]]`` last: same replacement shape as plain `[N]`
+    # (hyperlink via sources[new] URL, fall back to plain marker).
+    def replace_bare_double(match):
+        old = int(match.group(1))
+        if old not in old_to_new:
+            return match.group(0)
+        new = old_to_new[old]
+        entry = sources.get(new)
+        if entry and entry[1]:
+            return f"[[{new}]]({entry[1]})"
+        return f"[{new}]"
+
+    body = RENUMBER_BARE_DOUBLE_RE.sub(replace_bare_double, body)
     return body
 
 
@@ -953,6 +985,18 @@ def enforce_sources_ascending_and_drop_orphans(content: str) -> str:
 
     new_body = RENUMBER_HYPERLINK_RE.sub(replace_hyperlink_drop, body)
     new_body = RENUMBER_PLAIN_RE.sub(replace_plain_drop, new_body)
+    # Bare ``[[N]]`` tokens use the same orphan rule as plain ``[N]``:
+    # survive iff a Sources row with a URL owns N (then renumber
+    # hyperlinks it); otherwise the marker is deleted.
+    new_body = RENUMBER_BARE_DOUBLE_RE.sub(
+        lambda m: (
+            m.group(0)
+            if int(m.group(1)) in displayed_n_to_canon_urls
+            and displayed_n_to_canon_urls[int(m.group(1))]
+            else ""
+        ),
+        new_body,
+    )
     # Expand comma-groups ``[a, b, c]`` into ``[a][b][c]`` so the
     # subsequent renumber step can rewrite each member independently.
     # ``renumber_citations`` itself does not handle comma-groups — that
@@ -993,9 +1037,12 @@ def enforce_sources_ascending_and_drop_orphans(content: str) -> str:
             except ValueError:
                 continue
             add_surviving(n)
-    # Pass 2 — single numbers (plain `[N]` and `[[N]](url)`).
+    # Pass 2 — single numbers (plain `[N]`, `[[N]](url)`, bare `[[N]]`).
+    # The three arms of RENUMBER_SCAN_RE are alternatives of one
+    # pattern, so this scan is position-ordered: body-first-cite order
+    # is the order markers appear in the text, regardless of form.
     for m in RENUMBER_SCAN_RE.finditer(new_body):
-        raw = m.group(1) or m.group(2)
+        raw = m.group(1) or m.group(2) or m.group(3)
         try:
             n = int(raw)
         except (TypeError, ValueError):

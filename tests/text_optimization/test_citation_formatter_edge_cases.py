@@ -668,3 +668,79 @@ class TestEnforceSourcesAscending:
         # Single Sources entry.
         assert self._displayed_n(out) == [1]
 
+
+
+class TestBareDoubleBracketCitations:
+    """Bare ``[[N]]`` markers (no URL) must be enforced like plain ``[N]``.
+
+    Regression for research 3e9ee493 (2026-08-23): the LLM emitted the
+    double-bracket shape without the ``(url)`` tail. Every enforcement
+    regex was blind to that form — RENUMBER_HYPERLINK_RE needs the URL,
+    RENUMBER_PLAIN_RE's lookarounds skip inside double brackets — so the
+    markers survived as plain text, their Sources rows were dropped as
+    uncited (rows_rebuilt=2 of 20), and the 参考文献 block came out
+    nearly empty while the body showed raw ``[[73]]``.
+    """
+
+    DOC = (
+        "# 报告\n\n"
+        "## 摘要\n"
+        "中国生产 [[73]]，墨西哥中转 [[74]](http://a.onion/x) 与 [[75]]。\n\n"
+        "## 一、章节\n"
+        "根据 [[73]] 及 [[76]] 的数据。\n\n"
+        "## 参考文献\n\n"
+        "[73] Source A\n   URL: http://a.onion/x\n\n"
+        "[74] Source B\n   URL: http://b.onion/y\n\n"
+        "[75] Source C\n   URL: http://c.onion/z\n\n"
+        "[76] Source D\n   URL: http://d.onion/w\n"
+    )
+
+    def test_bare_double_bracket_hyperlinked_and_rows_kept(self):
+        from local_deep_research.text_optimization.citation_formatter import (
+            enforce_sources_ascending_and_drop_orphans,
+        )
+
+        out = enforce_sources_ascending_and_drop_orphans(self.DOC)
+        # Bare [[73]] is hyperlinked to its row's URL, not left raw.
+        assert "[[73]]" not in out
+        assert "]](http://a.onion/x)" in out
+        # All four cited rows survive the rebuild (uncited-row drop is
+        # for rows the body never cites — every row here is cited).
+        for title in ("Source A", "Source B", "Source C", "Source D"):
+            assert title in out, f"{title} was dropped from 参考文献"
+        # Renumbered 1..4 ascending.
+        assert "[1] Source" in out
+        assert "[4] Source" in out
+
+    def test_bare_double_bracket_orphan_dropped(self):
+        """A bare [[N]] with no Sources row for N is deleted."""
+        from local_deep_research.text_optimization.citation_formatter import (
+            enforce_sources_ascending_and_drop_orphans,
+        )
+
+        doc = _make_document(
+            "Claim one [[99]]. Claim two [1].",
+            "[1] Only Source\n   URL: http://only.onion/",
+        )
+        out = enforce_sources_ascending_and_drop_orphans(doc)
+        assert "[[99]]" not in out
+        assert "http://only.onion/" in out
+
+    def test_enforce_idempotent_after_bare_fix(self):
+        from local_deep_research.text_optimization.citation_formatter import (
+            enforce_sources_ascending_and_drop_orphans,
+        )
+
+        # Distinct canonical URLs per row: two body markers sharing one
+        # canonical URL across different rows is a pre-existing
+        # first-cite-order tie whose reordering is out of scope here.
+        doc = (
+            "## 摘要\n"
+            "甲 [[73]]，乙 [[74]](http://b.onion/y)，丙 [[75]]。\n\n"
+            "## 参考文献\n\n"
+            "[73] Source A\n   URL: http://a.onion/x\n\n"
+            "[74] Source B\n   URL: http://b.onion/y\n\n"
+            "[75] Source C\n   URL: http://c.onion/z\n"
+        )
+        once = enforce_sources_ascending_and_drop_orphans(doc)
+        assert enforce_sources_ascending_and_drop_orphans(once) == once
