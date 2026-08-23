@@ -125,12 +125,24 @@ class TestGetSetting:
 
 
 class TestGetOutputInstructionPrefix:
-    """Tests for _get_output_instruction_prefix method."""
+    """Tests for _get_output_instruction_prefix method.
+
+    Since 32c7802a the prefix always carries a language directive
+    (``report.language`` defaults to zh-CN → "IMPORTANT: Write the
+    entire response/report in Simplified Chinese…"). These tests pin
+    the language to an unknown code so the directive is empty and the
+    output-instruction formatting is tested in isolation.
+    """
+
+    NO_LANG = {"report.language": "xx-unknown"}
 
     def test_returns_formatted_prefix_when_instructions_set(self):
         """Test returns formatted prefix with custom instructions."""
         mock_llm = MagicMock()
-        settings = {"general.output_instructions": "Respond in Spanish"}
+        settings = {
+            "general.output_instructions": "Respond in Spanish",
+            **self.NO_LANG,
+        }
         handler = ConcreteCitationHandler(mock_llm, settings_snapshot=settings)
 
         result = handler._get_output_instruction_prefix()
@@ -140,7 +152,9 @@ class TestGetOutputInstructionPrefix:
     def test_returns_empty_string_when_no_instructions(self):
         """Test returns empty string when no instructions set."""
         mock_llm = MagicMock()
-        handler = ConcreteCitationHandler(mock_llm, settings_snapshot={})
+        handler = ConcreteCitationHandler(
+            mock_llm, settings_snapshot=self.NO_LANG
+        )
 
         result = handler._get_output_instruction_prefix()
 
@@ -149,7 +163,10 @@ class TestGetOutputInstructionPrefix:
     def test_returns_empty_string_for_whitespace_only_instructions(self):
         """Test returns empty string for whitespace-only instructions."""
         mock_llm = MagicMock()
-        settings = {"general.output_instructions": "   \n\t  "}
+        settings = {
+            "general.output_instructions": "   \n\t  ",
+            **self.NO_LANG,
+        }
         handler = ConcreteCitationHandler(mock_llm, settings_snapshot=settings)
 
         result = handler._get_output_instruction_prefix()
@@ -159,7 +176,10 @@ class TestGetOutputInstructionPrefix:
     def test_strips_whitespace_from_instructions(self):
         """Test strips leading/trailing whitespace from instructions."""
         mock_llm = MagicMock()
-        settings = {"general.output_instructions": "  Be concise  \n"}
+        settings = {
+            "general.output_instructions": "  Be concise  \n",
+            **self.NO_LANG,
+        }
         handler = ConcreteCitationHandler(mock_llm, settings_snapshot=settings)
 
         result = handler._get_output_instruction_prefix()
@@ -173,13 +193,29 @@ class TestGetOutputInstructionPrefix:
             "general.output_instructions": {
                 "value": "Use bullet points",
                 "type": "string",
-            }
+            },
+            **self.NO_LANG,
         }
         handler = ConcreteCitationHandler(mock_llm, settings_snapshot=settings)
 
         result = handler._get_output_instruction_prefix()
 
         assert result == "User-Specified Output Style: Use bullet points\n\n"
+
+    def test_language_directive_included_by_default(self):
+        """The default zh-CN language directive prefixes the output
+        instructions (behaviour added in 32c7802a)."""
+        mock_llm = MagicMock()
+        settings = {"general.output_instructions": "Respond in Spanish"}
+        handler = ConcreteCitationHandler(mock_llm, settings_snapshot=settings)
+
+        result = handler._get_output_instruction_prefix()
+
+        assert result.startswith(
+            "IMPORTANT: Write the entire response/report in "
+            "Simplified Chinese (简体中文)"
+        )
+        assert "User-Specified Output Style: Respond in Spanish" in result
 
 
 class TestCreateDocuments:
