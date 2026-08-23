@@ -143,3 +143,35 @@ def test_darkweb_home_and_thumbnail_alts_dropped(monkeypatch):
     assert "![Home]" not in out
     assert "![Thumbnail]" not in out
     assert "![Thumbnail for FENTANYL | Fentanyl]" in out
+
+
+def test_darkweb_cap5_and_tiebreak_order():
+    """2026-08-23 policy: darkweb cap=5 (clearnet 3); ties break by
+    area desc, then substance (alt > filename > neither)."""
+    from local_deep_research.images.postprocessing import _build_placements
+    from local_deep_research.images.extractor import ExtractedImage
+
+    def img(url, alt="", w=None, h=None):
+        return ExtractedImage(url=url, alt=alt, source_url="http://x.onion/p",
+                              source_title="T", width=w, height=h)
+
+    cands = [
+        ("http://x.onion/shop.png", "shop", 40, 40),
+        ("http://x.onion/big-content.jpg", "黑产招工月赚几十万", 800, 600),
+        ("http://x.onion/med.png", "FENTANYL product", 300, 300),
+        ("http://x.onion/big-empty.jpg", "", 700, 500),
+        ("http://x.onion/small.jpg", "", 100, 100),
+        ("http://x.onion/dim.jpg", "image 399x600", None, None),
+    ]
+    bank = {u: img(u, a, w, h) for u, a, w, h in cands}
+    binding = {u: [(1, 3, 0.0)] for u in bank}
+
+    dark = _build_placements(binding, bank, _caption_fallback=True, darkweb=True)
+    clear = _build_placements(binding, bank, _caption_fallback=True, darkweb=False)
+    assert len(dark) == 5, "darkweb cap = 5"
+    assert len(clear) == 3, "clearnet cap = 3"
+    # area desc + substance rank: big-content wins over big-empty
+    assert dark[0][1].endswith("big-content.jpg")
+    # with cap=5 of 6 candidates, the UI icon (shop, tiny, no
+    # substance) is the one eliminated — not the small-but-legit image
+    assert all(not p[1].endswith("shop.png") for p in dark)

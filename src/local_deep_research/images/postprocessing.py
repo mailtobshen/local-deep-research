@@ -106,7 +106,46 @@ def _log_end(research_id: str, status: str) -> None:
     )
 
 
-SECTION_IMAGE_CAP = 3  # max images adopted per section, by score
+SECTION_IMAGE_CAP = 3  # max images adopted per section, by score (clearnet)
+SECTION_IMAGE_CAP_DARKWEB = 5  # darkweb runs adopt more per section
+
+# Sorting rank for the tie-break chain (lower = wins). A meaningful
+# alt/file label is one that carries real vocabulary — not a bare
+# dimension string, not the UI-word blacklist.
+_CONTENT_HINT_RE = re.compile(r"[一-鿿]{2,}|[a-z]{4,}", re.IGNORECASE)
+
+
+def _substance_rank(img) -> int:
+    """0 = descriptive alt, 1 = descriptive filename, 2 = neither.
+
+    An alt that the UI-vocabulary blacklist (icon/shop/home/…) or a
+    bare dimension string matches is NOT descriptive, even when it
+    has ≥4 letters ('shop' passes the naive length check).
+    """
+    alt = (getattr(img, "alt", "") or "").strip()
+    if (
+        alt
+        and not _MEANINGLESS_ALT_RE.search(alt)
+        and not _DIM_IN_ALT_RE.fullmatch(alt)
+        and _CONTENT_HINT_RE.search(alt)
+    ):
+        return 0
+    name = (getattr(img, "url", "") or "").rsplit("/", 1)[-1]
+    name = name.rsplit(".", 1)[0]
+    if _CONTENT_HINT_RE.search(name) and not _MEANINGLESS_ALT_RE.search(name):
+        return 1
+    return 2
+
+
+def _area(img) -> int:
+    """Best-known pixel area: attrs first, alt-embedded dims fallback."""
+    w, h = getattr(img, "width", None), getattr(img, "height", None)
+    if (w is None or h is None) and getattr(img, "alt", ""):
+        d = _dims_from_alt(img.alt)
+        if d:
+            w = w if w is not None else d[0]
+            h = h if h is not None else d[1]
+    return (w or 0) * (h or 0)
 
 
 def _build_placements(
@@ -114,17 +153,26 @@ def _build_placements(
     bank_by_url: dict,
     cap: int = SECTION_IMAGE_CAP,
     _caption_fallback: bool = False,
+    darkweb: bool = False,
 ) -> list[tuple[int, str, str]]:
-    """Build (sidx, url, alt) placements, capped at ``cap`` per section.
+    """Build (sidx, url, alt) placements, capped per section.
 
-    Within each section, keeps the top-``cap`` images by binding score
-    (desc). Emits a SECTION_CAP IMG-TRACE per over-cap section. Caller
-    must hold the research_id logger context.
+    Cap: ``SECTION_IMAGE_CAP_DARKWEB`` (5) when the run is darkweb-
+    engine-driven, else ``SECTION_IMAGE_CAP`` (3). 2026-08-23 policy.
 
-    When ``_caption_fallback`` is set, an empty alt is replaced by the
-    source page's title (truncated) so the image still renders with a
-    meaningful caption instead of being skipped at insert time.
+    Within a section the selection order is:
+      1. binding score desc (semantic-gate runs only — darkweb
+         fast-path images all score 0.0 and tie),
+      2. tie-break chain: image AREA desc (bigger = likelier the
+         page's main content image), then substance rank (descriptive
+         alt > descriptive filename > dimension-only/empty),
+      3. stable insertion order (URL bind order) as final tiebreak.
+
+    Emits a SECTION_CAP IMG-TRACE per over-cap section. When
+    ``_caption_fallback`` is set, an empty alt is replaced by the
+    source page's title so the image still renders with a caption.
     """
+    eff_cap = cap if not darkweb else SECTION_IMAGE_CAP_DARKWEB
 
     def _caption_for(img) -> str:
         alt = (img.alt or "").strip()
@@ -135,6 +183,12 @@ def _build_placements(
             if t:
                 return t[:80]
         return ""
+
+    def _sort_key(entry: tuple[float, str]):
+        score, url = entry
+        img = bank_by_url[url]
+        return (-score, -_area(img), _substance_rank(img), url)
+
     # Gather per-section candidates with scores.
     by_sec: dict[int, list[tuple[float, str]]] = {}
     for url, pairs in binding.items():
@@ -144,14 +198,16 @@ def _build_placements(
             by_sec.setdefault(sidx, []).append((score, url))
     placements: list[tuple[int, str, str]] = []
     for sidx, cands in by_sec.items():
-        cands_sorted = sorted(cands, key=lambda sc: sc[0], reverse=True)
-        dropped = max(0, len(cands_sorted) - cap)
+        cands_sorted = sorted(cands, key=_sort_key)
+        dropped = max(0, len(cands_sorted) - eff_cap)
         if dropped:
             logger.info(
                 f"[IMG-TRACE] SECTION_CAP sec={sidx} "
-                f"candidates={len(cands_sorted)} kept={cap} dropped={dropped}"
+                f"cap={eff_cap} darkweb={darkweb} "
+                f"candidates={len(cands_sorted)} kept={eff_cap} "
+                f"dropped={dropped}"
             )
-        for _score, url in cands_sorted[:cap]:
+        for _score, url in cands_sorted[:eff_cap]:
             placements.append((sidx, url, _caption_for(bank_by_url[url])))
     placements.sort(key=lambda p: (p[0], p[1]))
     return placements
@@ -810,10 +866,18 @@ def enhance_report_with_images(
         # size rules — alt text is not a filter, 2026-08-22 policy);
         # their caption falls back to the source page title.
         bank_by_url = {img.url: img for img in bank.all_images()}
+        # Darkweb-engine run (main or auxiliary): raise the per-section
+        # cap to 5 (2026-08-23 policy). Detected from the bank's source
+        # URLs — any .onion source makes the run darkweb for capping.
+        _any_dark = any(
+            is_darkweb_url(getattr(img, "source_url", "") or "")
+            for img in bank.all_images()
+        )
         placements = _build_placements(
             binding,
             bank_by_url,
             _caption_fallback=True,
+            darkweb=_any_dark,
         )
         for sidx, p_url, p_alt in placements:
             # Find the (num, sec) pair for this placement. If the
