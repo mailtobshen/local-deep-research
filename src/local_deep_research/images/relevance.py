@@ -17,6 +17,7 @@ from loguru import logger
 
 from .extractor import ExtractedImage
 from ..text_optimization.citation_formatter import (
+    CITE_HYPERLINK_RE,
     CITE_INLINE_RE,
     CITE_INLINE_GROUP_RE,
     CITE_LIST_ROW_RE,
@@ -419,12 +420,6 @@ def _is_compound_generic(alt: str) -> bool:
 
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*$", re.MULTILINE)
 
-# Inline [[N]] citation markers in body text. Production reports render
-# citations as markdown links "[[N]](url)", which CITE_INLINE_RE
-# deliberately skips (its negative lookbehind avoids already-formatted
-# links). This pattern anchors the same [[N]] the sanitizer relies on.
-_CITE_DOUBLE_BRACKET_RE = re.compile(r"\[\[(\d+)\]\]")
-
 
 def _find_references_block_start(markdown: str) -> int:
     """Offset where the trailing References block begins, or -1.
@@ -740,10 +735,11 @@ def build_citation_index(
         body_slice = markdown[body_start:body_end]
         nums: list[str] = []
         seen: set[str] = set()
-        # [[N]] links first (production reports render citations as
-        # "[[N]](url)" links, which CITE_INLINE_RE skips), then the
-        # plain [N] / [1, 2] forms for pre-link markdown.
-        for m in _CITE_DOUBLE_BRACKET_RE.finditer(body_slice):
+        # Hyperlinked citations first (production reports render as
+        # "[N](url)" links — or legacy "[[N]](url)" — which
+        # CITE_INLINE_RE skips), then the plain [N] / [1, 2] forms for
+        # pre-link markdown.
+        for m in CITE_HYPERLINK_RE.finditer(body_slice):
             n = m.group(1)
             if n not in seen:
                 seen.add(n)

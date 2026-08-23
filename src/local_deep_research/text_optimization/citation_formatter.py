@@ -42,13 +42,20 @@ _SOURCES_SECTION_CJK_PATTERNS = [
 ]
 
 # Inline [N] citation markers in body text. Negative lookbehind/lookahead
-# avoid matching already-formatted citations like "[[1]](url)" or "[1]]".
+# avoid matching already-formatted citations like "[[1]](url)", "[1]]",
+# and the leading "[N]" of a hyperlink "[1](url)" / "[[N]](url)".
 # Also matches full-width lenticular brackets 【N】 that LLMs sometimes
 # generate. Lifted to module level so other modules (e.g. images/relevance
 # for per-section URL mapping) can compile-free import them.
 CITE_INLINE_RE = re.compile(
-    r"(?<![\[【])[\[【](\d+)[\]】](?![\]】])"
+    r"(?<![\[【])[\[【](\d+)[\]】](?![\]】(])"
 )
+# Hyperlinked body citations, either bracket form: ``[N](url)`` (the
+# 2026-08-23 emission format) or legacy ``[[N]](url)``. Consumers that
+# need the number of a hyperlink marker (image pipeline's per-section
+# cite scan, enforce's renumber) use this instead of trying to catch
+# the inner ``[N]`` with CITE_INLINE_RE (whose lookarounds exclude it).
+CITE_HYPERLINK_RE = re.compile(r"\[+?(\d+)\]?\]\(([^)]*)\)")
 
 # Inline comma-group citations like [1, 2, 3] — a single bracket pair
 # containing several citation numbers. LLMs emit this style as well as
@@ -223,20 +230,23 @@ def strip_inline_reference_list(body: str) -> str:
 
 
 # Regexes for the citation renumbering / hallucination-stripping helpers
-# below. They deliberately accept both plain `[N]` and the already-
-# hyperlinked `[[N]](url)` form so that the renumber pass is idempotent
-# and does not require an unformat-then-format round-trip.
-RENUMBER_HYPERLINK_RE = re.compile(r"\[\[(\d+)\]\]\(([^)]*)\)")
+# below. They deliberately accept plain `[N]` and both hyperlink forms —
+# the legacy double-bracket `[[N]](url)` and the 2026-08-23 single-
+# bracket `[N](url)` emission (standard markdown link shape) — so the
+# renumber pass is idempotent and does not require an
+# unformat-then-format round-trip.
+RENUMBER_HYPERLINK_RE = CITE_HYPERLINK_RE
 RENUMBER_PLAIN_RE = re.compile(
     r"(?<![\[【])\[(\d+)\](?![\]】\(])"
 )
 # Combined scanner used by build_first_cite_order — group 1 = plain [N],
-# group 2 = [[N]](url). Plain form's lookbehind/lookahead prevents
-# matching the inner `[N]` of `[[N]](url)` and the trailing `](`.
+# group 2 = `[[N]](url)` / `[N](url)` hyperlinks (either bracket form),
+# group 3 = bare `[[N]]`. The plain arm's lookbehind/lookahead prevent
+# matching the inner `[N]` of a hyperlink and the trailing `](`.
 RENUMBER_SCAN_RE = re.compile(
     r"(?<!\[)\[(\d+)\](?!\]\()"
     r"|"
-    r"\[\[(\d+)\]\]\([^)]*\)"
+    r"\[+?(\d+)\]?\]\((?:[^)]*)\)"
     r"|"
     r"\[\[(\d+)\]\](?!\()"
 )
@@ -340,19 +350,21 @@ def strip_hallucinated_citations(body: str, valid_indices) -> str:
 
 
 def renumber_citations(body: str, sources: dict, old_to_new: dict) -> str:
-    """Rewrite ``[N]`` and ``[[N]](url)`` per the *old_to_new* remap.
+    """Rewrite ``[N]`` and hyperlinked markers per the *old_to_new* remap.
 
-    Already-hyperlinked tokens (``[[N]](url)``) keep their original URL —
-    only the index is rewritten to the new number. Plain ``[N]`` tokens
-    are rewritten using the URL from *sources* (a mapping of
-    ``new_index -> (title, url)``) when one is present, or fall back to
-    plain ``[new]``. Tokens whose old number is not in *old_to_new* are
-    left untouched — the caller is expected to have stripped hallucinated
-    numbers first.
+    Already-hyperlinked tokens (``[[N]](url)`` legacy or ``[N](url)``
+    current) keep their original URL — only the index is rewritten, and
+    the output is the single-bracket ``[new](url)`` markdown link (2026-
+    08-23 policy: body citations render as standard markdown links, not
+    double brackets). Plain ``[N]`` tokens are rewritten using the URL
+    from *sources* (a mapping of ``new_index -> (title, url)``) when one
+    is present, or fall back to plain ``[new]``. Tokens whose old number
+    is not in *old_to_new* are left untouched — the caller is expected
+    to have stripped hallucinated numbers first.
 
-    Idempotent: re-running on already-renumbered text is a no-op because
-    ``RENUMBER_HYPERLINK_RE`` / ``RENUMBER_PLAIN_RE`` only match the
-    ``[N]`` / ``[[N]](url)`` shape, never the rewritten ``[new]``.
+    Idempotent: re-running on already-renumbered text is a no-op — the
+    rewritten ``[N](url)`` is re-matched by RENUMBER_HYPERLINK_RE and
+    maps to itself.
     """
     def replace_hyperlink(match):
         old = int(match.group(1))
@@ -360,7 +372,7 @@ def renumber_citations(body: str, sources: dict, old_to_new: dict) -> str:
             return match.group(0)
         new = old_to_new[old]
         url = match.group(2)
-        return f"[[{new}]]({url})"
+        return f"[{new}]({url})"
 
     def replace_plain(match):
         old = int(match.group(1))
@@ -369,10 +381,11 @@ def renumber_citations(body: str, sources: dict, old_to_new: dict) -> str:
         new = old_to_new[old]
         entry = sources.get(new)
         if entry and entry[1]:
-            return f"[[{new}]]({entry[1]})"
+            return f"[{new}]({entry[1]})"
         return f"[{new}]"
 
-    # Hyperlink first to avoid double-touching the inner `[N]`.
+    # Hyperlink first so the trailing ``](url)`` stops the plain scan
+    # from re-matching the inner ``[N]``.
     body = RENUMBER_HYPERLINK_RE.sub(replace_hyperlink, body)
     body = RENUMBER_PLAIN_RE.sub(replace_plain, body)
     # Bare ``[[N]]`` last: same replacement shape as plain `[N]`
@@ -384,7 +397,7 @@ def renumber_citations(body: str, sources: dict, old_to_new: dict) -> str:
         new = old_to_new[old]
         entry = sources.get(new)
         if entry and entry[1]:
-            return f"[[{new}]]({entry[1]})"
+            return f"[{new}]({entry[1]})"
         return f"[{new}]"
 
     body = RENUMBER_BARE_DOUBLE_RE.sub(replace_bare_double, body)
@@ -1194,7 +1207,7 @@ def enforce_sources_ascending_and_drop_orphans(content: str) -> str:
     logger.info(
         f"[CITE-ENFORCE] exit "
         f"in_len={len(content)} out_len={len(result)} "
-        f"out_hyperlinks={result.count('[[')} "
+        f"out_hyperlinks={len(CITE_HYPERLINK_RE.findall(result))} "
         f"rows_rebuilt={len(rebuilt_lines)}"
     )
     return result
@@ -1392,7 +1405,7 @@ class CitationFormatter:
         # Create formatter for citations with number hyperlinks
         def format_number_link(citation_num, data):
             _, url = data
-            return f"[[{citation_num}]]({url})"
+            return f"[{citation_num}]({url})"
 
         # Handle comma-separated citations like [1, 2, 3]
         content = self._replace_comma_citations(
