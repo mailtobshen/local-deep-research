@@ -199,3 +199,17 @@ def test_darkweb_messaging_evidence_force_adopted(monkeypatch):
     assert "![QQ客服 123456]" in out
     assert "qq-tiny.png" not in out
     assert "![product photo]" in out
+
+
+def test_darkweb_commercial_ad_alts_dropped():
+    """2026-08-23 policy: site-promo / commercial-ad alts (the Monero
+    service-page batch and generic signup/download/pricing vocab) are
+    theme artifacts — dropped. Real-content alts incl. empty pass."""
+    from local_deep_research.images.postprocessing import _alt_is_meaningless
+    for a in ["Create wallet", "Exchange", "Merchants", "Contribute",
+              "FAQ", "onion service", "Get started", "Sign up",
+              "Pricing", "Subscribe"]:
+        assert _alt_is_meaningless(a), a
+    for a in ["黑产招工月赚几十万", "FENTANYL | Fentanyl", "QQ客服 123456",
+              "300x300", "", "my wallet was stolen evidence"]:
+        assert not _alt_is_meaningless(a), a

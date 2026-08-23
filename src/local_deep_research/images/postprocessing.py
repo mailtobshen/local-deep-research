@@ -45,7 +45,23 @@ _MEANINGLESS_ALT_RE = re.compile(
     # 'shop' are theme/asset artifacts ('shop', 'shop icon',
     # 'Language selector icon') regardless of what else they say.
     r"|icon"
-    r"|^shop$|\bshop\b",
+    r"|^shop$|\bshop\b"
+    # Site-promo / commercial-ad vocabulary (2026-08-23 policy): the
+    # Monero-site batch — 'Create wallet', 'Exchange', 'Merchants',
+    # 'Contribute', 'FAQ', 'onion service' — is pure service-page
+    # advertising, not research content. Word-boundary anchored so
+    # e.g. 'wallets recovery phrase' style prose alts still pass.
+    r"|\bcreate\s+wallet\b"
+    r"|\bexchange\b"
+    r"|\bmerchants?\b"
+    r"|\bcontribute\b"
+    r"|\bfaq\b"
+    r"|\bonion\s+service\b"
+    r"|\bget\s+started\b"
+    r"|\bsign\s+up\b|\bregister\b|\blogin\b|\blog\s+in\b"
+    r"|\bdownload\b|\binstall\b"
+    r"|\bdonate\b"
+    r"|\bpricing\b|\bsubscribe\b|\bnewsletter\b",
     re.IGNORECASE,
 )
 
