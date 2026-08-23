@@ -629,6 +629,34 @@ def enhance_report_with_images(
                 model = None if dark_cite else semantic_matcher.get_model()
                 for img in imgs:
                     if dark_cite:
+                        # Absolute floor (2026-08-23 policy): images
+                        # known to be below 50x50 px are NEVER adopted —
+                        # applies before every override including
+                        # messaging evidence. Known dimensions come
+                        # from width/height attrs or dims embedded in
+                        # the alt ('40x40'). Unknown dimensions stay
+                        # lenient (decided later by the size rule).
+                        _fw, _fh = img.width, img.height
+                        if (_fw is None or _fh is None) and img.alt:
+                            _fd = _dims_from_alt(img.alt)
+                            if _fd:
+                                _fw = _fw if _fw is not None else _fd[0]
+                                _fh = _fh if _fh is not None else _fd[1]
+                        if (_fw is not None and _fw < _MIN_DIM) or (
+                            _fh is not None and _fh < _MIN_DIM
+                        ):
+                            dropped_small += 1
+                            logger.info(
+                                f"[IMG-TRACE] CANDIDATE_DROPPED research={research_id} "
+                                f"img_alt={(img.alt or '')!r} "
+                                f"img_url={img.url} "
+                                f"img_source_url={img.source_url} "
+                                f"cite_num={num} "
+                                f"ref_url={url} "
+                                f"sec={sidx} score=0.00 "
+                                f"reason=too_small"
+                            )
+                            continue
                         # Darkweb fast path — messaging-evidence
                         # override (2026-08-23): alt/filename mentions
                         # of messaging platforms / email addresses are

@@ -184,8 +184,12 @@ def test_darkweb_messaging_evidence_force_adopted(monkeypatch):
     and rank first in placement."""
     import json
     out = _run(monkeypatch, json.dumps([
-        # cross-origin + tiny + would-be junk: still adopted
+        # cross-origin but >=50px: still adopted (messaging override)
         {"url": "http://other.onion/qq-card.png", "alt": "QQ客服 123456",
+         "source_url": "http://other.onion/p", "source_title": "T",
+         "width": 200, "height": 150},
+        # messaging evidence but <50px: dropped by the absolute floor
+        {"url": "http://other.onion/qq-tiny.png", "alt": "QQ客服 999",
          "source_url": "http://other.onion/p", "source_title": "T",
          "width": 40, "height": 40},
         {"url": _ONION_IMG, "alt": "product photo",
@@ -193,4 +197,5 @@ def test_darkweb_messaging_evidence_force_adopted(monkeypatch):
          "width": 600, "height": 400},
     ]))
     assert "![QQ客服 123456]" in out
+    assert "qq-tiny.png" not in out
     assert "![product photo]" in out
