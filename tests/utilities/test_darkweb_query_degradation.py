@@ -86,3 +86,58 @@ def test_text_only_page_writes_empty_image_list():
         "\r", ""
     )
     assert 'payload = "[]"' in src
+
+
+# --- 2026-08-23 fan-out generic-word tightening (research 3e9ee493) ----
+
+
+def test_generic_zh_fragments_dropped_from_plan():
+    """'全球/中国/美国/供应链/报告' style fragments must not be issued
+    as standalone sub-queries — they carry no topic signal and surface
+    topically-unrelated onion mirrors (marxists archive et al.)."""
+    for generic in ("全球", "中国", "美国", "报告", "供应链", "国际"):
+        assert plan_darkweb_queries(f"芬太尼交易 {generic}") == [
+            f"芬太尼交易 {generic}",
+            "芬太尼交易",
+            "fentanyl",
+        ], generic
+
+
+def test_generic_en_probes_dropped_from_degradation():
+    """'supply'/'report' style probes must be dropped; the domain noun
+    still wins the max_terms cap."""
+    probes = shorten_english_query(
+        "fentanyl supply chain China Mexico US DEA report 2023 2024"
+    )
+    assert probes, probes
+    for generic in ("supply", "chain", "report", "china", "mexico"):
+        assert generic not in [p.lower() for p in probes] or generic in (
+            "china",
+            "mexico",
+        ), probes
+    assert "supply" not in probes and "report" not in probes
+
+
+def test_original_query_verbatim_still_first():
+    plan = plan_darkweb_queries("芬太尼及精神药物非法交易产业链 全球 中国 美国")
+    assert plan[0] == "芬太尼及精神药物非法交易产业链 全球 中国 美国"
+    assert "fentanyl" in plan
+
+
+def test_zero_overlap_demotion():
+    """Relevance filter demotes zero-title-overlap + snippet-less
+    previews to the end so a max_filtered_results cap drops them."""
+    from local_deep_research.web_search_engines.relevance_filter import (
+        _demote_zero_overlap_no_snippet,
+    )
+
+    previews = [
+        {"title": "DEA Fentanyl Warn", "snippet": "s", "url": "u1"},
+        {"title": "网上的马克思主义文库", "snippet": "", "url": "u2"},
+        {"title": "Fentanyl shop", "snippet": "", "url": "u3"},
+    ]
+    out = _demote_zero_overlap_no_snippet(previews, "fentanyl china")
+    assert [p["url"] for p in out] == ["u1", "u3", "u2"]
+    # snippet alone rescues from demotion
+    rescued = [{"title": "无关标题", "snippet": "有内容", "url": "u9"}]
+    assert _demote_zero_overlap_no_snippet(rescued, "fentanyl") == rescued

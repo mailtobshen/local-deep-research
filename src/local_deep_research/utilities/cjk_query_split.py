@@ -119,6 +119,43 @@ _DARKWEB_KEYWORD_ALIASES: dict[str, tuple[str, ...]] = {
 # generated from a longer query.
 _CJK_STOPWORDS = set("的与和及或是在了我有不把了个一些一二三四五六七八九十")
 
+# Generic-word blocklist for fan-out sub-queries (2026-08-23 policy).
+# Research 3e9ee493 showed that single generic words issued as
+# standalone darkweb sub-queries ('supply', 'report', 'international',
+# '全球', '报告') carry zero topic signal — the sparse onion index
+# (Chinese mirrors like the marxists archive dominate it) returns
+# topically-unrelated sites for ANY generic word. Such fragments are
+# dropped from the fan-out plan instead of being searched.
+# Chinese entries: a standalone fragment matching one of these exactly
+# (after stopword stripping) is dropped. English entries: a probe equal
+# to one of these (case-insensitive) is dropped.
+_GENERIC_ZH_TERMS = frozenset({
+    "全球", "中国", "美国", "报告", "供应链", "市场", "网络", "组织",
+    "国际", "交易", "贸易", "执法", "合成", "集团", "路由",
+})
+_GENERIC_EN_TERMS = frozenset({
+    "supply", "trade", "report", "reports", "international", "global",
+    "network", "market", "trade", "chain", "organization", "criminal",
+    "enforcement", "synthetic", "route",
+})
+
+
+def _is_generic_fanout_term(term: str) -> bool:
+    """True when *term* is a generic word with no topic signal.
+
+    Used to drop standalone fan-out sub-queries. A term is generic when
+    it exactly matches a blocklist entry in its own script — Chinese
+    fragments compare against ``_GENERIC_ZH_TERMS``, ASCII probes
+    (lowercased) against ``_GENERIC_EN_TERMS``. Multi-word phrases and
+    domain nouns (fentanyl, 芬太尼, …) are never generic.
+    """
+    t = term.strip()
+    if not t:
+        return True
+    if contains_cjk(t):
+        return t in _GENERIC_ZH_TERMS
+    return t.lower() in _GENERIC_EN_TERMS
+
 
 # Split on ASCII whitespace, Chinese commas/periods/semicolons/
 # colons/em-dashes, full-width punctuation, and the CJK enumeration
@@ -310,12 +347,12 @@ def plan_darkweb_queries(query: str, max_queries: int = 6) -> List[str]:
         seen.add(query)
         plan.append(query)
     for zh in zh_phrases:
-        if zh not in seen:
+        if zh not in seen and not _is_generic_fanout_term(zh):
             seen.add(zh)
             plan.append(zh)
     for zh in zh_phrases:
         for alias in darkweb_english_aliases(zh):
-            if alias not in seen:
+            if alias not in seen and not _is_generic_fanout_term(alias):
                 seen.add(alias)
                 plan.append(alias)
     return plan[:max_queries]
@@ -386,6 +423,12 @@ def shorten_english_query(query: str, max_terms: int = 2) -> List[str]:
         prio = 0 if tok in _EN_DOMAIN_NOUNS else 1
         return (prio, -len(tok))
 
+    # 2026-08-23 policy: drop generic probes ('supply', 'report') —
+    # they carry no topic signal against the sparse onion index and
+    # only surface topically-unrelated mirrors.
+    content = [t for t in content if not _is_generic_fanout_term(t)]
+    if not content:
+        return []
     content.sort(key=_priority)
     return content[:max_terms]
 

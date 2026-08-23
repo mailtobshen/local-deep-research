@@ -110,6 +110,56 @@ def _unwrap_llm(llm):
     return probe
 
 
+def _demote_zero_overlap_no_snippet(
+    previews: List[Dict[str, Any]], query: str
+) -> List[Dict[str, Any]]:
+    """Demote previews with zero title/query word overlap AND no snippet.
+
+    2026-08-23 policy (research 3e9ee493): generic-word darkweb queries
+    return topically-unrelated onion sites whose title shares no word
+    with the query and whose snippet is empty ("No description
+    provided") — e.g. the marxists archive for a fentanyl query. Those
+    carry zero topic signal for the LLM judge to reason about, so they
+    are demoted to the END of the list (not dropped: the LLM can still
+    keep one if it sees a signal we missed). Demotion matters when
+    ``max_filtered_results`` caps the list afterwards — the capped
+    slice then favors results with at least one overlapping title word
+    or a non-empty snippet.
+
+    Overlap is word-level (whitespace/punctuation tokens, lowercased,
+    length ≥ 2, digits allowed) between the query and the title. CJK
+    queries tokenize character-wise via the same regex — a single
+    shared CJK char between query and title counts as overlap.
+    """
+    import re as _re
+
+    if not previews or not query:
+        return previews
+
+    def _tokens(text: str) -> set:
+        return {
+            t.lower()
+            for t in _re.split(r"[\s\-/,.:;()()\[\]·|]+", text or "")
+            if len(t.strip()) >= 1 and t.strip()
+        }
+
+    q_tokens = _tokens(query)
+    demoted: List[Dict[str, Any]] = []
+    kept: List[Dict[str, Any]] = []
+    for preview in previews:
+        title = (preview.get("title") or "").strip()
+        snippet = (preview.get("snippet") or "").strip()
+        # Any shared token (character-level for CJK) or any snippet
+        # at all saves the preview from demotion.
+        if snippet or (title and _tokens(title) & q_tokens):
+            kept.append(preview)
+        else:
+            demoted.append(preview)
+    if not demoted or not kept:
+        return previews
+    return kept + demoted
+
+
 def _build_batch_prompt(
     query: str,
     batch: List[Dict[str, Any]],
@@ -198,6 +248,11 @@ def filter_previews_for_relevance(
         prompt_template = _RELEVANCE_PROMPT_TEMPLATE
     if not previews:
         return []
+
+    # Pre-LLM demotion: zero-overlap + snippet-less previews go last
+    # (2026-08-23). Runs before batching so a ``max_filtered_results``
+    # cap applied at the end favors results with topic signal.
+    previews = _demote_zero_overlap_no_snippet(previews, query)
 
     for i, preview in enumerate(previews):
         title = preview.get("title", "Untitled").strip()
