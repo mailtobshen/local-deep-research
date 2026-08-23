@@ -213,3 +213,20 @@ def test_darkweb_commercial_ad_alts_dropped():
     for a in ["黑产招工月赚几十万", "FENTANYL | Fentanyl", "QQ客服 123456",
               "300x300", "", "my wallet was stolen evidence"]:
         assert not _alt_is_meaningless(a), a
+
+
+def test_unknown_area_defaults_to_300x300():
+    """2026-08-23 policy: images with no dimension info (attrs missing,
+    alt carries no dims) rank at 300x300 area — competitive with small
+    known thumbnails, still below real large images."""
+    from local_deep_research.images.postprocessing import _area
+    from local_deep_research.images.extractor import ExtractedImage
+
+    def img(alt="", w=None, h=None):
+        return ExtractedImage(url="http://x.onion/a.jpg", alt=alt,
+                              source_url="http://x.onion/p",
+                              source_title="T", width=w, height=h)
+
+    assert _area(img()) == 90000          # unknown → default
+    assert _area(img("", 100, 100)) == 10000  # small known < default
+    assert _area(img("", 800, 600)) == 480000  # large known > default

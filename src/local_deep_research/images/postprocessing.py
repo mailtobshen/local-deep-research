@@ -178,15 +178,26 @@ def _substance_rank(img) -> int:
     return 2
 
 
+# Default area for images with NO dimension information at all (attrs
+# missing, alt carries no embedded dims): assumed 300x300 (2026-08-23
+# policy). Keeps unknown-size images competitive against small known
+# icons (a 100x100=10k thumbnail ranks BELOW an unknown-size image)
+# while real large images (740x555≈410k) still outrank them.
+_UNKNOWN_AREA_DEFAULT = 300 * 300
+
+
 def _area(img) -> int:
-    """Best-known pixel area: attrs first, alt-embedded dims fallback."""
+    """Best-known pixel area: attrs first, alt-embedded dims fallback,
+    300x300 default when both are absent."""
     w, h = getattr(img, "width", None), getattr(img, "height", None)
     if (w is None or h is None) and getattr(img, "alt", ""):
         d = _dims_from_alt(img.alt)
         if d:
             w = w if w is not None else d[0]
             h = h if h is not None else d[1]
-    return (w or 0) * (h or 0)
+    if w is None or h is None:
+        return _UNKNOWN_AREA_DEFAULT
+    return w * h
 
 
 def _build_placements(
