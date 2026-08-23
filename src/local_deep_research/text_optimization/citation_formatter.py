@@ -822,10 +822,18 @@ def enforce_sources_ascending_and_drop_orphans(content: str) -> str:
     # reused the displayed N by accident), the LAST row's URL wins
     # so the same displayed_n resolves consistently in the body.
     displayed_n_to_url: Dict[int, str] = {}
+    # Rows the LLM emitted WITHOUT a ``URL:`` line (observed 2026-08-22
+    # research 808c9499: refs [8]/[9]/[12] etc. had title-only rows).
+    # Their body markers cannot be hyperlinked, but the citation is
+    # REAL — the orphan-drop must not delete the marker text. These
+    # numbers survive the cut as plain (non-hyperlink) markers.
+    url_less_ns: set = set()
     for row in rows:
         for n in row["displayed_n"]:
             if row["url"]:
                 displayed_n_to_url[n] = row["url"]
+            else:
+                url_less_ns.add(n)
 
     # Build a per-displayed_n set of valid URLs (any of which the
     # body marker for that N is allowed to match). When multiple
@@ -938,7 +946,11 @@ def enforce_sources_ascending_and_drop_orphans(content: str) -> str:
         # Plain `[N]` cannot carry a URL. Survive iff at least one
         # Sources row references N — that row's URL is what
         # ``renumber_citations`` will use to hyperlink the plain
-        # marker in the next step.
+        # marker in the next step. A row WITHOUT a URL keeps the
+        # marker too (plain, unlinked) — the citation is real even
+        # though the LLM omitted the URL line.
+        if n in url_less_ns:
+            return match.group(0)
         return (
             match.group(0)
             if n in displayed_n_to_canon_urls and displayed_n_to_canon_urls[n]
@@ -1137,7 +1149,18 @@ def enforce_sources_ascending_and_drop_orphans(content: str) -> str:
     # tail (e.g. the ``trailing`` list can already end with a blank).
     new_sources_block = "\n".join(rebuilt_lines).rstrip() + "\n"
 
-    return new_body.rstrip("\n") + "\n\n" + new_sources_block
+    result = new_body.rstrip("\n") + "\n\n" + new_sources_block
+    # Exit probe: pairs with the entry probe to bracket the funnel.
+    # If a downstream stage reverts this output, out_len/out_cites will
+    # disagree with what the saved report shows — pinpointing the
+    # revert site in one run.
+    logger.info(
+        f"[CITE-ENFORCE] exit "
+        f"in_len={len(content)} out_len={len(result)} "
+        f"out_hyperlinks={result.count('[[')} "
+        f"rows_rebuilt={len(rebuilt_lines)}"
+    )
+    return result
 
 
 class CitationMode(Enum):
