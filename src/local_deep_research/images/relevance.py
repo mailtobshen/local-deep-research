@@ -420,6 +420,12 @@ def _is_compound_generic(alt: str) -> bool:
 
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*$", re.MULTILINE)
 
+# Bare ``[[N]]`` citation markers (no URL tail) — the malformed form
+# LLMs emit. Kept local (not imported from citation_formatter, whose
+# RENUMBER_BARE_DOUBLE_RE is private) so this module's scan set is
+# self-documenting: hyperlink + bare-double + plain + comma-group.
+_BARE_DOUBLE_BRACKET_RE = re.compile(r"\[\[(\d+)\]\](?!\()")
+
 
 def _find_references_block_start(markdown: str) -> int:
     """Offset where the trailing References block begins, or -1.
@@ -737,9 +743,17 @@ def build_citation_index(
         seen: set[str] = set()
         # Hyperlinked citations first (production reports render as
         # "[N](url)" links — or legacy "[[N]](url)" — which
-        # CITE_INLINE_RE skips), then the plain [N] / [1, 2] forms for
-        # pre-link markdown.
+        # CITE_INLINE_RE skips), then bare "[[N]]" (LLM's malformed
+        # form; the enforce pass converts it downstream but the scan
+        # must see it NOW or every section reads cited_n=0 and the
+        # image bank starves — run 4967de37 regression, 2026-08-23),
+        # then the plain [N] / [1, 2] forms for pre-link markdown.
         for m in CITE_HYPERLINK_RE.finditer(body_slice):
+            n = m.group(1)
+            if n not in seen:
+                seen.add(n)
+                nums.append(n)
+        for m in _BARE_DOUBLE_BRACKET_RE.finditer(body_slice):
             n = m.group(1)
             if n not in seen:
                 seen.add(n)

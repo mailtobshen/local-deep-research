@@ -162,9 +162,9 @@ class TestSourceWordPattern:
         result = formatter.format_document(doc)
         body = result.split("## Sources")[0]
         # Each citation should be individually formatted
-        assert "[1](" in body
-        assert "[2](" in body
-        assert "[3](" in body
+        assert "[\\[1\\]](" in body
+        assert "[\\[2\\]](" in body
+        assert "[\\[3\\]](" in body
 
 
 class TestCitationRenumbering:
@@ -245,9 +245,9 @@ class TestCitationRenumbering:
             {1: ("T1", "http://y"), 2: ("T2", "http://z")},
             {3: 1, 1: 2},
         )
-        assert "[1](http://x)" in out
+        assert "[\\[1\\]](http://x)" in out
         # Plain [1] gets the new index 2; sources[2] supplies the URL.
-        assert "[2](http://z)" in out
+        assert "[\\[2\\]](http://z)" in out
 
     def test_renumber_citations_falls_back_to_plain_when_no_url(self):
         from local_deep_research.text_optimization.citation_formatter import (
@@ -330,8 +330,8 @@ class TestEnforceSourcesAscending:
         # new [2]=bar.
         assert self._displayed_n(out) == [1, 2]
         # Body markers were renumbered to point at the new indices.
-        assert "[1](https://foo.example)" in out
-        assert "[2](https://bar.example)" in out
+        assert "[\\[1\\]](https://foo.example)" in out
+        assert "[\\[2\\]](https://bar.example)" in out
 
     def test_ascending_enforced_when_display_non_ascending(self):
         """The original bug — displayed [7], [4], [5], [3], ... — must
@@ -359,7 +359,7 @@ class TestEnforceSourcesAscending:
         )
         out = self._enforce(content)
         # The only Sources entry renumbers to [1]; orphan [9] is dropped.
-        assert "[1](https://foo.example)" in out
+        assert "[\\[1\\]](https://foo.example)" in out
         assert "missing.example" not in out
         assert "[[9]]" not in out
         assert "[9]" not in out
@@ -376,7 +376,7 @@ class TestEnforceSourcesAscending:
         out = self._enforce(content)
         # The only Sources entry renumbers to [1] and is hyperlinked;
         # the orphan [9] is dropped.
-        assert "[1](https://foo.example)" in out
+        assert "[\\[1\\]](https://foo.example)" in out
         assert "[9]" not in out
         assert "missing" not in out.lower() or "Orphan" in out
 
@@ -440,8 +440,8 @@ class TestEnforceSourcesAscending:
         # Comma group must be expanded into per-cite markers.
         assert "[3, 7]" not in out.split("## Sources")[0]
         # Each cite resolves to its new index.
-        assert "[1](https://foo.example)" in out
-        assert "[2](https://bar.example)" in out
+        assert "[\\[1\\]](https://foo.example)" in out
+        assert "[\\[2\\]](https://bar.example)" in out
 
     def test_idempotent(self):
         """Re-running the enforcer on already-enforced content is a
@@ -523,8 +523,8 @@ class TestEnforceSourcesAscending:
         assert "July paper" in out
         # Body markers are distinct and point at their own rows.
         first_block = out.split("## Sources")[0]
-        assert first_block.count("[1](https://arxiv.org/abs/111)") == 1
-        assert first_block.count("[2](https://arxiv.org/abs/111/?v=2)") == 1
+        assert first_block.count("[\\[1\\]](https://arxiv.org/abs/111)") == 1
+        assert first_block.count("[\\[2\\]](https://arxiv.org/abs/111/?v=2)") == 1
         # Both Sources entries present.
         sources_tail = out.split("## Sources")[1]
         assert sources_tail.count("https://arxiv.org/abs/111") == 2
@@ -550,7 +550,7 @@ class TestEnforceSourcesAscending:
         assert self._displayed_n(out) == [1]
         body = out.split("## Sources")[0]
         # Both body markers renumber to the winner.
-        assert body.count("[1](https://example.com/page") == 2
+        assert body.count("[\\[1\\]](https://example.com/page") == 2
 
     def test_different_path_or_query_does_not_dedup(self):
         """URLs that differ in PATH or in non-tracking query
@@ -571,8 +571,8 @@ class TestEnforceSourcesAscending:
         # Both rows preserved (canonical keeps the ?v=2 query).
         assert self._displayed_n(out) == [1, 2]
         body = out.split("## Sources")[0]
-        assert body.count("[1](https://arxiv.org/abs/111)") == 1
-        assert body.count("[2](https://arxiv.org/abs/111/?v=2)") == 1
+        assert body.count("[\\[1\\]](https://arxiv.org/abs/111)") == 1
+        assert body.count("[\\[2\\]](https://arxiv.org/abs/111/?v=2)") == 1
 
     def test_uncited_rows_are_dropped(self):
         """2026-08-23 policy: the rebuilt block contains ONLY rows the
@@ -617,7 +617,7 @@ class TestEnforceSourcesAscending:
         assert displayed == [1]
         # Both body markers renumber to the surviving entry.
         body = out.split("## Sources")[0]
-        assert body.count("[1](https://en.wikipedia.org/wiki/Shanghai)") == 2
+        assert body.count("[\\[1\\]](https://en.wikipedia.org/wiki/Shanghai)") == 2
 
     def test_dedup_same_url_different_titles_merges(self):
         """Two Sources rows that share the SAME byte-URL (even with
@@ -642,7 +642,7 @@ class TestEnforceSourcesAscending:
         assert self._displayed_n(out) == [1]
         # Body markers from BOTH rows renumber onto the survivor.
         body = out.split("## Sources")[0]
-        assert body.count("[1](https://arxiv.org/abs/111)") == 2
+        assert body.count("[\\[1\\]](https://arxiv.org/abs/111)") == 2
 
     def test_dedup_preserves_body_marker_for_dropped_row(self):
         """When row A and row B share URL + title (LLM duplicate)
@@ -664,7 +664,7 @@ class TestEnforceSourcesAscending:
         out = self._enforce(content)
         # All three body markers collapse to the single surviving [1].
         body = out.split("## Sources")[0]
-        assert body.count("[1](https://example.com/page)") == 3
+        assert body.count("[\\[1\\]](https://example.com/page)") == 3
         # Single Sources entry.
         assert self._displayed_n(out) == [1]
 
@@ -703,7 +703,7 @@ class TestBareDoubleBracketCitations:
         out = enforce_sources_ascending_and_drop_orphans(self.DOC)
         # Bare [[73]] is hyperlinked to its row's URL, not left raw.
         assert "[[73]]" not in out
-        assert "[2](http://a.onion/x)" in out
+        assert "[\\[2\\]](http://a.onion/x)" in out
         # All four cited rows survive the rebuild (uncited-row drop is
         # for rows the body never cites — every row here is cited).
         for title in ("Source A", "Source B", "Source C", "Source D"):
@@ -781,7 +781,7 @@ class TestEnforceIdempotencyInvariant:
         # winner's own number 2. The winner must be ordered at the
         # twin's position so a second pass doesn't reorder.
         doc = self._doc(
-            ["[4](http://c.onion/3)", "[[1]]", "[3](http://b.onion/2)", "[2]"],
+            ["[\\[4\\]](http://c.onion/3)", "[[1]]", "[\\[3\\]](http://b.onion/2)", "[2]"],
             [0, 1, 2, 3],
         )
         once = enforce_sources_ascending_and_drop_orphans(doc)
@@ -834,3 +834,45 @@ class TestEnforceIdempotencyInvariant:
                 assert enforce_sources_ascending_and_drop_orphans(
                     once
                 ) == once, doc
+
+
+class TestBracketedLinkText:
+    """Link text must render with visible brackets (run 4967de37).
+
+    A bare-number link text ``[3](url)`` renders as a lone "3" in the
+    body — the user-visible "引用编号完全没有括号" regression. The
+    emission is ``[\\[3\\]](url)``: standard single-bracket markdown
+    link whose inner text unescapes to ``[3]``.
+    """
+
+    def test_emitted_link_text_has_brackets(self):
+        from local_deep_research.text_optimization.citation_formatter import (
+            enforce_sources_ascending_and_drop_orphans,
+        )
+
+        doc = _make_document(
+            "甲 [[73]]，乙 [74](http://b.onion/y)。",
+            "[73] A\n   URL: http://a.onion/x\n"
+            "[74] B\n   URL: http://b.onion/y",
+        )
+        out = enforce_sources_ascending_and_drop_orphans(doc)
+        body = out.split("## Sources")[0]
+        assert "[\\[1\\]](http://a.onion/x)" in body
+        assert "[\\[2\\]](http://b.onion/y)" in body
+        assert enforce_sources_ascending_and_drop_orphans(out) == out
+
+    def test_image_pipeline_scan_sees_bare_double_bracket(self):
+        """relevance.build_citation_index must see bare ``[[N]]`` too —
+        the 12e0f3f7 refactor dropped it and the whole image bank
+        starved (run 4967de37: ELIGIBLE_BANK total=0)."""
+        from local_deep_research.images.relevance import build_citation_index
+
+        md = (
+            "## 摘要\n甲 [[3]] 乙 [5](http://b.onion/y) 丙 [7]。\n\n"
+            "## 参考文献\n\n"
+            "[3] A\n   URL: http://a.onion/x\n\n"
+            "[5] B\n   URL: http://b.onion/y\n\n"
+            "[7] C\n   URL: http://c.onion/z\n"
+        )
+        _, s2n, _ = build_citation_index(md, {"findings": []})
+        assert sorted(s2n.get(0) or []) == ["3", "5", "7"]

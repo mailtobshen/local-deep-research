@@ -55,7 +55,19 @@ CITE_INLINE_RE = re.compile(
 # need the number of a hyperlink marker (image pipeline's per-section
 # cite scan, enforce's renumber) use this instead of trying to catch
 # the inner ``[N]`` with CITE_INLINE_RE (whose lookarounds exclude it).
-CITE_HYPERLINK_RE = re.compile(r"\[+?(\d+)\]?\]\(([^)]*)\)")
+CITE_HYPERLINK_RE = re.compile(
+    r"\[\\?\[?(\d+)\\?\]?\]\(([^)]*)\)"
+)
+
+# Body-citation emission helpers (2026-08-23, run 4967de37): the link
+# TEXT must carry visible brackets so the rendered body shows "[73]"
+# — a bare-number link text renders as a lone "73" (user-visible
+# regression: "正文引用编号完全没有括号"). The link itself stays a
+# standard single-bracket markdown link whose inner text is the
+# escaped bracket form.
+def cite_link_text(n) -> str:
+    """Escaped link text ``\\[73\\]`` for a citation number."""
+    return f"\\[{n}\\]"
 
 # Inline comma-group citations like [1, 2, 3] — a single bracket pair
 # containing several citation numbers. LLMs emit this style as well as
@@ -246,7 +258,7 @@ RENUMBER_PLAIN_RE = re.compile(
 RENUMBER_SCAN_RE = re.compile(
     r"(?<!\[)\[(\d+)\](?!\]\()"
     r"|"
-    r"\[+?(\d+)\]?\]\((?:[^)]*)\)"
+    r"\[\\?\[?(\d+)\\?\]?\]\((?:[^)]*)\)"
     r"|"
     r"\[\[(\d+)\]\](?!\()"
 )
@@ -387,7 +399,7 @@ def renumber_citations(
             return fate if fate is not None else match.group(0)
         new = old_to_new[old]
         url = match.group(2)
-        return f"[{new}]({url})"
+        return f"[{cite_link_text(new)}]({url})"
 
     def replace_plain(match):
         old = int(match.group(1))
@@ -397,7 +409,7 @@ def renumber_citations(
         new = old_to_new[old]
         entry = sources.get(new)
         if entry and entry[1]:
-            return f"[{new}]({entry[1]})"
+            return f"[{cite_link_text(new)}]({entry[1]})"
         return f"[{new}]"
 
     # Hyperlink first so the trailing ``](url)`` stops the plain scan
@@ -414,7 +426,7 @@ def renumber_citations(
         new = old_to_new[old]
         entry = sources.get(new)
         if entry and entry[1]:
-            return f"[{new}]({entry[1]})"
+            return f"[{cite_link_text(new)}]({entry[1]})"
         return f"[{new}]"
 
     body = RENUMBER_BARE_DOUBLE_RE.sub(replace_bare_double, body)
@@ -1474,7 +1486,7 @@ class CitationFormatter:
         # Create formatter for citations with number hyperlinks
         def format_number_link(citation_num, data):
             _, url = data
-            return f"[{citation_num}]({url})"
+            return f"[{cite_link_text(citation_num)}]({url})"
 
         # Handle comma-separated citations like [1, 2, 3]
         content = self._replace_comma_citations(
