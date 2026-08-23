@@ -38,9 +38,14 @@ from local_deep_research.utilities.is_darkweb_url import is_darkweb_url
 # filter (which now also applies to dimension-hinted alts), not the
 # alt text. Only pure UI/navigation vocabulary is dropped here.
 _MEANINGLESS_ALT_RE = re.compile(
-    r"^(?:placeholder|home|logo|icon|banner|button|arrow|search|menu|next|previous|prev|back|close|avatar)$"
+    r"^(?:placeholder|home|logo|banner|button|arrow|search|menu|next|previous|prev|back|close|avatar)$"
     r"|^thumbnail(\s+for)?\s*$"
-    r"|^photo$|^picture$|^img$",
+    r"|^photo$|^picture$|^img$"
+    # Substring rules (2026-08-22 policy): alts CONTAINING 'icon' or
+    # 'shop' are theme/asset artifacts ('shop', 'shop icon',
+    # 'Language selector icon') regardless of what else they say.
+    r"|icon"
+    r"|^shop$|\bshop\b",
     re.IGNORECASE,
 )
 
@@ -64,8 +69,13 @@ def _dims_from_alt(alt: str) -> tuple[int, int] | None:
 
 
 def _alt_is_meaningless(alt: str) -> bool:
-    """True when the alt carries no descriptive value (see patterns above)."""
-    return bool(_MEANINGLESS_ALT_RE.match((alt or "").strip()))
+    """True when the alt carries no descriptive value.
+
+    Uses ``search`` (not ``match``) because the trailing alternation
+    arms are substring rules ('icon', 'shop') that must hit anywhere
+    in the alt; the ``^…$``-anchored arms are unaffected by search.
+    """
+    return bool(_MEANINGLESS_ALT_RE.search((alt or "").strip()))
 
 
 def _log_end(research_id: str, status: str) -> None:
