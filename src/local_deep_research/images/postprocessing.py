@@ -578,6 +578,34 @@ def enhance_report_with_images(
         # and (2) it survives the same min-dimension logo/icon filter
         # the extractor applies on clearnet. Clearnet citations keep
         # the threshold pipeline below.
+        #
+        # 2026-08-24 (research 0043b4af, FPV穿越机): every cite existed
+        # in the References block (num_to_url populated) and 13 had
+        # HTML (url_to_html populated) — but 0 body sections had any
+        # inline [N] markers (the LLM only listed the references in
+        # the trailing block, never as inline citations in the prose).
+        # Result: section_to_nums[0..28] were all [] and the for-loop
+        # below iterated 0 times, producing ELIGIBLE_BANK total=0 and
+        # END status=empty with no diagnostic. The diagnostic line
+        # below surfaces this case so operators can see WHY a research
+        # landed at status=empty: num_to_url > 0 but no (sidx, num)
+        # pair exists in section_to_nums.
+        total_pairs = sum(len(v) for v in section_to_nums.values())
+        pairs_with_html = sum(
+            1
+            for nums in section_to_nums.values()
+            for num in nums
+            if (url := num_to_url.get(num)) and url in url_to_html
+        )
+        if total_pairs == 0 and num_to_url and url_to_html:
+            logger.info(
+                f"[IMG-TRACE] NO_SECTION_BINDING research={research_id} "
+                f"num_to_url={len(num_to_url)} "
+                f"url_to_html={len(url_to_html)} "
+                f"section_to_nums_total_pairs=0 "
+                f"reason=no_inline_cite_markers_in_body "
+                f"all_cites_in_references_block_only"
+            )
         for sidx, nums in section_to_nums.items():
             if not nums:
                 continue
