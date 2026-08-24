@@ -39,6 +39,27 @@ _RETRIABLE: Tuple[type, ...] = (
     _requests.exceptions.TooManyRedirects,
 )
 
+
+def _is_redirect_cap_value_error(exc: BaseException) -> bool:
+    """Recognise the standalone-``safe_get`` redirect-cap raise.
+
+    ``safe_get`` (the function-form in safe_requests.py) raises
+    ``ValueError("Too many redirects (N) from ...")`` when its redirect
+    cap is hit, NOT ``requests.TooManyRedirects`` like ``SafeSession``
+    does. The persist retry loop's ``except _RETRIABLE`` therefore
+    missed this case — attempt 1 raised ValueError, the loop bailed
+    out, the widening on attempts 2/3 never ran, and darkweb .avif
+    redirect loops (research 2eee1b40, 2026-08-24: 4 narcosaamk7z...
+    images all PERSIST_FAILed in 5s each) never had a chance to
+    terminate. Match the exact message prefix the standalone safe_get
+    uses so other ValueErrors (SSRF, response-too-large, bad URL) stay
+    fail-fast.
+    """
+    if not isinstance(exc, ValueError):
+        return False
+    msg = str(exc)
+    return msg.startswith("Too many redirects (") and " from " in msg
+
 # Hardcoded retry policy. 3 attempts, exponential backoff: 1.5s, 2.25s.
 _MAX_ATTEMPTS = 3
 _BACKOFF_BASE_S = 1.5
@@ -515,6 +536,30 @@ class ImageStore:
                             )
                             break
                         except _RETRIABLE as e:
+                            last_exc = e
+                            if attempt == _MAX_ATTEMPTS:
+                                raise
+                            sleep_s = _BACKOFF_BASE_S * (2 ** (attempt - 1))
+                            logger.info(
+                                f"[IMG-TRACE] PERSIST_RETRY url={url} "
+                                f"attempt={attempt}/{_MAX_ATTEMPTS} "
+                                f"reason={type(e).__name__}: {e} "
+                                f"sleep={sleep_s:.1f}s"
+                            )
+                            time.sleep(sleep_s)
+                        except ValueError as e:
+                            # 2026-08-24 (research 2eee1b40): standalone
+                            # ``safe_get`` raises ValueError (not
+                            # requests.TooManyRedirects) when the
+                            # redirect cap is hit, so the _RETRIABLE
+                            # tuple above missed it and persist() bailed
+                            # out on the first attempt — the widening
+                            # on attempts 2/3 never ran. Treat only the
+                            # redirect-cap message as retriable; other
+                            # ValueErrors (SSRF, response-too-large)
+                            # stay fail-fast.
+                            if not _is_redirect_cap_value_error(e):
+                                raise
                             last_exc = e
                             if attempt == _MAX_ATTEMPTS:
                                 raise

@@ -112,6 +112,85 @@ def test_persist_logs_persist_download_fail_before_re_raise(tmp_path, loguru_cap
     assert "[IMG-TRACE] PERSIST_FAIL" in loguru_caplog.text
 
 
+def test_persist_retries_on_safe_get_too_many_redirects_value_error(
+    tmp_path, loguru_caplog,
+):
+    """``safe_get`` raises ``ValueError("Too many redirects (N) from ...")``
+    when the redirect cap is hit, NOT ``requests.TooManyRedirects``. The
+    persist retry loop must still treat that specific ValueError as
+    retriable so attempt ≥ 2 can widen the cap (ce3050c2) — otherwise
+    the widening never fires and darkweb .avif redirect loops always
+    fail on the first attempt with cap=3 (observed 2026-08-24 research
+    2eee1b40: 4 narcosaamk7z...onion/images/*.avif images all
+    PERSIST_FAILed in 5s each, never retrying).
+
+    Other ValueErrors (SSRF, response too large) must STILL fail-fast on
+    the first attempt — those are permanent.
+    """
+    import logging
+    from unittest.mock import patch
+
+    store = ImageStore("rid", MagicMock(), base_dir=tmp_path)
+    call_count = {"n": 0}
+
+    def fake_download(self, url, source_url=None, redirect_cap=None):
+        call_count["n"] += 1
+        # Cap=3 is the default for the first attempt via the wikimedia
+        # fallback path; the retry loop widens to 5 then 7. Mimic the
+        # live safe_get behaviour: raise ValueError matching the exact
+        # message the standalone safe_get uses (see
+        # src/local_deep_research/security/safe_requests.py line 362).
+        raise ValueError(
+            f"Too many redirects ({redirect_cap}) from {url}"
+        )
+
+    with patch.object(
+        type(store), "_download", new=fake_download
+    ):
+        with loguru_caplog.at_level(logging.INFO):
+            routes = store.persist(["https://x/a.jpg"])
+
+    # All 3 attempts ran (NOT a fail-fast on the first).
+    assert call_count["n"] == 3, (
+        f"expected 3 retry attempts, got {call_count['n']}"
+    )
+    assert routes == {}
+    # The redirect-cap reason reached the outer PERSIST_FAIL.
+    assert "[IMG-TRACE] PERSIST_FAIL" in loguru_caplog.text
+
+
+def test_persist_does_not_retry_value_error_with_other_message(
+    tmp_path, loguru_caplog,
+):
+    """Other ValueErrors (SSRF, too-large, bad URL) must fail-fast on the
+    first attempt — they're permanent, retrying wastes time and risks
+    rate-limit escalation. Guards the fix above against over-broad
+    ValueError retry.
+    """
+    import logging
+    from unittest.mock import patch
+
+    store = ImageStore("rid", MagicMock(), base_dir=tmp_path)
+    call_count = {"n": 0}
+
+    def fake_download(self, url, source_url=None, redirect_cap=None):
+        call_count["n"] += 1
+        raise ValueError(
+            "URL failed security validation (possible SSRF): https://x/a.jpg"
+        )
+
+    with patch.object(
+        type(store), "_download", new=fake_download
+    ):
+        with loguru_caplog.at_level(logging.WARNING):
+            routes = store.persist(["https://x/a.jpg"])
+
+    # First attempt only — no retries.
+    assert call_count["n"] == 1
+    assert routes == {}
+    assert "[IMG-TRACE] PERSIST_FAIL" in loguru_caplog.text
+
+
 def test_persist_logs_persist_record_fail_when_db_raises(tmp_path, loguru_caplog):
     """_record swallow must now log PERSIST_RECORD_FAIL (warning) so DB
     loss is observable. URL still gets into url_to_route because _record
