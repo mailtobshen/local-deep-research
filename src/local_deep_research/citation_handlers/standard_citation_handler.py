@@ -70,6 +70,26 @@ CITATION FORMAT (REQUIRED, 2026-08-23 policy): every citation MUST be a hyperlin
         nr_of_links: int,
     ) -> Dict[str, Any]:
         """Process follow-up analysis with citations."""
+        # 2026-08-25 observability follow-up (commit-after-9c50e0d9):
+        # the standard_citation_handler.analyze_followup had ZERO
+        # INFO-level log lines anywhere — neither the call's entry,
+        # the LLM prompt, the self-check decision (commit 9c50e0d9),
+        # the retry, nor the exit. Operators could not tell whether
+        # the function had run, whether the LLM had complied with
+        # the inline-cite directive, or whether the retry path had
+        # been triggered. The 5-min synthesis window in research
+        # f8f3a63a (2026-08-25, FPV穿越机) produced 96 events from
+        # images.* / web.* modules but 0 from advanced_search_system.*,
+        # making the self-check + retry behaviour invisible in
+        # production logs. Emit enter + exit + self-check logs so
+        # every call is greppable. Compact prefix "[CITE-INLINE]" to
+        # match the existing commit-9c50e0d9 diagnostic namespace
+        # and let one grep cover the whole citation flow.
+        logger.info(
+            f"[CITE-INLINE] analyze_followup_enter "
+            f"question={(question or '')[:80]!r} "
+            f"nr_of_links={nr_of_links}"
+        )
         documents = self._create_documents(
             search_results, nr_of_links=nr_of_links
         )
@@ -129,7 +149,14 @@ INLINE CITATION REQUIREMENT (REQUIRED, 2026-08-25, post 0043b4af): EVERY factual
         # downstream orphan-drop + 188c9f3b rebuilt_empty diagnostic
         # is the fallback that surfaces the failure if the retry
         # also fails.
-        if not _INLINE_CITE_DETECT_RE.search(body):
+        inline_cite_matches = _INLINE_CITE_DETECT_RE.findall(body)
+        inline_cite_count = len(inline_cite_matches)
+        logger.info(
+            f"[CITE-INLINE] self_check "
+            f"hits={inline_cite_count} "
+            f"action={'retry' if inline_cite_count == 0 else 'pass'}"
+        )
+        if inline_cite_count == 0:
             retry_prompt = (
                 f"{prompt}\n\n"
                 "SELF-CHECK FAILED: your previous answer did not "
@@ -145,7 +172,13 @@ INLINE CITATION REQUIREMENT (REQUIRED, 2026-08-25, post 0043b4af): EVERY factual
             )
             response = self.llm.invoke(retry_prompt)
             body = response.content
-            if not _INLINE_CITE_DETECT_RE.search(body):
+            retry_cite_count = len(_INLINE_CITE_DETECT_RE.findall(body))
+            logger.info(
+                f"[CITE-INLINE] self_check_retry "
+                f"hits={retry_cite_count} "
+                f"action={'pass' if retry_cite_count > 0 else 'failed'}"
+            )
+            if retry_cite_count == 0:
                 logger.warning(
                     "[CITE-INLINE] self_check_retry_failed "
                     f"inline_cites=0 "
@@ -153,5 +186,15 @@ INLINE CITATION REQUIREMENT (REQUIRED, 2026-08-25, post 0043b4af): EVERY factual
                     f"reason=llm_did_not_comply_with_inline_directive "
                     f"downstream=enforce_sources_will_empty_block"
                 )
+
+        # 2026-08-25 observability follow-up: exit log with final
+        # inline_cite count so operators can grep per-research inline
+        # adherence stats without re-reading the report markdown.
+        final_inline_cite_count = len(_INLINE_CITE_DETECT_RE.findall(body))
+        logger.info(
+            f"[CITE-INLINE] analyze_followup_exit "
+            f"inline_cites={final_inline_cite_count} "
+            f"retries={'0' if inline_cite_count > 0 else '1'}"
+        )
 
         return {"content": body, "documents": documents}
