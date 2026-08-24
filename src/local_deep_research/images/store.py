@@ -27,6 +27,16 @@ _RETRIABLE: Tuple[type, ...] = (
     TimeoutError,
     _requests.exceptions.Timeout,
     _requests.exceptions.ConnectionError,
+    # 2026-08-24 (research 85d8ee57): .onion sites with anti-hotlink
+    # CDN rules return 3+ redirect hops (e.g. narcosdd6rws5w6esxko7k
+    # 34jro4776rzgdbeeta3sxtq7f2bmsfy3ad.onion 4 avif images).
+    # Without this entry, ``max_redirects=3`` raised TooManyRedirects
+    # on the first attempt, persist() never retried, and the body
+    # rendered a missing ![alt](url) that rewrites.py dropped as
+    # ``no_local_route`` — even though a longer-hop follow would have
+    # succeeded. Retrying with a relaxed max_redirects on attempt ≥ 2
+    # gives the anti-hotlink chain a chance to terminate.
+    _requests.exceptions.TooManyRedirects,
 )
 
 # Hardcoded retry policy. 3 attempts, exponential backoff: 1.5s, 2.25s.
@@ -263,7 +273,15 @@ class ImageStore:
     )
 
     def _download(
-        self, url: str, source_url: Optional[str] = None
+        self,
+        url: str,
+        source_url: Optional[str] = None,
+        # 2026-08-24 (research 85d8ee57): on the second+ retry, allow
+        # a longer redirect chain so darkweb sites that anti-hotlink
+        # with 3-5 redirect hops have a chance to terminate. First
+        # attempt stays at the tight 3-hop cap to fail-fast on the
+        # common case of a permanent redirect loop.
+        redirect_cap: Optional[int] = None,
     ) -> Optional[Tuple[bytes, str]]:
         from ..security.safe_requests import safe_get
         from ..security.proxy_config import get_onion_proxies
@@ -300,8 +318,13 @@ class ImageStore:
                 # per dead image before the terminal raise (observed
                 # 2026-08-22 research 56ffdee8: 2 narcos avif images
                 # each looped to the cap). 3 hops cover legitimate
-                # http→https and CDN shuffles.
-                max_redirects=3 if onion_proxies else None,
+                # http→https and CDN shuffles. Retry passes use a
+                # higher cap (5) to escape the rare anti-hotlink
+                # redirect chain that needs more hops to terminate.
+                max_redirects=(
+                    (redirect_cap if redirect_cap is not None else 3)
+                    if onion_proxies else None
+                ),
             )
         except Exception as e:
             # Network-level failures (DNS / TCP / TLS / proxy hiccups).
@@ -481,8 +504,14 @@ class ImageStore:
                 if result is None:
                     for attempt in range(1, _MAX_ATTEMPTS + 1):
                         try:
+                            # 2026-08-24 (research 85d8ee57): widen
+                            # the redirect cap on retries so 3+ hop
+                            # anti-hotlink chains have a chance to
+                            # terminate. 3 / 5 / 7 hops per attempt.
                             result = self._download(
-                                url, source_url=source_url
+                                url,
+                                source_url=source_url,
+                                redirect_cap=2 * attempt + 1,
                             )
                             break
                         except _RETRIABLE as e:
