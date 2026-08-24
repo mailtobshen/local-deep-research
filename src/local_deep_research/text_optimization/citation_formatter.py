@@ -1354,6 +1354,21 @@ def enforce_sources_ascending_and_drop_orphans(content: str) -> str:
     # Collapse any blank lines my rebuild may have introduced at the
     # tail (e.g. the ``trailing`` list can already end with a blank).
     new_sources_block = "\n".join(rebuilt_lines).rstrip() + "\n"
+    # 2026-08-24 (research 0043b4af, FPV穿越机): the langgraph-agent
+    # emits a `## 参考文献` block whose rows are NEVER cited in the
+    # body (the LLM puts all citations in the trailing block instead
+    # of inline). The body-uncited-rows policy above then empties the
+    # entire rebuilt block, leaving the user with a `## 参考文献`
+    # heading and zero entries. This diagnostic surfaces that
+    # situation so the next operator can see WHY: rows were in the
+    # source, body never cited any, output is the heading only.
+    if rows and not ordered_rows:
+        logger.info(
+            "[CITE-ENFORCE] rebuilt_empty "
+            f"rows_in={len(rows)} "
+            f"rows_kept=0 "
+            f"reason=no_body_inline_citations"
+        )
 
     result = (
         new_body.rstrip(" \t\n") + "\n\n" + new_sources_block
