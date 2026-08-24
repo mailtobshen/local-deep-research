@@ -222,10 +222,13 @@ class TestStandardCitationHandlerFactChecking:
         results = [
             {"full_content": "content", "link": "http://a.com", "title": "A"},
         ]
+        # 2026-08-25 (research 0043b4af self-check): the response
+        # "response" has no inline [N] markers, so the new
+        # self-check issues 1 retry. Total: 2 LLM calls (1 main +
+        # 1 retry). Without the self-check this would be 1.
         handler.analyze_followup("question", results, "previous knowledge", 0)
 
-        # Should be called once: just the main analysis (no fact-check pass)
-        assert mock_llm.invoke.call_count == 1
+        assert mock_llm.invoke.call_count == 2
 
     def test_fact_checking_disabled_skips_extra_call(self):
         """When fact_checking disabled, LLM is called only once for main analysis."""
@@ -239,10 +242,12 @@ class TestStandardCitationHandlerFactChecking:
         results = [
             {"full_content": "content", "link": "http://a.com", "title": "A"},
         ]
+        # 2026-08-25 (research 0043b4af self-check): the response
+        # "response" has no inline [N] markers, so the new
+        # self-check issues 1 retry. Total: 2 LLM calls.
         handler.analyze_followup("question", results, "previous knowledge", 0)
 
-        # Should be called once: just the main analysis
-        assert mock_llm.invoke.call_count == 1
+        assert mock_llm.invoke.call_count == 2
 
     def test_output_instructions_included_in_followup(self):
         """Custom output instructions are included in the followup prompt."""
