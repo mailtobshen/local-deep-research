@@ -77,6 +77,20 @@ def cite_link_text(n) -> str:
 CITE_INLINE_GROUP_RE = re.compile(
     r"[\[【](\d+(?:,\s*\d+)+)[\]】]"
 )
+# 2026-08-23 (research 4967de37 fix): bare-double wrapper around a
+# comma-group whose members may include range forms
+# ``[[71-74, 92-94]]``. None of the four cite-emission regexes
+# above matched this form, so the LLM-emitted token survived every
+# enforcement pass as raw text in the final body — even when its
+# endpoints were hallucinated (no Sources row existed). The form is
+# rare in the wild but consistent: when it does appear, the LLM has
+# tried to write a "ranged citation group with a bare-double
+# wrapper" and the renumber machinery has no signal to drop it.
+# Negative-lookahead ``(?!\()`` keeps this from eating real
+# hyperlinks ``[[N]](url)``.
+BARE_DOUBLE_RANGE_GROUP_RE = re.compile(
+    r"\[\[(\d+\s*-\s*\d+(?:\s*,\s*(?:\d+\s*-\s*\d+|\d+))+)]\](?!\()"
+)
 
 # A row in the trailing References list:
 #   [N] Title
@@ -343,10 +357,48 @@ def strip_hallucinated_citations(body: str, valid_indices) -> str:
         n = int(match.group(1))
         return "" if n not in valid_indices else match.group(0)
 
+    # 2026-08-23 (research 4967de37 fix): handle bare-double
+    # wrapper around a comma-group that may include range members
+    # ``[[71-74, 92-94]]``. This form is invisible to the four
+    # cite-emission regexes above (none accept range members inside
+    # a comma-group, and none accept a bare-double wrap around a
+    # comma-group). Drop the whole token if every endpoint is
+    # hallucinated; otherwise rewrite as a per-endpoint comma-group
+    # ``[N]`` chain so downstream stages see plain citations they know
+    # how to handle.
+    def replace_bare_double_range_group(match):
+        raws = [s.strip() for s in match.group(1).split(",")]
+        kept_endpoints: List[int] = []
+        for raw in raws:
+            rm = re.match(r"(\d+)(?:\s*-\s*(\d+))?$", raw)
+            if rm is None:
+                continue
+            start = int(rm.group(1))
+            end = int(rm.group(2)) if rm.group(2) else start
+            for n in range(start, end + 1):
+                if n in valid_indices:
+                    kept_endpoints.append(n)
+        if not kept_endpoints:
+            return ""
+        return "[" + ", ".join(str(n) for n in kept_endpoints) + "]"
+
     # Order matters: hyperlink first so the inner `[N]` is not re-matched
     # by the plain scan.
     body = RENUMBER_HYPERLINK_RE.sub(replace_hyperlink, body)
     body = CITE_INLINE_GROUP_RE.sub(replace_comma, body)
+    # 2026-08-23: handle bare-double wrap of a comma-group whose
+    # members may be range forms (``[[71-74, 92-94]]``). This is the
+    # fix for research 4967de37's LLM emission where every
+    # enforcement pass missed this token and it survived verbatim into
+    # the final report body even though its endpoints were all
+    # hallucinated. Placed before the plain ``[N]`` / bare ``[[N]]``
+    # scans so the substitution happens before those shorter scans try
+    # to match the bare-double range-group's inner endpoints (the
+    # plain-regex lookahead wouldn't catch them anyway — but having
+    # the substitution first keeps the behaviour easy to read).
+    body = BARE_DOUBLE_RANGE_GROUP_RE.sub(
+        replace_bare_double_range_group, body
+    )
     body = RENUMBER_PLAIN_RE.sub(replace_plain, body)
     # Bare ``[[N]]`` — same delete-if-hallucinated rule as the plain
     # form (the bare form is invisible to the two regexes above).
@@ -1027,7 +1079,32 @@ def enforce_sources_ascending_and_drop_orphans(content: str) -> str:
             else ""
         )
 
-    new_body = RENUMBER_HYPERLINK_RE.sub(replace_hyperlink_drop, body)
+    # 2026-08-23 (research 4967de37 fix): drop bare-double wrap of
+    # a comma-group whose members may be range forms
+    # ``[[71-74, 92-94]]``. None of the cite-emission regexes used
+    # below accept this shape, so it would otherwise survive
+    # verbatim — even when every endpoint has no Sources row and
+    # the marker is hallucinated. Negative-lookahead ``(?!\()``
+    # keeps this from eating real hyperlinks ``[[N]](url)``.
+    def replace_bare_double_range_group_drop(match: "re.Match[str]") -> str:
+        raws = [s.strip() for s in match.group(1).split(",")]
+        for raw in raws:
+            rm = re.match(r"(\d+)(?:\s*-\s*(\d+))?$", raw)
+            if rm is None:
+                continue
+            start = int(rm.group(1))
+            end = int(rm.group(2)) if rm.group(2) else start
+            for n in range(start, end + 1):
+                if n in displayed_n_to_canon_urls and displayed_n_to_canon_urls[n]:
+                    # At least one endpoint survives — keep the token
+                    # untouched. Downstream renumber will rewrite it.
+                    return match.group(0)
+        return ""
+
+    new_body = BARE_DOUBLE_RANGE_GROUP_RE.sub(
+        replace_bare_double_range_group_drop, body
+    )
+    new_body = RENUMBER_HYPERLINK_RE.sub(replace_hyperlink_drop, new_body)
     new_body = RENUMBER_PLAIN_RE.sub(replace_plain_drop, new_body)
     # Bare ``[[N]]`` tokens use the same orphan rule as plain ``[N]``:
     # survive iff a Sources row with a URL owns N (then renumber
