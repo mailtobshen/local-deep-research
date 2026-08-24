@@ -290,6 +290,20 @@ RENUMBER_BARE_DOUBLE_RE = re.compile(r"\[\[(\d+)\]\](?!\()")
 # Matches "Source N" / "source N" so hallucinated numbers there can be
 # stripped alongside the bracketed forms.
 SOURCE_WORD_NUMS_RE = re.compile(r"\b[Ss]ource\s+(\d+)\b")
+# Range pair ``[N]-[M]`` — two independent bracket tokens joined by a
+# literal dash. This is the SAME emission style ``_compress_cite_list``
+# produces (``[1], [3]-[7]``), so it is a legitimate citation form, but
+# the plain/hyperlink/bare-double scans only ever see the two endpoints
+# in isolation. When the orphan-drop deletes one endpoint the dash is
+# not part of any token and survives as plain text glued to the
+# surviving marker — producing the ``-[1](url)`` / ``(url)-`` residue
+# seen in research 97b859c0 (2026-08-25). Handled as a unit by the
+# enforce and strip passes so the dash lives or dies with its endpoints.
+# Negative lookbehind/lookahead mirror RENUMBER_PLAIN_RE so the inner
+# ``[N]`` of a hyperlink or double bracket is never matched.
+RANGE_PAIR_RE = re.compile(
+    r"(?<![\[【])\[(\d+)\](\s*-\s*)\[(\d+)\](?![\]】])"
+)
 
 
 def build_first_cite_order(body: str, valid_indices) -> list:
@@ -1101,8 +1115,25 @@ def enforce_sources_ascending_and_drop_orphans(content: str) -> str:
                     return match.group(0)
         return ""
 
+    # 2026-08-25 (research 97b859c0 fix): range pair ``[N]-[M]`` is a
+    # unit — if any endpoint survives, emit only the surviving endpoint
+    # markers (drop dead ones AND the dash); if none survive, delete the
+    # whole token. Without this, deleting ``[147]`` leaves the literal
+    # ``-`` glued to the surviving ``[1]`` hyperlink.
+    def replace_range_pair_drop(match):
+        a, b = int(match.group(1)), int(match.group(3))
+        kept = [
+            n
+            for n in (a, b)
+            if displayed_n_to_canon_urls.get(n)
+        ]
+        if not kept:
+            return ""
+        return "".join(f"[{n}]" for n in kept)
+
+    new_body = RANGE_PAIR_RE.sub(replace_range_pair_drop, body)
     new_body = BARE_DOUBLE_RANGE_GROUP_RE.sub(
-        replace_bare_double_range_group_drop, body
+        replace_bare_double_range_group_drop, new_body
     )
     new_body = RENUMBER_HYPERLINK_RE.sub(replace_hyperlink_drop, new_body)
     new_body = RENUMBER_PLAIN_RE.sub(replace_plain_drop, new_body)
