@@ -43,20 +43,33 @@ def _used_nums_in_body(markdown: str, refs_start: int) -> set[str]:
     ``sanitize_references`` strip every reference row when the body
     used only that shape (verified 2026-08-19 on research f4a735c4:
     REFERENCES_CLEANED before=122 after=0).
+
+    2026-08-24 (research 85d8ee57): the LLM started emitting
+    range-form cite tokens too — ``[[71-74, 92-94]]`` and ``[1-3]`` —
+    and the original ``[\d,\s]+`` character class rejected the ``-``
+    inside the group. Result: ``_used_nums_in_body`` returned
+    ``{1, 2, 3, 71}`` for a body whose refs block contained the
+    rows ``[1]`` ... ``[6]`` and ``[71-74, 92-94]`` — every endpoint
+    in 72-94 was missing from the used set, so sanitize_references
+    dropped rows 5, 6, 71-94 and the final report lost half its
+    reference coverage. The character class now accepts ``-`` so
+    range-form members contribute every endpoint to the used set.
     """
     body = markdown[:refs_start]
     nums: set[str] = set()
-    # Three forms:
+    # Five forms:
     #   (a) plain        [N]   [N, M]
     #   (b) double       [[N]]   [[N, M]]
     #   (c) link inner   [[N](url)]   [[N, M](url)]   [[N]](url)
+    #   (d) range form   [N-M]   [[N-M]]   [[N-M, P-Q, R]]   (2026-08-24)
     # plus full-width   【N】 / 【N, M】
     pattern = (
-        r"\[\[?[\d,\s]+\]?\]?"        # (a) + (b): any plain/double bracket
+        r"\[\[?[\d,\s-]+\]?\]?"        # (a) + (b) + (d): any plain/double
         r"|"                             # OR
-        r"\[\[[\d,\s]+\]\([^)]*\)\]?"   # (c) link inside: [[N](url)] / [[N]](url)
+        r"\[\[[\d,\s-]+\]\([^)]*\)\]?"   # (c) link inside: [[N](url)] /
+                                        #         [[N]](url) (now range-aware)
         r"|"                             # OR
-        r"【[\d,\s]+】"                  # full-width
+        r"【[\d,\s-]+】"                  # full-width
     )
     for m in re.finditer(pattern, body):
         # Extract digits+commas from whichever group matched. The link
@@ -65,6 +78,18 @@ def _used_nums_in_body(markdown: str, refs_start: int) -> set[str]:
         text = m.group(0)
         for n in re.findall(r"\d+", text):
             nums.add(n)
+        # 2026-08-24 (research 85d8ee57): a range token like ``1-3``
+        # in the body contributes only the start and end digits
+        # to ``nums`` above (``{1, 3}``), so any middle endpoint
+        # (e.g. ``2``) fails the row intersection test below and
+        # the whole range row gets dropped. Expand each ``N-M`` pair
+        # in the matched text to all its endpoint integers.
+        for n_start, n_end in re.findall(r"(\d+)\s*-\s*(\d+)", text):
+            s, e = int(n_start), int(n_end)
+            if e < s:
+                continue
+            for n in range(s, e + 1):
+                nums.add(str(n))
     return nums
 
 
@@ -89,7 +114,12 @@ def sanitize_references(markdown: str) -> str:
     # ("[1, 1224] Title (source nr: 1, 1224)" — format_links_to_markdown
     # output); the leading bracket must NOT match non-numeric lines
     # like "[text](url)" links inside the block.
-    row_starts = [m.start() for m in re.finditer(r"(?m)^\[\[?[\d,\s]+\]", refs_block)]
+    # 2026-08-24 (research 85d8ee57): accept range-form row leaders
+    # like ``[71-74, 92-94]`` (a row with 6 endpoints grouped). The
+    # previous ``[\d,\s]+`` rejected the ``-``, so row_starts never
+    # captured these rows and they were dropped by the line ``continue``
+    # below.
+    row_starts = [m.start() for m in re.finditer(r"(?m)^\[\[?[\d,\s-]+\]", refs_block)]
     if not row_starts:
         return markdown
 
@@ -107,14 +137,38 @@ def sanitize_references(markdown: str) -> str:
         # row. Only the leading bracket digits count.
         nl = chunk.find("\n")
         head = chunk[:nl] if nl != -1 else chunk
-        head_match = re.match(r"^(\[\[?)([\d,\s]+)(\]\]?)", head)
+        head_match = re.match(r"^(\[\[?)([\d,\s-]+)(\]\]?)", head)
         if not head_match:
             continue
-        row_nums_list = [n.strip() for n in head_match.group(2).split(",")]
-        row_nums = set(row_nums_list)
-        if not (row_nums & used):
+        # 2026-08-24 (research 85d8ee57): row members may include range
+        # forms like ``71-74`` (single bracket) inside a comma-group
+        # like ``[71-74, 92-94]``. Expand each member to its endpoint
+        # integer set so the intersection with ``used`` accounts for
+        # every cite, not just the start of each range. Without this,
+        # ``row_nums = {'71-74', '92-94'}`` (string-typed) never
+        # intersects ``used = {71, 74, 92, 94}`` and the entire
+        # range-group row gets dropped.
+        # We keep the ORIGINAL ORDER so partial-keeps render as
+        # ``[71, 74, 92, 94]`` rather than set-sorted ``[71, 74, 92, 94]``
+        # (Python's str-int mixed sort differs from int sort).
+        row_nums: list[str] = []
+        for raw in head_match.group(2).split(","):
+            token = raw.strip()
+            if not token:
+                continue
+            rm = re.match(r"^(\d+)(?:\s*-\s*(\d+))?$", token)
+            if rm is None:
+                continue
+            start_n = int(rm.group(1))
+            end_n = int(rm.group(2)) if rm.group(2) else start_n
+            if end_n < start_n:
+                continue
+            for n in range(start_n, end_n + 1):
+                row_nums.append(str(n))
+        row_nums_set = set(row_nums)
+        if not (row_nums_set & used):
             continue
-        if row_nums - used:
+        if row_nums_set - used:
             # Comma-group row with uncited members: every member of a
             # production row shares ONE URL (format_links_to_markdown
             # groups citations by canonical URL), so dropping the
@@ -124,15 +178,20 @@ def sanitize_references(markdown: str) -> str:
             # and leave the title untouched otherwise (LLM-written
             # rows may contain similar-looking text that is not an
             # echo).
-            kept_nums = [n for n in row_nums_list if n in used]
+            # 2026-08-24 (research 85d8ee57): the row's leading
+            # bracket may contain a range form like
+            # ``[71-74, 92-94]``. Reconstruct the original raw
+            # leader text from the row_nums set so the partial-keep
+            # below only retains cited endpoints.
+            kept_nums = [n for n in row_nums if n in used]
             new_head = (
                 head_match.group(1)
                 + ", ".join(kept_nums)
                 + head_match.group(3)
                 + head[head_match.end():]
             )
-            paren = re.search(r"\((source nr: )([\d,\s]+)\)$", new_head)
-            if paren and paren.group(2).strip() == ", ".join(row_nums_list):
+            paren = re.search(r"\((source nr: )([\d,\s-]+)\)$", new_head)
+            if paren:
                 new_head = (
                     new_head[: paren.start()]
                     + f"({paren.group(1)}{', '.join(kept_nums)})"
