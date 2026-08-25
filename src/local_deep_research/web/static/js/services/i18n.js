@@ -167,8 +167,13 @@
                 ? errorData.message_args
                 : [];
             const msg = tf.apply(null, [errorData.message_key].concat(args));
+            // Append the hint only when it resolves to real translated
+            // text. An empty translation (or a key missing from the
+            // active language file) must NOT leak the raw key into the
+            // user-facing message (t() falls back to the key itself).
             const hint = errorData.hint_key ? t(errorData.hint_key) : '';
-            return hint ? `${msg} — ${hint}` : msg;
+            const hintResolved = hint && hint !== errorData.hint_key;
+            return hintResolved ? `${msg} — ${hint}` : msg;
         }
         if (errorData.message_raw) return errorData.message_raw;
         return errorData.message || t('Failed to start research');
