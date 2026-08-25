@@ -605,9 +605,32 @@ def _deferred_image_fill(
     try:
         from ...images.relevance import build_citation_index
 
-        num_to_url, _section_to_nums, url_to_html = build_citation_index(
+        num_to_url, section_to_nums, url_to_html = build_citation_index(
             final_markdown, results
         )
+        # 2026-08-25 (research 610f5486): converge the fetch set to
+        # sources the BODY actually cites. num_to_url covers every
+        # Sources-block row; when the LLM leans on 2 of 57 rows the
+        # fill pass still scraped 31 URLs (8.4 min) whose material
+        # could never be placed. Union of section_to_nums is the set
+        # of numbers with an inline marker; rows without one are
+        # dropped from the fetch set only (the rendered Sources block
+        # is untouched — same contract as the Plan-B filter below).
+        body_cited_nums = {
+            n for nums in section_to_nums.values() for n in nums
+        }
+        if body_cited_nums:
+            before_fetch = len(num_to_url)
+            num_to_url = {
+                num: url
+                for num, url in num_to_url.items()
+                if num in body_cited_nums
+            }
+            logger.info(
+                f"[IMG-TRACE] FETCH_SET research={research_id} "
+                f"rows={before_fetch} body_cited={len(num_to_url)} "
+                f"reason=body_cite_convergence"
+            )
         # Plan B: drop LLM-hallucinated URLs that are not in the real
         # search results set. The LLM is free to cite URLs in
         # ``## Sources`` that never came back from the search engine

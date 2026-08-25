@@ -297,8 +297,13 @@ class TestStandardCitationHandlerAnalyzeFollowup:
             nr_of_links=0,
         )
 
-        # Should call LLM twice: once for fact-checking, once for main response
-        assert mock_llm.invoke.call_count == 2
+        # Should call LLM: once for fact-checking, once for the main
+        # response, PLUS one cite-diversity retry — the conftest
+        # mock's fixed reply cites only source [1] across a 3-source
+        # pool, which trips the 2026-08-25 diversity gate
+        # (research 610f5486: many markers on 1-2 sources starve the
+        # citation-anchored image pipeline).
+        assert mock_llm.invoke.call_count == 3
 
     def test_analyze_followup_with_fact_checking_disabled(
         self,
@@ -323,8 +328,11 @@ class TestStandardCitationHandlerAnalyzeFollowup:
             nr_of_links=0,
         )
 
-        # Should call LLM only once
-        assert mock_llm.invoke.call_count == 1
+        # Should call LLM twice: once for the main response, once for
+        # the cite-diversity retry (mock's fixed reply cites only
+        # source [1] across a 3-source pool — see the enabled-variant
+        # comment above for the 2026-08-25 diversity gate rationale).
+        assert mock_llm.invoke.call_count == 2
 
     def test_analyze_followup_includes_previous_knowledge(
         self, mock_llm, sample_search_results, sample_previous_knowledge

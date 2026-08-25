@@ -28,6 +28,25 @@ _INLINE_CITE_DETECT_RE = re.compile(
     r"|"
     r"\[\\?\[?\d+\]?\]\([^)]+\)"           # [N](url) or [[N]](url)
 )
+# Minimum number of DISTINCT sources the synthesis should cite when
+# that many exist (2026-08-25, research 610f5486: 43 markers all on
+# sources [2]/[3] starved the citation-anchored image pipeline — every
+# section read html_covered=0). Below this the self-check retries.
+_MIN_DISTINCT_SOURCES = 3
+
+
+def _count_distinct_cited_sources(body: str) -> int:
+    """Count DISTINCT citation numbers in *body* across all marker forms.
+
+    Plain ``[N]`` / ``[N, M]`` groups contribute each member; hyperlinked
+    ``[N](url)`` / ``[[N]](url)`` contribute their number. Duplicate
+    mentions of the same number count once.
+    """
+    seen: set[int] = set()
+    for m in _INLINE_CITE_DETECT_RE.finditer(body):
+        nums = re.findall(r"\d+", m.group(0))
+        seen.update(int(n) for n in nums)
+    return len(seen)
 
 
 class StandardCitationHandler(BaseCitationHandler):
@@ -137,7 +156,9 @@ Provide a detailed answer with citations. Do not create the bibliography, it wil
 
 CITATION FORMAT (REQUIRED, 2026-08-23 policy): every citation MUST be a hyperlink carrying the source's URL, in the form [[N]](url) — e.g. "According to [[1]](http://example.com/page), …". A bare [N] without a URL is NOT a valid citation and will be dropped. Copy the exact URL from the source entry you are citing.
 
-INLINE CITATION REQUIREMENT (REQUIRED, 2026-08-25, post 0043b4af): EVERY factual claim in your answer MUST carry an inline citation marker like [N] (plain), [N](url), or [[N]](url) directly in the body text. NEVER put citations only in a trailing bibliography block — they would be silently dropped by the downstream Sources enforcer. Before returning your final answer, self-check: 'Does my body contain at least 3-5 inline citation markers?' If not, add them. Verified 2026-08-24 research 0043b4af: the LLM produced a 31-row bibliography with zero body markers, leaving the user with an empty references block."""
+INLINE CITATION REQUIREMENT (REQUIRED, 2026-08-25, post 0043b4af): EVERY factual claim in your answer MUST carry an inline citation marker like [N] (plain), [N](url), or [[N]](url) directly in the body text. NEVER put citations only in a trailing bibliography block — they would be silently dropped by the downstream Sources enforcer. Before returning your final answer, self-check: 'Does my body contain at least 3-5 inline citation markers?' If not, add them. Verified 2026-08-24 research 0043b4af: the LLM produced a 31-row bibliography with zero body markers, leaving the user with an empty references block.
+
+CITATION DIVERSITY (REQUIRED, 2026-08-25, post 610f5486): spread your citations across at least {_MIN_DISTINCT_SOURCES} DIFFERENT sources when that many exist — do not lean every claim on one or two sources. Different sections should cite the sources that actually support THEM. Verified 2026-08-25 research 610f5486: 43 markers all citing sources [2]/[3] starved the image pipeline (every section's cited page had no usable material)."""
 
         response = self.llm.invoke(prompt)
         body = response.content
@@ -151,12 +172,32 @@ INLINE CITATION REQUIREMENT (REQUIRED, 2026-08-25, post 0043b4af): EVERY factual
         # also fails.
         inline_cite_matches = _INLINE_CITE_DETECT_RE.findall(body)
         inline_cite_count = len(inline_cite_matches)
+        # 2026-08-25 (research 610f5486): diversity gate — many markers
+        # on 1-2 distinct sources starves the citation-anchored image
+        # pipeline. Only enforced when the pool actually offers enough
+        # distinct sources to cite.
+        distinct_sources = _count_distinct_cited_sources(body)
+        available_sources = len(documents)
+        diversity_ok = (
+            distinct_sources >= _MIN_DISTINCT_SOURCES
+            or available_sources < _MIN_DISTINCT_SOURCES
+        )
+        needs_retry = inline_cite_count == 0 or not diversity_ok
         logger.info(
             f"[CITE-INLINE] self_check "
             f"hits={inline_cite_count} "
-            f"action={'retry' if inline_cite_count == 0 else 'pass'}"
+            f"distinct={distinct_sources}/{available_sources} "
+            f"action={'retry' if needs_retry else 'pass'}"
         )
-        if inline_cite_count == 0:
+        if needs_retry:
+            diversity_hint = ""
+            if inline_cite_count > 0 and not diversity_ok:
+                diversity_hint = (
+                    f"Although you wrote {inline_cite_count} markers, "
+                    f"they cite only {distinct_sources} distinct "
+                    f"source(s). Spread citations across at least "
+                    f"{_MIN_DISTINCT_SOURCES} different sources."
+                )
             retry_prompt = (
                 f"{prompt}\n\n"
                 "SELF-CHECK FAILED: your previous answer did not "
@@ -168,7 +209,7 @@ INLINE CITATION REQUIREMENT (REQUIRED, 2026-08-25, post 0043b4af): EVERY factual
                 "inline [N] markers (or [[N]](url) hyperlinks) "
                 "directly in the body text. Each fact must carry "
                 "a marker. Do NOT put all citations in a trailing "
-                "block."
+                "block. " + diversity_hint
             )
             response = self.llm.invoke(retry_prompt)
             body = response.content
@@ -191,10 +232,12 @@ INLINE CITATION REQUIREMENT (REQUIRED, 2026-08-25, post 0043b4af): EVERY factual
         # inline_cite count so operators can grep per-research inline
         # adherence stats without re-reading the report markdown.
         final_inline_cite_count = len(_INLINE_CITE_DETECT_RE.findall(body))
+        final_distinct = _count_distinct_cited_sources(body)
         logger.info(
             f"[CITE-INLINE] analyze_followup_exit "
             f"inline_cites={final_inline_cite_count} "
-            f"retries={'0' if inline_cite_count > 0 else '1'}"
+            f"distinct={final_distinct} "
+            f"retries={'0' if not needs_retry else '1'}"
         )
 
         return {"content": body, "documents": documents}
