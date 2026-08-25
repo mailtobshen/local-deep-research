@@ -58,6 +58,14 @@ _ENGINE_CATEGORIES: dict[str, str] = {
 DEFAULT_SEARXNG_URL = "http://searxng-ldr:8080"
 DEFAULT_FIRECRAWL_URL = "http://localhost:3002"
 _PROBE_QUERY = "test"
+# Stage-3 circuit probe target (2026-08-25, research 31c9bdb2): a
+# long-lived, well-known .onion used only to prove a Tor CIRCUIT can
+# be built and an onion name resolved through ldr-tor. The SOCKS5
+# CONNECT with ATYP=0x03 (domain, remote resolve) exercises exactly
+# the path every darkweb/* engine uses. DuckDuckGo's onion service is
+# stable, run by a first-party, and lightweight for a HEAD-ish probe.
+_CIRCUIT_PROBE_ONION = "duckduckgogg42xjoc72x3sjtowozi6equrtfjlhba7g7vcfcmyg5ad.onion"
+_CIRCUIT_PROBE_PORT = 80
 _PROBE_TIMEOUT = 60  # seconds per probe — SearXNG runs the named engine PLUS all
               # upstream engines that the engine depends on. When the
               # request goes through the host Privoxy (HTTP_PROXY env
@@ -429,15 +437,46 @@ def probe_ldr_tor_proxy(
             # Stage 2: SOCKS5 greeting — VER=5, NMETHODS=1, METHOD=0 (no auth).
             s.sendall(bytes([0x05, 0x01, 0x00]))
             greeting = s.recv(2)
-            if greeting == bytes([0x05, 0x00]):
+            if greeting != bytes([0x05, 0x00]):
                 return EngineStatus(
-                    "ldr-tor", "ok",
-                    f"SOCKS5 no-auth @ {host}:{port} (daemon 可用)",
+                    "ldr-tor", "error",
+                    f"SOCKS5 greeting 拒绝: 0x{greeting.hex()} (非 SOCKS5 服务)",
                     latency_ms=latency_ms, kind="darkweb",
                 )
+            # Stage 3 (2026-08-25, research 31c9bdb2): circuit-level
+            # check. A tor daemon with 0 open circuits still answers
+            # the greeting — stages 1-2 reported "ok" while every
+            # .onion fetch failed for 3 minutes until the no_results
+            # sentinel aborted the research. CONNECT through the proxy
+            # to a known onion (remote resolution, ATYP=0x03 — the
+            # same path every darkweb/* engine uses) proves a real
+            # circuit can carry an onion connection.
+            s.settimeout(timeout)
+            onion_bytes = _CIRCUIT_PROBE_ONION.encode("ascii")
+            req = (
+                bytes([0x05, 0x01, 0x00, 0x03, len(onion_bytes)])
+                + onion_bytes
+                + _CIRCUIT_PROBE_PORT.to_bytes(2, "big")
+            )
+            s.sendall(req)
+            reply = s.recv(4)
+            if len(reply) >= 2 and reply[1] == 0x00:
+                return EngineStatus(
+                    "ldr-tor", "ok",
+                    (
+                        f"SOCKS5 @ {host}:{port} + onion 电路可用 "
+                        f"({_CIRCUIT_PROBE_ONION.split('.')[0][:6]}….onion)"
+                    ),
+                    latency_ms=latency_ms, kind="darkweb",
+                )
+            rep = reply[1] if len(reply) >= 2 else -1
             return EngineStatus(
                 "ldr-tor", "error",
-                f"SOCKS5 greeting 拒绝: 0x{greeting.hex()} (非 SOCKS5 服务)",
+                (
+                    f"Tor 电路不可用，稍后再试 "
+                    f"(SOCKS5 CONNECT REP=0x{rep & 0xFF:02x} — "
+                    f"端口活着但无可用电路，参见 31c9bdb2)"
+                ),
                 latency_ms=latency_ms, kind="darkweb",
             )
     except socket.timeout:

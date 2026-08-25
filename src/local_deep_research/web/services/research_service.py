@@ -1499,6 +1499,44 @@ def run_research_process(research_id, query, mode, **kwargs):
             table = format_status_table(statuses)
             ok_count = sum(1 for s in statuses if s.status == "ok")
             active_count = sum(1 for s in statuses if s.status != "skipped")
+
+            # Hard abort on a dead Tor circuit (2026-08-25, research
+            # 31c9bdb2): when darkweb is the PRIMARY engine and the
+            # ldr-tor probe says the circuit is down, every darkweb/*
+            # engine will return zero results and the research burns
+            # ~3 min before the no_results sentinel aborts. Fail fast
+            # here instead — same fail-loud contract as the VPN
+            # precheck in research_routes. Only the explicit
+            # "Tor 电路不可用" circuit-level failure aborts; a skipped
+            # or merely degraded probe stays advisory.
+            _primary_tool = (
+                settings_snapshot.get("search.tool")
+                if isinstance(settings_snapshot, dict)
+                else None
+            )
+            if _primary_tool == "darkweb":
+                _tor_dead = next(
+                    (
+                        s
+                        for s in statuses
+                        if s.name == "ldr-tor"
+                        and s.status in ("error", "timeout")
+                        and "Tor 电路不可用" in (s.detail or "")
+                    ),
+                    None,
+                )
+                if _tor_dead is not None:
+                    logger.error(
+                        f"[PREFLIGHT] research={research_id} "
+                        f"abort reason=tor_circuit_unavailable "
+                        f"detail={_tor_dead.detail}"
+                    )
+                    raise ValueError(
+                        f"Tor 电路不可用，稍后再试 — 暗网引擎需要可用的 "
+                        f"Tor 电路，请确认 ldr-tor 容器正常后重新提交。"
+                        f"(预检详情: {_tor_dead.detail})"
+                    )
+
             if ok_count > 0:
                 progress_callback(
                     f"预检完成: {ok_count}/{active_count} 个引擎/服务可用\n{table}",
