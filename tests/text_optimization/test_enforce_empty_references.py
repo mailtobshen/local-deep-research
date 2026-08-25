@@ -111,10 +111,13 @@ def test_orphan_row_policy_preserved(log_capture):
     out = enforce_sources_ascending_and_drop_orphans(
         _md_with_orphan_references()
     )
-    # Uncited rows are still dropped (no behaviour change). The
-    # heading is preserved.
-    assert "## 参考文献" in out
-    # But the row contents are gone.
+    # Uncited rows are still dropped (no behaviour change). Since
+    # 2026-08-25 (research 496944b7) the heading is dropped too when
+    # the rebuilt block is empty — an empty references section reads
+    # as a broken export. This supersedes the old contract that kept
+    # the heading.
+    assert "## 参考文献" not in out
+    # The row contents are gone.
     assert "联合中文担保交易集市" not in out
     assert "雇佣匿名黑客" not in out
     assert "bitcoin mixer" not in out

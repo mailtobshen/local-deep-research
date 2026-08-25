@@ -15,7 +15,8 @@ _SOURCES_SECTION_PATTERNS = [
     # with "Sources." or similar in prose. Trailing whitespace is
     # absorbed by the suffix group so end-of-line still matches.
     re.compile(
-        r"^#{1,3}\s*(?:Sources|References|Bibliography|Citations)"
+        r"^#{1,3}\s*(?:\d{1,3}[\.\、]?\s*|\(\d{1,3}\)\s*)?"
+        r"(?:Sources|References|Bibliography|Citations)"
         r"(?:[\s　]*[\w一-鿿]{1,12})?\s*$",
         re.MULTILINE | re.IGNORECASE,
     ),
@@ -35,7 +36,8 @@ _SOURCES_SECTION_PATTERNS = [
 # running prose.
 _SOURCES_SECTION_CJK_PATTERNS = [
     re.compile(
-        r"^#{1,3}\s*(?:参考文献|参考资料|引用来源|参考来源|资料来源|引用文献)"
+        r"^#{1,3}\s*(?:\d{1,3}[\.\、]?\s*|\(\d{1,3}\)\s*)?"
+        r"(?:参考文献|参考资料|引用来源|参考来源|资料来源|引用文献)"
         r"(?:[\s　]*[\w一-鿿]{1,12})?\s*$",
         re.MULTILINE,
     ),
@@ -1401,9 +1403,19 @@ def enforce_sources_ascending_and_drop_orphans(content: str) -> str:
             f"reason=no_body_inline_citations"
         )
 
-    result = (
-        new_body.rstrip(" \t\n") + "\n\n" + new_sources_block
-    )
+    # 2026-08-25 (research 496944b7, FPV穿越机): when the rebuilt block
+    # has zero rows, drop the heading too. An empty ``## 参考文献``
+    # section under the report body reads as a broken export — the
+    # body has no surviving citations to anchor, so there is nothing
+    # for the heading to introduce.
+    # rebuilt_lines = [heading, ""] at minimum; only-heading shape
+    # means zero rows made it through.
+    if len(rebuilt_lines) <= 2:
+        result = new_body.rstrip(" \t\n") + "\n"
+    else:
+        result = (
+            new_body.rstrip(" \t\n") + "\n\n" + new_sources_block
+        )
     # Exit probe: pairs with the entry probe to bracket the funnel.
     # If a downstream stage reverts this output, out_len/out_cites will
     # disagree with what the saved report shows — pinpointing the
