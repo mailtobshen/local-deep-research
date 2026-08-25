@@ -8,6 +8,7 @@ questions can be decomposed into subtopics researched in parallel by subagents.
 
 from __future__ import annotations
 
+import re
 import threading
 from concurrent.futures import ThreadPoolExecutor, TimeoutError, as_completed
 from datetime import UTC, datetime
@@ -32,6 +33,29 @@ from ...utilities.search_utilities import (
 )
 from ..tools.fetch import FETCH_MODES, build_fetch_tool
 from .base_strategy import BaseSearchStrategy
+
+
+# 2026-08-25 (research 9fd73401): tool-name markers the LLM leaked into
+# the synthesis body after learning the ``[[N]](url)`` citation shape —
+# it decorated section headings with the literal ``[[research_subtopic]]``
+# tool token. Extend this set when new tools leak.
+_TOOL_MARKER_LEAK_RE = re.compile(
+    r"\s*\[\[\s*(?:research_subtopic)\s*\]\]"
+)
+
+
+def strip_tool_marker_leakage(body: str) -> str:
+    """Remove ``[[tool_name]]`` tokens the LLM leaked into *body*.
+
+    Only known tool names are touched; numeric ``[[73]]`` (bare citation)
+    and ``[[7]](url)`` (hyperlink citation) tokens never match. Leading
+    whitespace is consumed with the token so headings don't keep a
+    trailing blank (``## 4.1 电压等级 [[research_subtopic]]`` →
+    ``## 4.1 电压等级``).
+    """
+    if not body:
+        return body
+    return _TOOL_MARKER_LEAK_RE.sub("", body)
 
 
 def _parse_sources_markdown_urls(formatted_output: str) -> set[str]:
@@ -1458,6 +1482,11 @@ class LangGraphAgentStrategy(BaseSearchStrategy):
                 logger.warning(
                     "Citation handler failed, using raw agent answer"
                 )
+
+        # 2026-08-25 (research 9fd73401): strip [[tool_name]] tokens the
+        # LLM leaked into the synthesis (e.g. headings decorated with
+        # [[research_subtopic]] after it learned the [[N]](url) shape).
+        synthesized_content = strip_tool_marker_leakage(synthesized_content)
 
         # Format sources
         formatted_output = synthesized_content

@@ -128,11 +128,25 @@ class BaseCitationHandler(ABC):
         return documents
 
     def _format_sources(self, documents: List[Document]) -> str:
-        """Format sources with numbers for citation."""
+        """Format sources with numbers for citation.
+
+        Each entry carries a header line ``[N] {title} — {url}`` before
+        the content (2026-08-25, research 9fd73401): the prompt requires
+        hyperlinked ``[[N]](url)`` citations with the URL copied from
+        the source entry, but the old ``[N] {content}`` shape exposed no
+        URL at all — the LLM fabricated URLs and enforce's canonical
+        orphan-drop killed every citation (6 markers, 0 survivors,
+        rebuilt_empty rows_in=95).
+        """
         sources = []
         for doc in documents:
             source_id = doc.metadata["index"]
-            sources.append(f"[{source_id}] {doc.page_content}")
+            title = doc.metadata.get("title") or "Untitled"
+            url = doc.metadata.get("source") or ""
+            header = f"[{source_id}] {title}"
+            if url:
+                header += f" — {url}"
+            sources.append(f"{header}\n{doc.page_content}")
         return "\n\n".join(sources)
 
     @abstractmethod

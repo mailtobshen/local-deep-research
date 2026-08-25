@@ -142,8 +142,11 @@ class TestFormatSources:
             ),
         ]
         result = handler._format_sources(docs)
-        assert "[1] Content A" in result
-        assert "[2] Content B" in result
+        # 2026-08-25: header line carries number+title+URL; content on
+        # its own line below (see test_source_url_in_prompt.py).
+        assert "[1] A — http://a.com" in result
+        assert "[2] B — http://b.com" in result
+        assert "Content A" in result and "Content B" in result
 
     def test_sources_separated_by_double_newlines(self):
         """Sources are separated by double newlines."""

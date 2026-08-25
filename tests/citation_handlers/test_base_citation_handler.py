@@ -382,7 +382,12 @@ class TestFormatSources:
 
         result = handler._format_sources(docs)
 
-        assert result == "[1] This is the content"
+        # 2026-08-25 (research 9fd73401): entries carry a title/URL
+        # header line before the content, so the LLM can copy a real
+        # URL into its [[N]](url) citations.
+        assert result == (
+            "[1] Untitled — https://example.com\nThis is the content"
+        )
 
     def test_formats_multiple_documents(self):
         """Test formatting multiple documents."""
@@ -398,7 +403,9 @@ class TestFormatSources:
         result = handler._format_sources(docs)
 
         expected = (
-            "[1] First content\n\n[2] Second content\n\n[3] Third content"
+            "[1] Untitled\nFirst content\n\n"
+            "[2] Untitled\nSecond content\n\n"
+            "[3] Untitled\nThird content"
         )
         assert result == expected
 
@@ -425,7 +432,7 @@ class TestFormatSources:
 
         result = handler._format_sources(docs)
 
-        assert result == "[5] Line 1\nLine 2\nLine 3"
+        assert result == "[5] Untitled\nLine 1\nLine 2\nLine 3"
 
 
 class TestAbstractMethods:
