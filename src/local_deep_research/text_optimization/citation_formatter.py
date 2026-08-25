@@ -1080,7 +1080,18 @@ def enforce_sources_ascending_and_drop_orphans(content: str) -> str:
     def replace_hyperlink_drop(match: "re.Match[str]") -> str:
         n = int(match.group(1))
         url = match.group(2)
-        return match.group(0) if url_is_kept(url, n) else ""
+        if url_is_kept(url, n):
+            return match.group(0)
+        # 2026-08-25 (research c749f8f2): per-dropped-cite kill ledger.
+        # 17 of 20 hyperlink markers died silently that run — the entry
+        # probe's head= truncates before any marker, so operators had
+        # no way to see WHICH url failed to match (the URL-drift
+        # hypothesis took a full falsification session). One line per
+        # kill, capped at the first 20 per document.
+        nonlocal killed_hyperlinks
+        if len(killed_hyperlinks) < 20:
+            killed_hyperlinks.append((n, url))
+        return ""
 
     def replace_plain_drop(match: "re.Match[str]") -> str:
         n = int(match.group(1))
@@ -1137,7 +1148,15 @@ def enforce_sources_ascending_and_drop_orphans(content: str) -> str:
     new_body = BARE_DOUBLE_RANGE_GROUP_RE.sub(
         replace_bare_double_range_group_drop, new_body
     )
+    # Kill ledger (see replace_hyperlink_drop): collected during the
+    # sub() pass below, emitted right after it.
+    killed_hyperlinks: list = []
     new_body = RENUMBER_HYPERLINK_RE.sub(replace_hyperlink_drop, new_body)
+    for n, url in killed_hyperlinks:
+        logger.info(
+            f"[CITE-ENFORCE] kill cite_num={n} url={url} "
+            f"reason=url_matched_no_surviving_row"
+        )
     new_body = RENUMBER_PLAIN_RE.sub(replace_plain_drop, new_body)
     # Bare ``[[N]]`` tokens use the same orphan rule as plain ``[N]``:
     # survive iff a Sources row with a URL owns N (then renumber
