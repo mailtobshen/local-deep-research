@@ -1407,6 +1407,33 @@ class LangGraphAgentStrategy(BaseSearchStrategy):
         synthesized_content = final_answer
         documents: list = []
 
+        # Unified citation numbering (2026-08-25, research 496944b7):
+        # assign continuous 1..K over canonical-URL-deduped survivors
+        # BEFORE the citation handler runs, so the documents prompt and
+        # the Sources block below share ONE numbering space. Previously
+        # _create_documents numbered the raw list while
+        # format_links_to_markdown numbered rows by original-index
+        # unions after dedup — misaligned spaces meant every inline
+        # [N] failed enforce's orphan-drop URL match (11 body cites
+        # all died, rebuilt_empty rows_in=96). Empty-URL entries never
+        # enter the numbering space; duplicate-URL scraped content
+        # (html_content) merges onto the first-seen survivor.
+        unique_results: list = []
+        if all_search_results:
+            try:
+                from ...utilities.search_utilities import (
+                    assign_citation_numbers,
+                )
+
+                unique_results = assign_citation_numbers(all_search_results)
+                if unique_results:
+                    all_search_results = unique_results
+            except Exception:
+                logger.exception(
+                    "assign_citation_numbers failed; falling back to "
+                    "raw numbering (legacy misaligned behaviour)"
+                )
+
         # Image fetch is deferred until after the Sources block is
         # built (see below) so the allowlist can be derived from the
         # URLs the LLM actually chose to cite — the previous behaviour
@@ -1440,7 +1467,14 @@ class LangGraphAgentStrategy(BaseSearchStrategy):
                     all_search_results
                 )
                 if all_links:
-                    sources_md = format_links_to_markdown(all_links)
+                    # numbered=True: rows carry the same continuous
+                    # 1..K the documents prompt used (see
+                    # assign_citation_numbers above). Legacy mode
+                    # (comma-group index unions) stays default for the
+                    # other call sites.
+                    sources_md = format_links_to_markdown(
+                        all_links, numbered=bool(unique_results)
+                    )
                     if sources_md:
                         # Localized Sources heading: zh-CN reports use
                         # ## 参考文献 so the scaffolding matches the

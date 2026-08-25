@@ -139,6 +139,61 @@ def _format_quality_tag_html(quality, *, title: str = "") -> str:
     return _html.escape(title, quote=True) + _format_quality_tag(quality)
 
 
+def assign_citation_numbers(
+    search_results: List[Dict],
+) -> List[Dict]:
+    """Assign continuous 1..K citation numbers to unique search results.
+
+    Single numbering authority for the citation pipeline (2026-08-25,
+    research 496944b7): before this, ``_create_documents`` numbered the
+    RAW list (``i + nr_of_links + 1``) while ``format_links_to_markdown``
+    numbered Sources rows by original-index unions AFTER canonical-URL
+    dedup — two misaligned numbering spaces, so every inline ``[N]``
+    the LLM wrote failed enforce's orphan-drop URL match.
+
+    Rules:
+    - Entries whose URL canonicalises to empty are EXCLUDED (no URL →
+      no citation row; consistent with the enforce no-URL-row policy).
+    - Entries sharing a canonical URL collapse to the FIRST-SEEN one;
+      ``html_content`` / ``full_content`` merge by first-non-empty so
+      scraped content living only on a duplicate is not lost.
+    - Survivors get ``result['index'] = str(n)`` for n = 1..K in
+      first-seen order. ``_create_documents`` passes an existing
+      ``index`` through untouched, so the documents prompt and the
+      Sources block share one numbering.
+
+    Returns the surviving entries (the same dict objects as in
+    *search_results*; the caller uses the return value for both the
+    citation handler input and the Sources block build).
+    """
+    survivors: List[Dict] = []
+    seen_canon: set = set()
+    for result in search_results or []:
+        if not isinstance(result, dict):
+            continue
+        raw = (result.get("url") or result.get("link") or "").strip()
+        canon = canonical_url_key(raw)
+        if not canon:
+            continue
+        if canon in seen_canon:
+            # Merge scraped content onto the first-seen survivor.
+            for prev in reversed(survivors):
+                if canonical_url_key(
+                    (prev.get("url") or prev.get("link") or "").strip()
+                ) == canon:
+                    for key in ("html_content", "full_content"):
+                        val = result.get(key)
+                        if val and not prev.get(key):
+                            prev[key] = val
+                    break
+            continue
+        seen_canon.add(canon)
+        survivors.append(result)
+    for n, result in enumerate(survivors, start=1):
+        result["index"] = str(n)
+    return survivors
+
+
 def extract_links_from_search_results(search_results: List[Dict]) -> List[Dict]:
     """
     Extracts links and titles from a list of search result dictionaries.
@@ -210,7 +265,9 @@ def extract_links_from_search_results(search_results: List[Dict]) -> List[Dict]:
     return links
 
 
-def format_links_to_markdown(all_links: List[Dict]) -> str:
+def format_links_to_markdown(
+    all_links: List[Dict], numbered: bool = False
+) -> str:
     parts: list[str] = []
     logger.info(f"Formatting {len(all_links)} links to markdown...")
 
@@ -248,14 +305,30 @@ def format_links_to_markdown(all_links: List[Dict]) -> str:
 
         # Emit each unique source once, in first-seen order.
         seen: set[str] = set()
-        for link in all_links:
+        for n, link in enumerate(
+            [
+                l
+                for l in all_links
+                if canonical_url_key(l.get("url") or l.get("link") or "")
+            ],
+            start=1,
+        ):
             raw = link.get("url") or link.get("link") or ""
             canon = canonical_url_key(raw)
-            if not canon or canon in seen:
+            if canon in seen:
                 continue
             title = canon_to_title[canon]
-            indices = sorted(set(url_to_indices[canon]))
-            indices_str = f"[{', '.join(map(str, indices))}]"
+            if numbered:
+                # Unified numbering mode (2026-08-25): rows carry the
+                # continuous 1..K the citation handler's documents
+                # prompt already used — LLM view == block rows, so
+                # inline [N] markers survive enforce's orphan-drop.
+                indices_str = f"[{n}]"
+                nr_str = str(n)
+            else:
+                indices = sorted(set(url_to_indices[canon]))
+                indices_str = f"[{', '.join(map(str, indices))}]"
+                nr_str = ", ".join(map(str, indices))
             quality_tag = _format_quality_tag(canon_to_quality.get(canon))
             collection_line = (
                 f"   Collection: {canon_to_collection[canon]}\n"
@@ -264,7 +337,7 @@ def format_links_to_markdown(all_links: List[Dict]) -> str:
             )
             parts.append(
                 f"{indices_str} {title}{quality_tag} "
-                f"(source nr: {', '.join(map(str, indices))})\n"
+                f"(source nr: {nr_str})\n"
                 f"   URL: {canon}\n"
                 f"{collection_line}"
                 f"\n"
