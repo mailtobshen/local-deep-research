@@ -631,6 +631,21 @@ def _deferred_image_fill(
                 f"rows={before_fetch} body_cited={len(num_to_url)} "
                 f"reason=body_cite_convergence"
             )
+        elif num_to_url:
+            # 2026-08-25 (research 860c9362): the body has ZERO inline
+            # citations (LLM refused to cite / retry failed). Every
+            # fetched page's material is unplaceable — the image bank
+            # binds exclusively via body cite markers, so
+            # ELIGIBLE_BANK is guaranteed 0. Skip the network pass
+            # entirely (that run spent 17.7 min scraping 31 URLs for
+            # nothing) and let the postprocessing stage report
+            # BANK_EMPTY with its own diagnostics.
+            logger.info(
+                f"[IMG-TRACE] DEFERRED_FILL research={research_id} "
+                f"skipped reason=no_body_citations "
+                f"rows={len(num_to_url)}"
+            )
+            return 0
         # Plan B: drop LLM-hallucinated URLs that are not in the real
         # search results set. The LLM is free to cite URLs in
         # ``## Sources`` that never came back from the search engine
