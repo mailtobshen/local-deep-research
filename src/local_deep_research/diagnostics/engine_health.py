@@ -62,9 +62,14 @@ _PROBE_QUERY = "test"
 # long-lived, well-known .onion used only to prove a Tor CIRCUIT can
 # be built and an onion name resolved through ldr-tor. The SOCKS5
 # CONNECT with ATYP=0x03 (domain, remote resolve) exercises exactly
-# the path every darkweb/* engine uses. DuckDuckGo's onion service is
-# stable, run by a first-party, and lightweight for a HEAD-ish probe.
-_CIRCUIT_PROBE_ONION = "duckduckgogg42xjoc72x3sjtowozi6equrtfjlhba7g7vcfcmyg5ad.onion"
+# the path every darkweb/* engine uses. Target choice matters: the
+# FIRST version used DuckDuckGo's onion, which tor rejected as
+# "invalid checksum" (address shape valid but not a real v3 onion) —
+# every probe returned REP=0x01 even with a HEALTHY circuit. Ahmia's
+# index onion is verified reachable (REP=0x00 through a live circuit,
+# 2026-08-25 13:38) and is the same service the ahmia engine depends
+# on, so it doubles as an upstream sanity check.
+_CIRCUIT_PROBE_ONION = "juhanurmihxlp77nkq76byazcldy2hlmovfu2epvl5ankdibsot4csyd.onion"
 _CIRCUIT_PROBE_PORT = 80
 _PROBE_TIMEOUT = 60  # seconds per probe — SearXNG runs the named engine PLUS all
               # upstream engines that the engine depends on. When the
