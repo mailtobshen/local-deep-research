@@ -41,10 +41,22 @@ def _count_distinct_cited_sources(body: str) -> int:
     Plain ``[N]`` / ``[N, M]`` groups contribute each member; hyperlinked
     ``[N](url)`` / ``[[N]](url)`` contribute their number. Duplicate
     mentions of the same number count once.
+
+    2026-08-25 (research 16bdc6e2) fix: the hyperlinked arm's whole-match
+    ``findall(r'\\d+')`` ALSO harvested digits from the URL (years, path
+    segments — onion URLs almost always carry digits), so a body citing
+    only [1] through [[1]](http://x.onion/2019/02/...) counted as 4.
+    The diversity gate then passed on a fabricated number and skipped
+    its retry. Digits are now taken from the bracketed label ONLY
+    (group 1 of the plain arm; the leading ``[N]``/``[[N]]`` segment of
+    the hyperlink arm — never the ``(url)`` tail).
     """
     seen: set[int] = set()
     for m in _INLINE_CITE_DETECT_RE.finditer(body):
-        nums = re.findall(r"\d+", m.group(0))
+        token = m.group(0)
+        # Hyperlink form: cut at the '(' so URL digits never count.
+        label = token.split("(", 1)[0] if "(" in token else token
+        nums = re.findall(r"\d+", label)
         seen.update(int(n) for n in nums)
     return len(seen)
 

@@ -46,6 +46,25 @@ class TestCountDistinct:
         body = "Claim [2]. Another [2]. Third [2]. More [2]."
         assert _count_distinct_cited_sources(body) == 1
 
+    def test_url_digits_never_count(self):
+        """16bdc6e2 regression: hyperlink URLs carry years/path digits
+        (2019, 02, 1953) that the old whole-match findall harvested —
+        an all-[1] body counted as 4 and the diversity gate passed on
+        a fabricated number, skipping its retry."""
+        body = (
+            "a [[1]](http://x.onion/2019/02/pic1.html) "
+            "b [[1]](http://y.onion/index2.htm) "
+            "c [1](http://z.onion/1953.html)"
+        )
+        assert _count_distinct_cited_sources(body) == 1
+
+    def test_hyperlink_numbers_do_count(self):
+        body = (
+            "a [[1]](http://x.onion/a) b [[2]](http://x.onion/b) "
+            "c [3](http://x.onion/c)"
+        )
+        assert _count_distinct_cited_sources(body) == 3
+
     def test_mixed_markers(self):
         body = "A [2] b [2, 5] c [3] d [2](http://x.onion/) e [[7]](http://y.onion/)"
         assert _count_distinct_cited_sources(body) == 4
