@@ -58,6 +58,19 @@ def strip_tool_marker_leakage(body: str) -> str:
     return _TOOL_MARKER_LEAK_RE.sub("", body)
 
 
+# 2026-08-26 (research d4002a64, 炸弹制作): the agent loop's own system
+# prompt carried NO language directive, so when the model refused the
+# query on safety grounds (2.4 s, zero searches, citation handler never
+# ran) the refusal shipped in English despite report.language=zh-CN —
+# the safety path bypasses instruction following entirely on small
+# models. This directive sits in the agent prompt so EVERY output the
+# agent produces — report OR refusal — is in the configured language.
+_LANG_LABEL = {
+    "zh-CN": "Simplified Chinese (简体中文)",
+    "en": "English",
+}
+
+
 def _parse_sources_markdown_urls(formatted_output: str) -> set[str]:
     """Return the set of URLs cited in the report's trailing Sources block.
 
@@ -737,6 +750,26 @@ class LangGraphAgentStrategy(BaseSearchStrategy):
     in the MCP strategy.
     """
 
+    def _language_directive(self) -> str:
+        """Agent-prompt language directive from ``report.language``.
+
+        2026-08-26 (research d4002a64): without this the agent loop's
+        system prompt carried no language constraint and safety refusals
+        shipped in English on a zh-CN deployment. Empty string for
+        unknown codes or ``en`` — a refusal is still an output the user
+        reads, hence the explicit refusal clause.
+        """
+        lang = (self.settings_snapshot or {}).get("report.language", "zh-CN")
+        label = _LANG_LABEL.get(lang)
+        if not label or lang == "en":
+            return ""
+        return (
+            f"\nIMPORTANT: Write your ENTIRE output — every heading, every "
+            f"paragraph, every sentence — in {label}. This applies to "
+            f"REFUSALS too: if you must decline a query on safety grounds, "
+            f"write the refusal itself in {label}.\n\n"
+        )
+
     def __init__(
         self,
         model: BaseChatModel,
@@ -1033,7 +1066,8 @@ class LangGraphAgentStrategy(BaseSearchStrategy):
             "given topic and produce a comprehensive, well-cited report.\n"
             "Do NOT ask clarifying questions, do NOT ask the user anything, "
             "do NOT offer to help further — just research and report.\n"
-            "You MUST search the web before answering — never answer from memory alone.\n\n"
+            "You MUST search the web before answering — never answer from memory alone.\n"
+            f"{self._language_directive()}"
             "Strategy (REQUIRED — skipping any step is wrong):\n"
             "1. Start with web_search for initial exploration of the query.\n"
             "2. Decompose the query into 3-5 specific subtopics or focused "
