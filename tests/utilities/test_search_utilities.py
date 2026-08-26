@@ -343,6 +343,171 @@ class TestFormatFindings:
         assert "ALL SOURCES" in result or "source1.com" in result
 
 
+class TestEnsureMarkdownBlockBoundaries:
+    """Tests for the markdown block-boundary normaliser.
+
+    CommonMark requires a blank line between a paragraph and a
+    following list / heading / blockquote. LLMs routinely omit the
+    blank line, which makes marked treat the next ``*`` / ``#`` as
+    literal paragraph characters (research d7bdf3b4, 2026-08-27).
+    """
+
+    def test_idempotent_on_already_normalized(self):
+        from local_deep_research.utilities.search_utilities import (
+            _ensure_markdown_block_boundaries,
+        )
+
+        md = "# Title\n\nParagraph.\n\n* item\n* item\n\n### Next\n"
+        assert _ensure_markdown_block_boundaries(md) == md
+
+    def test_inserts_blank_before_unordered_list_after_paragraph(self):
+        from local_deep_research.utilities.search_utilities import (
+            _ensure_markdown_block_boundaries,
+        )
+
+        md = "数字图传系统正在逐渐普及。\n* **Caddx/Walksnail Avatar HD**：极低 [\\[9\\]](https://rcdrone.top/)\n"
+        result = _ensure_markdown_block_boundaries(md)
+        # The * **Caddx...** line must be preceded by a blank line
+        lines = result.split("\n")
+        list_idx = next(
+            i for i, line in enumerate(lines) if line.startswith("* ")
+        )
+        assert lines[list_idx - 1] == ""
+
+    def test_inserts_blank_before_heading_after_paragraph(self):
+        from local_deep_research.utilities.search_utilities import (
+            _ensure_markdown_block_boundaries,
+        )
+
+        md = "last list item。\n### 2.5 摄像头"
+        result = _ensure_markdown_block_boundaries(md)
+        lines = result.split("\n")
+        heading_idx = next(
+            i for i, line in enumerate(lines) if line.startswith("###")
+        )
+        assert lines[heading_idx - 1] == ""
+
+    def test_inserts_blank_before_ordered_list(self):
+        from local_deep_research.utilities.search_utilities import (
+            _ensure_markdown_block_boundaries,
+        )
+
+        md = "paragraph\n1. first\n2. second"
+        result = _ensure_markdown_block_boundaries(md)
+        assert "\n\n1." in result
+
+    def test_does_not_split_blockquote_continuation(self):
+        from local_deep_research.utilities.search_utilities import (
+            _ensure_markdown_block_boundaries,
+        )
+
+        md = "> first line\n> continuation\n# heading"
+        result = _ensure_markdown_block_boundaries(md)
+        # Blockquote continuation should be preserved verbatim. The
+        # previous line is a blockquote (opener ``>``), so the heading
+        # opener ``#`` does not insert a blank line either (it's a
+        # continuation of the blockquote in our heuristic — see
+        # ``opener_re.match(prev)`` guard).
+        # This is a deliberate trade-off: detecting the END of a
+        # blockquote requires tracking block depth, which this
+        # single-pass function does not do. The benefit: a true
+        # continuation like ``> a\n> b\n1. `` is preserved; the cost:
+        # ``> a\n# heading`` is left without a blank line in this
+        # edge case. In practice, LLMs don't emit blockquote-then-
+        # heading without a blank line.
+        lines = result.split("\n")
+        assert lines[0] == "> first line"
+        assert lines[1] == "> continuation"
+        # No blank inserted between blockquote continuation and heading.
+        assert lines[2] == "# heading"
+
+    def test_does_not_modify_fenced_code_block_content(self):
+        from local_deep_research.utilities.search_utilities import (
+            _ensure_markdown_block_boundaries,
+        )
+
+        md = (
+            "```python\n"
+            "print('hello')\n"
+            "1. this is not a list\n"
+            "print('world')\n"
+            "```\n"
+            "\n"
+            "paragraph\n"
+            "1. real list item\n"
+        )
+        result = _ensure_markdown_block_boundaries(md)
+        # Inside code block: no blank line inserted before "1. this"
+        # After code block + paragraph: real "1. real list item" should
+        # be preceded by a blank line (paragraph ends the preceding
+        # block).
+        assert "1. this is not a list" in result
+        # Find the "1. real list item" line and verify preceding blank
+        lines = result.split("\n")
+        real_idx = lines.index("1. real list item")
+        assert lines[real_idx - 1] == ""
+
+    def test_empty_string(self):
+        from local_deep_research.utilities.search_utilities import (
+            _ensure_markdown_block_boundaries,
+        )
+
+        assert _ensure_markdown_block_boundaries("") == ""
+
+    def test_no_op_on_input_without_blocks(self):
+        from local_deep_research.utilities.search_utilities import (
+            _ensure_markdown_block_boundaries,
+        )
+
+        md = "just a paragraph\nwith a soft line break\nstill a paragraph"
+        assert _ensure_markdown_block_boundaries(md) == md
+
+
+class TestFormatFindingsBlockBoundaryIntegration:
+    """format_findings must pass synthesized_content through
+    _ensure_markdown_block_boundaries so the markdown saved to the
+    database is correctly normalised.
+    """
+
+    def test_d7bdf3b4_scenario(self):
+        """The exact bug from research d7bdf3b4 (2026-08-27):
+        figure + plain paragraph + bullet list without blank lines
+        between them. Before the fix this rendered as literal
+        markdown text instead of a proper ``<ul><li>``.
+        """
+        from local_deep_research.utilities.search_utilities import (
+            format_findings,
+        )
+
+        synthesized = (
+            "<figure><img src=\"x\" /></figure>\n"
+            "数字图传系统正在逐渐普及，替代传统的模拟系统。\n"
+            "* **Caddx/Walksnail Avatar HD**：极低 [\\[9\\]](https://rcdrone.top/)\n"
+            "* **DJI O4 Pro / O3 Air Unit**：较高 [\\[10\\]](https://makerworld.com/)\n"
+            "* **Walksnail Avatar HD Mini VTX V3**：低重量 [\\[11\\]](https://drones.bg/)\n"
+            "\n"
+            "### 2.5 摄像头（Camera）\n"
+        )
+        result = format_findings([], synthesized, {})
+        # Verify the list items and heading each have a blank-line
+        # separator in the formatted output.
+        lines = result.split("\n")
+        first_list_idx = next(
+            i for i, line in enumerate(lines) if line.startswith("* ")
+        )
+        assert lines[first_list_idx - 1] == "", (
+            "First list item not preceded by blank line: "
+            f"prev={lines[first_list_idx - 1]!r}"
+        )
+        heading_idx = next(
+            i for i, line in enumerate(lines) if line.startswith("###")
+        )
+        assert lines[heading_idx - 1] == "", (
+            "Heading not preceded by blank line: "
+            f"prev={lines[heading_idx - 1]!r}"
+        )
+
+
 class TestLanguageCodeMap:
     """Tests for LANGUAGE_CODE_MAP constant."""
 

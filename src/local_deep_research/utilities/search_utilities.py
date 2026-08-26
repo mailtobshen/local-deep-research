@@ -354,6 +354,79 @@ def format_links_to_markdown(
     return "".join(parts)
 
 
+def _ensure_markdown_block_boundaries(md: str) -> str:
+    """Insert blank lines before block-level markdown openers that
+    follow non-blank content.
+
+    The CommonMark spec requires a blank line between a paragraph and
+    a following list / heading / blockquote. LLMs routinely omit the
+    blank line, which causes downstream renderers (marked, mistune,
+    etc.) to treat the next ``*`` / ``#`` as literal paragraph
+    characters. The result: a body that reads as ``* **Caddx/
+    Walksnail Avatar HD**... [\[9\](url).`` instead of a properly
+    rendered ``<ul><li><a>[9]</a></li></ul>`` (research d7bdf3b4,
+    2026-08-27).
+
+    Inserting one blank line before each line opener that begins with
+    one of ``*`` / ``-`` / ``+`` / digit-followed-by-``.`` / ``#`` /
+    ``>`` — when the preceding line is non-blank and does not itself
+    start with the same opener (which would indicate a continuation,
+    e.g. nested list item or blockquote continuation).
+
+    Fenced code blocks (`` ``` ``) are NOT processed by this
+    function — content inside a fenced block must not be modified.
+    A simple stateful scan tracks whether we are currently inside a
+    fenced block; lines inside it are emitted as-is.
+
+    The pass is idempotent: re-running on already-normalised markdown
+    is a no-op (the preceding line of a block opener is blank).
+    """
+    if not md:
+        return md
+    block_openers = (
+        # Unordered list items
+        r"\*",
+        r"-",
+        r"\+",
+        # Ordered list items (digit + period + space)
+        r"[0-9]+\.",
+        # ATX headings (#, ##, ###, …)
+        r"#{1,6}\s",
+        # Blockquote
+        r">",
+    )
+    opener_re = re.compile(
+        r"^(?:" + "|".join(block_openers) + r")",
+        re.MULTILINE,
+    )
+    lines = md.split("\n")
+    out: List[str] = []
+    in_fenced_block = False
+    for i, line in enumerate(lines):
+        # Track fenced-code-block state. A line that opens OR closes a
+        # fence (`````) toggles the state. Inside the fence we emit
+        # lines verbatim and never insert blank lines.
+        if line.lstrip().startswith("```"):
+            in_fenced_block = not in_fenced_block
+            out.append(line)
+            continue
+        if in_fenced_block:
+            out.append(line)
+            continue
+        if i == 0:
+            out.append(line)
+            continue
+        prev = out[-1] if out else ""
+        if (
+            prev.strip() != ""  # previous line non-blank
+            and opener_re.match(line)  # this line is a block opener
+            and not opener_re.match(prev)  # previous is NOT the same opener (would be a continuation)
+        ):
+            out.append("")  # insert blank line
+        out.append(line)
+    return "\n".join(out)
+
+
 def format_findings(
     findings_list: List[Dict],
     synthesized_content: str,
@@ -435,6 +508,24 @@ def format_findings(
                 f"removed {extras} duplicate markers from synthesized body"
             )
             synthesized_content = compressed
+
+    # Markdown block-boundary normalisation (research d7bdf3b4,
+    # 2026-08-27): LLMs frequently emit markdown where a paragraph
+    # is immediately followed by a list / heading / blockquote on the
+    # NEXT line (no blank line between them). Per CommonMark, a list /
+    # heading is only recognised when preceded by a blank line; without
+    # one, marked treats the ``*`` / ``#`` as ordinary paragraph
+    # characters and emits the literal markdown source (the rendered
+    # body becomes a wall of ``* **Caddx...** [\[9\](url)`` instead
+    # of a clickable list item). Insert a single blank line before any
+    # list / heading / blockquote / fenced-code opener that follows a
+    # non-blank line. We never touch content inside fenced code blocks
+    # or indented code (heuristic: only insert before ``*`` / ``-`` /
+    # ``+`` / ``#`` / ``>`` / ````` at line start, not after ``>``
+    # continuation).
+    synthesized_content = _ensure_markdown_block_boundaries(
+        synthesized_content
+    )
 
     parts.append(f"{synthesized_content}\n\n")
 

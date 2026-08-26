@@ -1,0 +1,1 @@
+`format_findings` 现在会规范化 LLM 输出的 markdown:在段落与后续列表/标题/引用之间插入必要的空行 (CommonMark 规范要求)。修复研究报告里列表项以纯文本 `* **bold** [\[N\](url)` 字面字符显示而无法渲染成可点击链接的 bug (research d7bdf3b4, 2026-08-27)。
