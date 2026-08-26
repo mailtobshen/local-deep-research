@@ -41,6 +41,41 @@ def _clip_alt(text: str) -> str:
     return text[:_ALT_LOG_MAX] + "…"
 
 
+# Signature of UTF-8 bytes mis-decoded as Latin-1 ("double encoding"):
+# a UTF-8 multi-byte lead (0xC2-0xF4 → Latin-1 ä/å/æ/ç/è… or control
+# range) immediately followed by a continuation byte 0x80-0xBF (Latin-1
+# control/high punctuation). CJK text reads as 0xE4-0xE9 leads; the
+# kekenet sample starts 0xE4 0xB8 0x8A (上). Genuine Latin-1 text
+# (café, München — 0xE9/0xFC followed by ASCII letters) lacks the
+# continuation-byte tail, so it never matches.
+_MOJIBAKE_SIGNATURE_RE = re.compile(r"[\xc2-\xf4][\x80-\xbf]")
+
+
+def _fix_mojibake(text: str) -> str:
+    """Repair UTF-8-read-as-Latin-1 alt text by re-encoding.
+
+    2026-08-26 (research 659cedd1, kekenet.com): alts like
+    ``ä¸\\x8aæµ·…`` (上海…) failed every semantic gate — the alt could
+    never match a Chinese section phrase. Round-trip latin1→utf8
+    repairs it. Conservative three-way gate:
+      1. the signature regex matched (lead+continuation pair),
+      2. the round-trip actually decodes as valid UTF-8,
+      3. the repaired text still contains non-ASCII (a repair that
+         produces pure ASCII changed nothing meaningful).
+    Anything else returns the input unchanged — French/German text,
+    ASCII, and unrepairable strings are never mangled.
+    """
+    if not text or not _MOJIBAKE_SIGNATURE_RE.search(text):
+        return text
+    try:
+        repaired = text.encode("latin-1").decode("utf-8")
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        return text
+    if repaired.isascii():
+        return text
+    return repaired
+
+
 # Per-research channel-coverage tallies, accumulated across every
 # extract_images() call and drained once at the end of the run by
 # ``pop_channel_coverage``. This exists to answer a question the
@@ -259,7 +294,7 @@ def _resolve_alt(
     separates "the fallback correctly declined" from "the fallback is
     broken", which the hit-only probe cannot distinguish.
     """
-    alt = (img.get("alt") or "").strip()
+    alt = _fix_mojibake((img.get("alt") or "").strip())
     if alt:
         return (alt, None, None, None)
     wiki_eligible = _is_wiki(source_url, absolute_url)
