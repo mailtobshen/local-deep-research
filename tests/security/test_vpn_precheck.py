@@ -144,3 +144,63 @@ def test_check_vpn_proxy_step2_accepts_status_200():
 
         result = check_vpn_proxy("http://172.25.128.1:10888", timeout=1.0)
         assert result is None
+
+class TestTransientRetry:
+    """2026-08-26: preflight often hit the VPN error on transient
+    network blips — user decision: retry 3 times before surfacing."""
+
+    def test_transient_failure_then_success_no_error(self):
+        """Fail twice (transient), succeed on 3rd → no VPNCheckError."""
+        from local_deep_research.security.vpn_precheck import check_vpn_proxy
+        import socket as _socket
+        import urllib.request as _ur
+
+        class FakeResp:
+            status = 204
+
+        def flaky_open(req, timeout=None):
+            flaky_open.calls += 1
+            if flaky_open.calls < 3:
+                raise OSError("transient blip")
+            return FakeResp()
+        flaky_open.calls = 0
+
+        with (
+            patch(
+                "local_deep_research.security.vpn_precheck.socket"
+                ".create_connection",
+                return_value=__import__("contextlib").nullcontext(),
+            ),
+            patch.object(
+                _ur.OpenerDirector, "open", side_effect=flaky_open
+            ),
+        ):
+            # must not raise
+            check_vpn_proxy("http://172.25.128.1:10888", timeout=1.0)
+        assert flaky_open.calls == 3
+
+    def test_all_three_attempts_fail_raises(self):
+        """Persistent failure across all retries → VPNCheckError."""
+        from local_deep_research.security.vpn_precheck import check_vpn_proxy
+        import socket as _socket
+        import urllib.request as _ur
+
+        def always_fail(req, timeout=None):
+            always_fail.calls += 1
+            raise OSError("down")
+        always_fail.calls = 0
+
+        with (
+            patch(
+                "local_deep_research.security.vpn_precheck.socket"
+                ".create_connection",
+                return_value=__import__("contextlib").nullcontext(),
+            ),
+            patch.object(
+                _ur.OpenerDirector, "open", side_effect=always_fail
+            ),
+        ):
+            import pytest
+            with pytest.raises(VPNCheckError, match="cannot reach"):
+                check_vpn_proxy("http://172.25.128.1:10888", timeout=1.0)
+        assert always_fail.calls == 3

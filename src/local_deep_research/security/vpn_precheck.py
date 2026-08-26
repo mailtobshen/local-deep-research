@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import socket
+import time
 import urllib.request
 from urllib.parse import urlparse
 
@@ -82,6 +83,7 @@ def check_vpn_proxy(
     *,
     external_probe_url: str = "https://www.google.com/generate_204",
     timeout: float = 3.0,
+    retries: int = 3,
 ) -> None:
     """Two-step reachability check. Raises VPNCheckError on failure.
 
@@ -91,9 +93,39 @@ def check_vpn_proxy(
 
     Both steps must succeed. timeout applies per step (total ≤ 6s).
 
+    2026-08-26 (user decision): transient network blips made the
+    preflight reject tasks spuriously. The whole check now retries up
+    to *retries* times (default 3) before surfacing the error — any
+    successful attempt passes. A short backoff between attempts lets
+    the blip clear.
+
     Uses stdlib urllib (NOT safe_get) because safe_get's SSRF validator
     would block private-IP proxy hosts like 172.25.128.1.
     """
+    last_err: VPNCheckError | None = None
+    for attempt in range(1, max(retries, 1) + 1):
+        try:
+            _check_vpn_proxy_once(
+                proxy_url,
+                external_probe_url=external_probe_url,
+                timeout=timeout,
+            )
+            return
+        except VPNCheckError as e:
+            last_err = e
+            if attempt < max(retries, 1):
+                time.sleep(min(0.5 * attempt, 1.5))
+    assert last_err is not None
+    raise last_err
+
+
+def _check_vpn_proxy_once(
+    proxy_url: str,
+    *,
+    external_probe_url: str,
+    timeout: float,
+) -> None:
+    """Single two-step attempt (previous check_vpn_proxy body)."""
     host, port = _parse_proxy_url(proxy_url)
 
     # Step 1: proxy port reachable
