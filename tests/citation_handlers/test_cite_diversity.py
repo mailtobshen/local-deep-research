@@ -125,3 +125,20 @@ class TestDiversityRetry:
         )
         prompt = handler.llm.invoke.call_args[0][0]
         assert "different sources" in prompt.lower() or "不同的来源" in prompt
+
+
+class TestEscapedFormDetection:
+    def test_escaped_hyperlink_form_detected(self):
+        """9b514fa0 regression: the standard emission form
+        [\\[N\\]](url) was INVISIBLE to _INLINE_CITE_DETECT_RE — the
+        arm-2 pattern lacks an optional backslash before the inner
+        closing bracket, so '\\]' broke the match. distinct counts and
+        self-checks silently skipped every escaped marker."""
+        import re
+        from local_deep_research.citation_handlers import (
+            standard_citation_handler as sch,
+        )
+        frag = "text [\\[2\\]](http://x.onion/a) end"
+        matches = [m.group(0) for m in sch._INLINE_CITE_DETECT_RE.finditer(frag)]
+        assert matches, "escaped [\\[N\\]](url) form not detected"
+        assert _count_distinct_cited_sources(frag) == 1

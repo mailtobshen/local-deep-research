@@ -26,7 +26,12 @@ from .base_citation_handler import BaseCitationHandler
 _INLINE_CITE_DETECT_RE = re.compile(
     r"\[(\d+(?:\s*,\s*\d+)*)\]"           # plain [N] or [N, M]
     r"|"
-    r"\[\\?\[?\d+\]?\]\([^)]+\)"           # [N](url) or [[N]](url)
+    # [N](url) / [[N]](url) / escaped [\[N\]](url). The inner close
+    # bracket needs its OWN optional backslash: cite_link_text emits
+    # '\]', and without '\\]?' the escaped form — the standard
+    # production emission — never matched (9b514fa0: distinct counts
+    # silently skipped every escaped marker).
+    r"\[\\?\[?\d+\\?\]?\]\([^)]+\)"
 )
 # Minimum number of DISTINCT sources the synthesis should cite when
 # that many exist (2026-08-25, research 610f5486: 43 markers all on

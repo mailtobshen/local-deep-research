@@ -167,6 +167,20 @@ def sanitize_references(markdown: str) -> str:
                 row_nums.append(str(n))
         row_nums_set = set(row_nums)
         if not (row_nums_set & used):
+            # 2026-08-26 (research 9b514fa0): per-dropped-row ledger.
+            # That run lost source 2 HERE (before=2 after=1) with zero
+            # per-row evidence — the enforce-stage kill ledger only
+            # covers body-marker drops, not row drops in this pass.
+            # One line per dropped row so the operator can see WHICH
+            # row (numbers + URL) was cut and grep the body for the
+            # marker form that failed to match.
+            _url_m = re.search(r"URL:\s*(\S+)", chunk)
+            logger.info(
+                "[IMG-TRACE] REF_ROW_DROP "
+                f"nums={sorted(row_nums_set, key=int)} "
+                f"url={_url_m.group(1) if _url_m else '?'} "
+                f"reason=no_body_marker_matched_row"
+            )
             continue
         if row_nums_set - used:
             # Comma-group row with uncited members: every member of a
