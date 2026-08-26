@@ -175,7 +175,11 @@ def test_custom_engine_list_from_settings_snapshot():
 
 
 def test_preflight_skips_darkweb_when_disabled():
-    """开关关闭时不应付出 60 秒探测代价。"""
+    """开关关闭时不应付出 60 秒探测代价。
+
+    修复后跳过时返回 skipped 列表 (而非 None), 让 preflight 表里
+    能看到"为什么没探测"。
+    """
     from local_deep_research.diagnostics.engine_health import (
         run_preflight_check,
     )
@@ -195,7 +199,10 @@ def test_preflight_skips_darkweb_when_disabled():
         )
 
     pd.assert_not_called()
-    assert not [s for s in statuses if s.kind == "darkweb"]
+    # 修复后: 跳过时返回 skipped 列表 (每引擎一行)
+    darkweb_statuses = [s for s in statuses if s.kind == "darkweb"]
+    assert all(s.status == "skipped" for s in darkweb_statuses)
+    assert any("暗网未启用" in s.detail for s in darkweb_statuses)
 
 
 def test_preflight_includes_per_darkweb_engine_when_enabled():
@@ -230,3 +237,103 @@ def test_preflight_includes_per_darkweb_engine_when_enabled():
     assert "darkweb/ahmia" in names
     assert "darkweb/torch" in names
     assert "darkweb" in names  # union row
+
+
+def test_preflight_skips_darkweb_when_include_darkweb_false_with_global_on():
+    """全局开 + 用户未勾 include_darkweb → skipped (用户原始报告场景)。
+
+    _apply_darkweb_override 已把 include_darkweb=False 编码为
+    snapshot.darkweb.enabled.value=False, 所以 preflight 应跳过。
+    """
+    from local_deep_research.diagnostics.engine_health import (
+        run_preflight_check,
+    )
+
+    with patch(
+        "local_deep_research.diagnostics.engine_health.get_searxng_engines",
+        return_value=[],
+    ), patch(
+        "local_deep_research.diagnostics.engine_health.probe_proxy"
+    ), patch(
+        "local_deep_research.diagnostics.engine_health.probe_firecrawl"
+    ), patch(
+        "local_deep_research.diagnostics.engine_health.probe_darkweb"
+    ) as pd:
+        statuses = run_preflight_check(
+            {
+                "search.engine.web.darkweb.enabled": {"value": False},
+                "search.tool": {"value": "searxng"},
+            }
+        )
+
+    pd.assert_not_called()
+    darkweb_statuses = [s for s in statuses if s.kind == "darkweb"]
+    assert all(s.status == "skipped" for s in darkweb_statuses)
+
+
+def test_preflight_probes_darkweb_when_primary_engine_selected():
+    """全局关 + search.tool='darkweb' → 探测 (用户主动选暗网下拉框)。
+
+    fail-closed 边界: snapshot.darkweb.enabled=False (来自 _apply_darkweb_override
+    的 fail-closed 行为), 但 search.tool='darkweb' 表示用户主动选了,
+    preflight 必须探测 (让用户看到 Tor 不可用的诊断)。
+    """
+    from local_deep_research.diagnostics.engine_health import (
+        EngineStatus,
+        run_preflight_check,
+    )
+
+    fake_statuses = [
+        EngineStatus("darkweb/ahmia", "ok", "ok", kind="darkweb"),
+    ]
+
+    with patch(
+        "local_deep_research.diagnostics.engine_health.get_searxng_engines",
+        return_value=[],
+    ), patch(
+        "local_deep_research.diagnostics.engine_health.probe_proxy"
+    ), patch(
+        "local_deep_research.diagnostics.engine_health.probe_firecrawl"
+    ), patch(
+        "local_deep_research.diagnostics.engine_health.probe_darkweb",
+        return_value=fake_statuses,
+    ) as pd:
+        statuses = run_preflight_check(
+            {
+                "search.engine.web.darkweb.enabled": {"value": False},
+                "search.tool": {"value": "darkweb"},
+            }
+        )
+
+    pd.assert_called_once()
+    # darkweb status 应来自 probe_darkweb 的返回值, 而非 skipped
+    darkweb_statuses = [s for s in statuses if s.kind == "darkweb"]
+    assert darkweb_statuses == fake_statuses
+
+
+def test_preflight_skips_darkweb_when_global_off_and_default_state():
+    """全局关 + search.tool='searxng' (默认) → skipped (矩阵第四行)。
+
+    行为从"不返回 darkweb 条目"改为"返回 skipped 行", 展示更明确。
+    """
+    from local_deep_research.diagnostics.engine_health import (
+        run_preflight_check,
+    )
+
+    with patch(
+        "local_deep_research.diagnostics.engine_health.get_searxng_engines",
+        return_value=[],
+    ), patch(
+        "local_deep_research.diagnostics.engine_health.probe_proxy"
+    ), patch(
+        "local_deep_research.diagnostics.engine_health.probe_firecrawl"
+    ), patch(
+        "local_deep_research.diagnostics.engine_health.probe_darkweb"
+    ) as pd:
+        statuses = run_preflight_check(
+            {"search.engine.web.darkweb.enabled": {"value": False}}
+        )
+
+    pd.assert_not_called()
+    darkweb_statuses = [s for s in statuses if s.kind == "darkweb"]
+    assert all(s.status == "skipped" for s in darkweb_statuses)
