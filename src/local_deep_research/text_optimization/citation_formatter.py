@@ -20,6 +20,18 @@ _SOURCES_SECTION_PATTERNS = [
         r"(?:[\s　]*[\w一-鿿]{1,12})?\s*$",
         re.MULTILINE | re.IGNORECASE,
     ),
+    # Bold-inline heading variant: ``**Sources:**`` / ``**References:**``.
+    # Quick-summary mode LLM (research f73ce631, 2026-08-26) emits its own
+    # unsorted references block under a bold inline heading; the trailing
+    # ``## Sources`` rebuild appends a SECOND block, so the report ends up
+    # with both. Matching this variant here lets the rebuild slice off the
+    # bold block's line and replace it with a single canonical ``## Sources``.
+    re.compile(
+        r"^\*{1,3}\s*"
+        r"(?:Sources|References|Bibliography|Citations)"
+        r"\s*[:：]?\s*\*{0,3}\s*$",
+        re.MULTILINE | re.IGNORECASE,
+    ),
     # Bare heading variant: ``Sources:`` / ``References:`` at line start.
     re.compile(
         r"^(?:Sources|References|Bibliography|Citations):?\s*$",
@@ -39,6 +51,14 @@ _SOURCES_SECTION_CJK_PATTERNS = [
         r"^#{1,3}\s*(?:\d{1,3}[\.\、]?\s*|\(\d{1,3}\)\s*)?"
         r"(?:参考文献|参考资料|引用来源|参考来源|资料来源|引用文献)"
         r"(?:[\s　]*[\w一-鿿]{1,12})?\s*$",
+        re.MULTILINE,
+    ),
+    # Bold-inline CJK heading: ``**参考资料：**`` / ``**参考文献：**``.
+    # Same rationale as the English bold variant above (research f73ce631).
+    re.compile(
+        r"^\*{1,3}\s*"
+        r"(?:参考文献|参考资料|引用来源|参考来源|资料来源|引用文献)"
+        r"\s*[:：]?\s*\*{0,3}\s*$",
         re.MULTILINE,
     ),
 ]
@@ -127,16 +147,49 @@ def find_sources_section(content: str) -> int:
     (``## Sources`` / ``## References`` / …) and the CJK variants
     (``## 参考文献`` / ``## 参考资料`` / ``## 引用来源`` / …) so a
     single call covers reports in any language.
+
+    When the LLM emits its own bold inline block (``**参考资料：**``,
+    ``**Sources:**``, …) *and* the pipeline also appends a proper
+    H2/H3 block (``## 参考文献``, ``## Sources``), prefer the proper
+    H2/H3 heading as the canonical sources-section anchor. The bold
+    block is the LLM artifact to be replaced by the rebuilt block;
+    anchoring on the bold heading instead would (1) pull all body
+    content between the bold block and the proper heading into the
+    sources block (research f73ce631, 2026-08-26), and (2) make the
+    rebuilt heading inherit the bold form (``**参考资料：**``) instead
+    of the canonical ``## 参考文献``.
     """
-    earliest = -1
-    for pattern in (
-        *_SOURCES_SECTION_PATTERNS,
-        *_SOURCES_SECTION_CJK_PATTERNS,
-    ):
+    proper_match_start = -1
+    bold_match_start = -1
+    # Proper H2/H3 forms: patterns index 0 (English) and 0 (CJK).
+    proper_patterns = [
+        _SOURCES_SECTION_PATTERNS[0],
+        _SOURCES_SECTION_CJK_PATTERNS[0],
+        _SOURCES_SECTION_PATTERNS[2],  # bare "Sources:" / "References:" line
+    ]
+    # Bold inline forms: pattern index 1 of each list (the variants
+    # we added in 2026-08-26 to cover ``**参考资料：**``).
+    bold_patterns = [
+        _SOURCES_SECTION_PATTERNS[1],
+        _SOURCES_SECTION_CJK_PATTERNS[1],
+    ]
+    for pattern in proper_patterns:
         match = pattern.search(content)
-        if match and (earliest == -1 or match.start() < earliest):
-            earliest = match.start()
-    return earliest
+        if match and (
+            proper_match_start == -1 or match.start() < proper_match_start
+        ):
+            proper_match_start = match.start()
+    for pattern in bold_patterns:
+        match = pattern.search(content)
+        if match and (
+            bold_match_start == -1 or match.start() < bold_match_start
+        ):
+            bold_match_start = match.start()
+    if proper_match_start >= 0:
+        return proper_match_start
+    # No proper H2/H3 found — fall back to the bold inline form.
+    # The rebuild step will promote it to a proper heading.
+    return bold_match_start
 
 
 def strip_per_section_sources_block(body: str) -> str:
@@ -717,6 +770,41 @@ _NON_URL_TRAILING_RE = re.compile(
 )
 
 
+def _is_sources_section_heading_line(stripped: str) -> bool:
+    """True when *stripped* looks like a sources/references heading line.
+
+    Used to stop ``_split_sources_block`` when it encounters a second
+    heading (bold inline or hash-prefixed) inside what was supposed to
+    be the canonical sources block. That second heading belongs to a
+    duplicate sources section the LLM emitted; carrying it into the
+    rebuilt block as a trailing line produces a duplicated empty
+    ``## 参考文献`` after the rebuilt entries (research f73ce631,
+    2026-08-26).
+    """
+    if not stripped:
+        return False
+    # Same source-matching vocabulary as ``find_sources_section``,
+    # but anchored per-line.
+    return bool(
+        re.match(
+            r"^#{1,3}\s*(?:\d{1,3}[\.\、]?\s*|\(\d{1,3}\)\s*)?"
+            r"(?:Sources|References|Bibliography|Citations"
+            r"|参考文献|参考资料|引用来源|参考来源|资料来源|引用文献)"
+            r"(?:[\s　]*[\w一-鿿]{1,12})?\s*$",
+            stripped,
+            re.IGNORECASE,
+        )
+        or re.match(
+            r"^\*{1,3}\s*"
+            r"(?:Sources|References|Bibliography|Citations"
+            r"|参考文献|参考资料|引用来源|参考来源|资料来源|引用文献)"
+            r"\s*[:：]?\s*\*{0,3}\s*$",
+            stripped,
+            re.IGNORECASE,
+        )
+    )
+
+
 def _split_sources_block(sources_content: str) -> List[Dict[str, Any]]:
     """Parse the trailing Sources block into a list of row dicts.
 
@@ -773,6 +861,19 @@ def _split_sources_block(sources_content: str) -> List[Dict[str, Any]]:
                 # Next row begins — stop.
                 block_start_offset = trailing_start
                 break
+            # A second sources heading (bold or hash-prefixed) inside
+            # the block means we are looking at a duplicated sources
+            # section — stop parsing so the rebuild doesn't carry the
+            # second heading into the rebuilt block's trailing content.
+            # Research f73ce631 (2026-08-26): the LLM emitted ``**参考
+            # 资料：**`` followed by an unsorted list, and the pipeline
+            # also appended a proper ``## 参考文献`` block. Without
+            # this guard the second heading was captured as the last
+            # row's trailing line and emitted as a duplicate empty
+            # ``## 参考文献`` after the rebuilt entries.
+            if _is_sources_section_heading_line(tl_strip):
+                block_start_offset = trailing_start
+                break
             if tl_strip.startswith("URL:"):
                 url = tl_strip[len("URL:") :].strip()
             elif tl_strip:
@@ -797,6 +898,114 @@ def _split_sources_block(sources_content: str) -> List[Dict[str, Any]]:
         )
         i = j
     return rows
+
+
+def _strip_bold_inline_references_blocks_above_proper_heading(
+    content: str,
+) -> str:
+    """Strip LLM-emitted bold inline references blocks that appear
+    ABOVE a proper H2/H3 references heading.
+
+    When the LLM emits its own ``**Sources:**`` / ``**参考资
+    料：**`` block in the body AND the pipeline also appends a
+    proper ``## Sources`` / ``## 参考文献`` block, ``find_sources_section``
+    anchors on the proper H2/H3 (which is the canonical anchor). The
+    body slice from the start of the document to the proper heading
+    would otherwise include the bold block and its unsorted list,
+    leaving the user with two references sections. This pre-pass
+    removes the bold block + its list lines from the body before the
+    main enforcer runs, so only the rebuilt canonical block survives.
+
+    No-op when:
+      - no proper H2/H3 references heading exists (bold block then
+        becomes the only sources signal; rebuild promotes it).
+      - no bold inline references block exists.
+      - the bold block appears AFTER the proper heading (already
+        outside the body slice — leave it alone).
+    """
+    proper_start = -1
+    for pattern in (
+        _SOURCES_SECTION_PATTERNS[0],
+        _SOURCES_SECTION_CJK_PATTERNS[0],
+        _SOURCES_SECTION_PATTERNS[2],
+    ):
+        m = pattern.search(content)
+        if m and (proper_start == -1 or m.start() < proper_start):
+            proper_start = m.start()
+    if proper_start < 0:
+        return content
+    # Look for a bold inline references heading strictly BEFORE the
+    # proper heading. Strip from that bold heading's line through the
+    # last consecutive references-row line (or up to the proper
+    # heading, whichever comes first).
+    body_slice = content[:proper_start]
+    bold_patterns = (
+        _SOURCES_SECTION_PATTERNS[1],
+        _SOURCES_SECTION_CJK_PATTERNS[1],
+    )
+    bold_positions = []
+    for pattern in bold_patterns:
+        for m in pattern.finditer(body_slice):
+            bold_positions.append(m.start())
+    if not bold_positions:
+        return content
+    # The last (rightmost) bold heading is the most recent LLM
+    # artifact before the canonical block.
+    bold_start = max(bold_positions)
+    # Walk from bold_start's line start through body_slice, removing
+    # all consecutive references-row lines (lines starting with ``[``)
+    # and blank lines that connect the bold heading to the proper
+    # heading.
+    lines = content.split("\n")
+    # Re-locate bold_start's line in the lines list.
+    line_cursor = 0
+    bold_line_idx = 0
+    for idx, ln in enumerate(lines):
+        line_cursor += len(ln) + 1  # +1 for the newline
+        if line_cursor > bold_start:
+            bold_line_idx = idx
+            break
+    # Find where the references-row run ends: walk forward from the
+    # line after the bold heading; consume rows + their continuation
+    # lines (``URL:`` lines + blank lines between rows). Stop at the
+    # first line that is neither blank nor a row header nor a row
+    # continuation.
+    end_line_idx = bold_line_idx + 1
+    in_row = False
+    while end_line_idx < len(lines):
+        candidate = lines[end_line_idx].strip()
+        if not candidate:
+            # Blank line — only consume if we're mid-row; otherwise
+            # stop (the row run has ended).
+            if in_row:
+                end_line_idx += 1
+                continue
+            break
+        if candidate.startswith("["):
+            # Row header — start of a new row.
+            end_line_idx += 1
+            in_row = True
+            continue
+        if in_row and (
+            candidate.startswith("URL:")
+            or candidate.startswith("Collection:")
+            or candidate.startswith("(source nr:")
+        ):
+            # Row continuation line (URL, Collection, source-nr
+            # suffix) — keep consuming.
+            end_line_idx += 1
+            continue
+        # Any other non-blank line ends the run.
+        break
+    # Trim trailing blank lines from the slice so we don't leave
+    # double-blank gaps in the body.
+    while end_line_idx > bold_line_idx + 1 and not lines[
+        end_line_idx - 1
+    ].strip():
+        end_line_idx -= 1
+    # Compose: everything before bold_line_idx + everything from
+    # end_line_idx onward.
+    return "\n".join(lines[:bold_line_idx] + lines[end_line_idx:])
 
 
 def enforce_sources_ascending_and_drop_orphans(content: str) -> str:
@@ -832,6 +1041,20 @@ def enforce_sources_ascending_and_drop_orphans(content: str) -> str:
         The rewritten markdown. Body and Sources block always keep
         a ``## Sources`` header separator when one was present.
     """
+    # Pre-pass: strip LLM-emitted bold inline references blocks
+    # (``**Sources:**`` / ``**参考资料：**`` / …) from the body when
+    # a proper ``## Sources`` / ``## 参考文献`` heading is also
+    # present. ``find_sources_section`` prefers the proper heading as
+    # the canonical anchor, but its body slice still INCLUDES the
+    # bold block above the proper heading. Without this pre-pass the
+    # bold heading + its unsorted list survive into the rebuilt
+    # report, leaving the user with two references sections (research
+    # f73ce631, 2026-08-26). When NO proper heading exists, the
+    # pre-pass is skipped — the bold block is then the only sources
+    # signal and the rebuild step will promote it.
+    content = _strip_bold_inline_references_blocks_above_proper_heading(
+        content
+    )
     start = find_sources_section(content)
     # Entry probe: unconditionally record what the funnel received so
     # a silent no-op or unexpected input shape is visible in the next
@@ -1386,11 +1609,22 @@ def enforce_sources_ascending_and_drop_orphans(content: str) -> str:
     # heading text (``## Sources`` / ``## 参考文献`` / …) so CJK
     # reports keep their heading style after the rewrite.
     heading_match = re.match(r"^#{1,6}\s*\S[^\n]*", sources_only)
-    heading_text = (
-        heading_match.group(0).rstrip()
-        if heading_match
-        else "## Sources"
-    )
+    if heading_match:
+        heading_text = heading_match.group(0).rstrip()
+    else:
+        # No proper H2/H3 heading in the sources block — typically
+        # because the matched section started with a bold inline
+        # heading (``**参考资料：**``, ``**Sources:**``, …) introduced
+        # by the LLM. Fall back to a language-appropriate canonical
+        # heading so the rebuilt block matches the report's
+        # surrounding language instead of defaulting to English.
+        if re.search(
+            r"(?:参考文献|参考资料|引用来源|参考来源|资料来源|引用文献)",
+            sources_only,
+        ):
+            heading_text = "## 参考文献"
+        else:
+            heading_text = "## Sources"
     rebuilt_lines: List[str] = [heading_text, ""]
     source_nr_re = re.compile(r"\s*\(source nr:\s*[\d,\s]+\)\s*$")
     for new_idx, ridx in enumerate(ordered_rows, start=1):

@@ -290,6 +290,8 @@ Generate a well-structured, concise answer that:
 4. Avoids repetition and unnecessary detail
 
 Use IEEE style citations [1], [2], etc. Never make up your own citations.
+Do not create a bibliography or references list — one will be appended automatically.
+Use only [N] inline citations in the body; never write a "## Sources", "## 参考文献", "## 参考资料", or "**参考资料：**" block.
 """
 
             logger.info(

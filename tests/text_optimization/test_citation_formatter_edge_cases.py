@@ -467,6 +467,74 @@ class TestEnforceSourcesAscending:
         assert self._displayed_n(out) == [1]
         assert "## 参考文献" in out
 
+    def test_bold_inline_cjk_heading_is_also_covered(self):
+        """LLM-invented bold inline ``**参考资料：**`` block (research
+        f73ce631, 2026-08-26) followed by a proper ``## 参考文献``
+        heading — the bold block must NOT survive. Before the
+        bold-inline patterns were added, ``find_sources_section``
+        anchored on ``^#{1,3}`` and the bold inline heading was
+        invisible to it; the rebuild then emitted a SECOND
+        ``## 参考文献`` block below the original, leaving the user
+        with two references sections (one unsorted, one ascending).
+        """
+        content = (
+            "# R\n\n"
+            "外滩 [3]. 迪士尼 [1].\n\n"
+            "**参考资料：**\n"
+            "[3] Foo\n   URL: https://foo.example\n\n"
+            "[1] Bar\n   URL: https://bar.example\n\n"
+            "## 参考文献\n\n"
+            "[1] Bar\n   URL: https://bar.example\n\n"
+            "[3] Foo\n   URL: https://foo.example\n\n"
+        )
+        out = self._enforce(content)
+        # The bold inline heading must not survive.
+        assert "**参考资料：**" not in out, (
+            "Bold inline heading survived the enforcer; the user would "
+            "see two references sections (the unsorted LLM block + the "
+            "ascending rebuilt block)."
+        )
+        # The rebuilt block must be ascending and complete (both sources
+        # cited, renumbered 1..2 in body-first-cite order).
+        assert self._displayed_n(out) == [1, 2], (
+            "Expected both sources to survive the rebuild in body-first "
+            f"cite order, got: {self._displayed_n(out)}"
+        )
+        # The canonical heading text must be present exactly once
+        # (no duplication).
+        assert out.count("## 参考文献") == 1
+        # The unsorted list under the LLM's bold heading must be gone —
+        # only the rebuilt ascending list remains.
+        ascending_indices = [
+            line
+            for line in out.splitlines()
+            if line.startswith("[")
+            and line.split("]")[0][1:].isdigit()
+        ]
+        # Find where the canonical sources block starts (after ## 参考文献)
+        canonical_start = out.index("## 参考文献")
+        before_canonical = out[:canonical_start]
+        assert "[3] Foo" not in before_canonical, (
+            "The LLM's unsorted [3] Foo (under the bold heading) should "
+            "have been sliced off; it survived in the body."
+        )
+
+    def test_bold_inline_english_heading_is_also_covered(self):
+        """LLM-invented bold inline ``**Sources:**`` block — same
+        coverage as the CJK variant above."""
+        content = (
+            "# R\n\n"
+            "Cite [3].\n\n"
+            "**Sources:**\n"
+            "[3] Foo\n   URL: https://foo.example\n\n"
+            "## Sources\n\n"
+            "[3] Foo\n   URL: https://foo.example\n\n"
+        )
+        out = self._enforce(content)
+        assert "**Sources:**" not in out
+        assert self._displayed_n(out) == [1]
+        assert "## Sources" in out
+
     def test_dedupes_by_canonical_url(self):
         """Two body markers to the same canonical URL produce ONE
         Sources row, not two."""
