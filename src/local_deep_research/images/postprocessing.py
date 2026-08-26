@@ -39,6 +39,12 @@ from local_deep_research.utilities.is_darkweb_url import is_darkweb_url
 # alt text. Only pure UI/navigation vocabulary is dropped here.
 _MEANINGLESS_ALT_RE = re.compile(
     r"^(?:placeholder|home|logo|banner|button|arrow|search|menu|next|previous|prev|back|close|avatar)$"
+    # 2026-08-26 (research 9b514fa0, AK47): 'Partner Banner' — the
+    # Kalashnikov site's 2340x300 ad banners — escaped the exact-match
+    # rule above 51 times and 3 shipped into the report. Banner-ness is
+    # vocabulary-driven (same substring policy as 'icon'/'shop' below):
+    # word-boundary so 'bannerman' style prose still passes.
+    r"|\bbanner\b"
     r"|^thumbnail(\s+for)?\s*$"
     r"|^photo$|^picture$|^img$"
     # WooCommerce placeholder pattern (2026-08-23, research 3e9ee493):
