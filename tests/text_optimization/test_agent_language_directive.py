@@ -37,3 +37,22 @@ class TestLanguageDirective:
 
     def test_unknown_code_empty(self):
         assert _strategy({"report.language": "xx-YY"})._language_directive() == ""
+
+
+class TestWrappedSnapshotValue:
+    def test_dict_wrapped_value_unwrapped(self):
+        """098f8a1a crash regression: snapshot value arrives as
+        {'value': 'zh-CN', ...} — the raw .get(dict) lookup raised
+        TypeError and killed the research at prompt-build time."""
+        d = _strategy(
+            {"report.language": {"value": "zh-CN", "source": "db"}}
+        )._language_directive()
+        assert "Simplified Chinese" in d
+
+    def test_dict_wrapped_english_empty(self):
+        s = _strategy({"report.language": {"value": "en"}})
+        assert s._language_directive() == ""
+
+    def test_none_value_defaults_zh(self):
+        d = _strategy({"report.language": None})._language_directive()
+        assert "Simplified Chinese" in d

@@ -758,8 +758,17 @@ class LangGraphAgentStrategy(BaseSearchStrategy):
         shipped in English on a zh-CN deployment. Empty string for
         unknown codes or ``en`` — a refusal is still an output the user
         reads, hence the explicit refusal clause.
+
+        2026-08-26 (research 098f8a1a): snapshot values may arrive as
+        ``{"value": "zh-CN", ...}`` wrapper dicts (see base_citation_
+        handler.get_setting) — unwrap before the dict lookup, else
+        ``_LANG_LABEL.get(dict)`` raises TypeError and kills the whole
+        research (crashed at 11:23).
         """
-        lang = (self.settings_snapshot or {}).get("report.language", "zh-CN")
+        raw = (self.settings_snapshot or {}).get("report.language")
+        lang = raw.get("value") if isinstance(raw, dict) else raw
+        if not lang:
+            lang = "zh-CN"  # deployment default
         label = _LANG_LABEL.get(lang)
         if not label or lang == "en":
             return ""
