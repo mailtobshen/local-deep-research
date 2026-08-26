@@ -1632,6 +1632,36 @@ def run_research_process(research_id, query, mode, **kwargs):
             # run_preflight_check) — treat as no signal, continue.
             pass
 
+        # 2026-08-26 (user preflight report): proxy outage → hard abort.
+        # The proxy is the transport EVERY engine depends on in this
+        # deployment — when it errors, the run burns minutes against
+        # suspended engines before failing anyway (observed: 3/10
+        # engines alive, research continued). Matched by kind='proxy'
+        # + error/timeout (name-agnostic); 'ok'/'skipped' never fire.
+        # Same fail-loud contract as the Tor abort above.
+        try:
+            _proxy_dead = next(
+                (
+                    s
+                    for s in statuses
+                    if s.kind == "proxy"
+                    and s.status in ("error", "timeout")
+                ),
+                None,
+            )
+            if _proxy_dead is not None:
+                logger.error(
+                    f"[PREFLIGHT] research={research_id} "
+                    f"abort reason=proxy_outage_unavailable "
+                    f"detail={_proxy_dead.detail}"
+                )
+                raise ValueError(
+                    f"Proxy网络连接错误，请检测VPN代理配置，稍后再试。"
+                    f"(预检详情: {_proxy_dead.detail})"
+                )
+        except NameError:
+            pass
+
         # Set the progress callback in the system
         system = AdvancedSearchSystem(
             llm=use_llm,  # type: ignore[arg-type]

@@ -31,7 +31,12 @@ def test_abort_raises_valueerror_not_silent():
     """The abort must be a raise (which the outer except Exception
     converts into a failed-status error report), not a log-and-continue."""
     src = inspect.getsource(rs.run_research_process)
-    abort_block = src[src.index("Hard abort on a dead Tor circuit") : src.index("system = AdvancedSearchSystem(")]
+    # 2026-08-26: window bounded by the proxy-abort block that now
+    # follows — scan only the TOR abort's own try (which ends at the
+    # second 'except NameError' after its start).
+    start = src.index("Hard abort on a dead Tor circuit")
+    end = src.index("proxy outage → hard abort")
+    abort_block = src[start:end]
     assert "raise ValueError" in abort_block
     # and it must NOT be wrapped by the preflight except anymore
     # (count statement lines only — the block comment mentions
