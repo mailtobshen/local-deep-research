@@ -355,7 +355,7 @@ def format_links_to_markdown(
 
 
 def _ensure_markdown_block_boundaries(md: str) -> str:
-    """Insert blank lines before block-level markdown openers that
+    r"""Insert blank lines before block-level markdown openers that
     follow non-blank content.
 
     The CommonMark spec requires a blank line between a paragraph and

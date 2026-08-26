@@ -91,7 +91,7 @@ def _cleanup_image_dir(research_id: str) -> None:
         if d.is_dir():
             shutil.rmtree(d, ignore_errors=True)
     except Exception:
-        logger.exception("Error removing image dir for %s", research_id)
+        logger.exception(f"Error removing image dir for {research_id}")
 
 
 @research_bp.route("/images/<research_id>/<path:filename>")

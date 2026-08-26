@@ -1,0 +1,1 @@
+修复 preflight proxy abort 在源文件中过早出现导致 source-order 断言失败 (`tests/diagnostics/test_proxy_abort.py::test_proxy_abort_exists_after_tor_abort` 要求 `tor < proxy < system` 顺序)。同时顺手修复 research_routes.py:94 的 printf-style loguru placeholder 警告。

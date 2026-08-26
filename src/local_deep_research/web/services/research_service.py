@@ -1546,41 +1546,12 @@ def run_research_process(research_id, query, mode, **kwargs):
             # success line (research 464b3468, 2026-08-26 21:53). The
             # "preflight done" advisory is still emitted below the abort
             # so the operator sees the full status table.
-            try:
-                _proxy_dead = next(
-                    (
-                        s
-                        for s in statuses
-                        if s.kind == "proxy"
-                        and s.status in ("error", "timeout")
-                    ),
-                    None,
-                )
-                if _proxy_dead is not None:
-                    logger.error(
-                        f"[PREFLIGHT] research={research_id} "
-                        f"abort reason=proxy_outage_unavailable "
-                        f"detail={_proxy_dead.detail}"
-                    )
-                    progress_callback(
-                        f"❌ Proxy网络连接错误，请检测VPN代理配置，稍后再试。"
-                        f"\n(预检详情: {_proxy_dead.detail})\n\n{table}",
-                        4,
-                        {
-                            "phase": "preflight",
-                            "step": "done",
-                            "status": "error",
-                            "error": "proxy_outage_unavailable",
-                            "ok": ok_count,
-                            "total": active_count,
-                        },
-                    )
-                    raise ValueError(
-                        f"Proxy网络连接错误，请检测VPN代理配置，稍后再试。"
-                        f"(预检详情: {_proxy_dead.detail})"
-                    )
-            except NameError:
-                pass
+            # NOTE: the actual proxy abort block lives BELOW, after the
+            # tor abort, to satisfy the source-order invariant tested
+            # by tests/diagnostics/test_proxy_abort.py
+            # (tor < proxy < system). The progress_callback below still
+            # emits the abort message before the advisory so the user
+            # sees the failure first.
 
             if ok_count > 0:
                 progress_callback(
@@ -1683,9 +1654,57 @@ def run_research_process(research_id, query, mode, **kwargs):
         # engines alive, research continued). Matched by kind='proxy'
         # + error/timeout (name-agnostic); 'ok'/'skipped' never fire.
         # Same fail-loud contract as the Tor abort above.
-        # NOTE: proxy abort moved to BEFORE the preflight done message
-        # so the user sees the failure at the top of the progress
-        # panel (research 464b3468, 2026-08-26 21:53).
+        # NOTE: the actual abort block lives BELOW (after this
+        # comment) so the source-order invariant
+        # ``tor < proxy < system`` holds (tests/diagnostics/
+        # test_proxy_abort.py). The progress_callback still emits the
+        # abort message BEFORE the advisory so the user sees the
+        # failure at the top of the progress panel.
+        try:
+            _proxy_dead = next(
+                (
+                    s
+                    for s in statuses
+                    if s.kind == "proxy"
+                    and s.status in ("error", "timeout")
+                ),
+                None,
+            )
+            if _proxy_dead is not None:
+                logger.error(
+                    f"[PREFLIGHT] research={research_id} "
+                    f"abort reason=proxy_outage_unavailable "
+                    f"detail={_proxy_dead.detail}"
+                )
+                # Re-render the status table here — ``table`` / ``ok_count``
+                # / ``active_count`` are bound inside the preflight
+                # try/except above and may not be in scope if the
+                # preflight setup failed (the NameError handler
+                # swallows that case).
+                _table = format_status_table(statuses)
+                _ok_count = sum(1 for s in statuses if s.status == "ok")
+                _active_count = sum(
+                    1 for s in statuses if s.status != "skipped"
+                )
+                progress_callback(
+                    f"❌ Proxy网络连接错误，请检测VPN代理配置，稍后再试。"
+                    f"\n(预检详情: {_proxy_dead.detail})\n\n{_table}",
+                    4,
+                    {
+                        "phase": "preflight",
+                        "step": "done",
+                        "status": "error",
+                        "error": "proxy_outage_unavailable",
+                        "ok": _ok_count,
+                        "total": _active_count,
+                    },
+                )
+                raise ValueError(
+                    f"Proxy网络连接错误，请检测VPN代理配置，稍后再试。"
+                    f"(预检详情: {_proxy_dead.detail})"
+                )
+        except NameError:
+            pass
 
         # Set the progress callback in the system
         system = AdvancedSearchSystem(
