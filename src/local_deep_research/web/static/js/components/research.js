@@ -324,10 +324,11 @@
         setupEventListeners();
         // Don't populate providers yet - wait for API data
         initializeDropdowns();
-        // Show the darkweb opt-in checkbox only when the engine is enabled
-        // (avoids confusing users whose setup lacks ldr-tor or the SearXNG
-        // engines-darkweb.yml template). The server already returns 200 even
-        // if the lookup fails — we hide on failure to be safe.
+        // The darkweb opt-in checkbox is always shown; the backend gates
+        // preflight on the global darkweb toggle + primary search tool, so
+        // disable+uncheck the checkbox (rather than hide the container) when
+        // the global toggle is off. The .catch path leaves the container
+        // hidden on lookup failure.
         fetch('/settings/api/darkweb-status', { credentials: 'same-origin' })
             .then(r => r.json())
             .then(data => {
