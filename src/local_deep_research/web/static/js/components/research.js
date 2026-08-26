@@ -332,8 +332,19 @@
             .then(r => r.json())
             .then(data => {
                 const c = document.getElementById('darkweb-container');
-                if (c && data && data.enabled) {
-                    c.style.display = '';
+                const cb = document.getElementById('include_darkweb');
+                if (!c) return;
+                // 始终显示 container, 让用户看到暗网选项存在
+                c.style.display = '';
+                if (data && data.enabled) {
+                    // 全局开关开 → checkbox 可用
+                    if (cb) cb.disabled = false;
+                } else {
+                    // 全局开关关 → checkbox disabled + 取消勾选 + 灰显
+                    if (cb) {
+                        cb.disabled = true;
+                        cb.checked = false;
+                    }
                 }
             })
             .catch(() => { /* leave hidden */ });
