@@ -146,3 +146,21 @@ class TestSanitizerEscapedForm:
         md = "Uses [5] here.\n\n## 参考文献\n\n[5] T\n   URL: http://z.onion/c\n"
         start = md.find("## 参考文献")
         assert "5" in _used_nums_in_body(md, start)
+
+
+class TestNumberedModeKeepsAssignIndices:
+    def test_numbered_mode_uses_assign_index_not_position(self):
+        """d24a84c9 regression: numbered=True renumbered rows by POSITION
+        (enumerate) after extract_links dropped title-less entries, so
+        block row numbers diverged from the assign_citation_numbers
+        indices the LLM saw in its prompt — 20 citations died in the
+        sanitize→enforce pincer. numbered=True must emit link['index']
+        verbatim."""
+        links = [
+            {"title": "Bendibao", "url": "http://bendibao.com/waitan", "index": "3"},
+            {"title": "Fourth", "url": "http://d.com/", "index": "4"},
+        ]
+        md = format_links_to_markdown(links, numbered=True)
+        assert "[3] Bendibao (source nr: 3)" in md
+        assert "[4] Fourth (source nr: 4)" in md
+        assert "[1]" not in md

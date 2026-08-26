@@ -305,14 +305,11 @@ def format_links_to_markdown(
 
         # Emit each unique source once, in first-seen order.
         seen: set[str] = set()
-        for n, link in enumerate(
-            [
-                l
-                for l in all_links
-                if canonical_url_key(l.get("url") or l.get("link") or "")
-            ],
-            start=1,
-        ):
+        for link in [
+            l
+            for l in all_links
+            if canonical_url_key(l.get("url") or l.get("link") or "")
+        ]:
             raw = link.get("url") or link.get("link") or ""
             canon = canonical_url_key(raw)
             if canon in seen:
@@ -320,11 +317,19 @@ def format_links_to_markdown(
             title = canon_to_title[canon]
             if numbered:
                 # Unified numbering mode (2026-08-25): rows carry the
-                # continuous 1..K the citation handler's documents
-                # prompt already used — LLM view == block rows, so
-                # inline [N] markers survive enforce's orphan-drop.
-                indices_str = f"[{n}]"
-                nr_str = str(n)
+                # assign_citation_numbers index verbatim. 2026-08-26
+                # (research d24a84c9): the first version renumbered by
+                # LIST POSITION — but extract_links_from_search_results
+                # drops title-less entries between assign() and here,
+                # so position ≠ prompt number whenever anything was
+                # dropped (20 citations died in the sanitize→enforce
+                # pincer that run). link['index'] IS the number the
+                # LLM saw; missing index falls back to position.
+                idx = str(link.get("index") or "").strip()
+                if not idx:
+                    idx = str(len(seen) + 1)
+                indices_str = f"[{idx}]"
+                nr_str = idx
             else:
                 indices = sorted(set(url_to_indices[canon]))
                 indices_str = f"[{', '.join(map(str, indices))}]"
