@@ -635,6 +635,26 @@ def _darkweb_engine_list(settings_snapshot: Optional[dict]) -> tuple[str, ...]:
     return parts or DARKWEB_ENGINES
 
 
+def _darkweb_skipped_status(
+    settings_snapshot: Optional[dict] = None,
+) -> list[EngineStatus]:
+    """未请求暗网时, 返回一行 skipped EngineStatus。
+
+    与 probe_firecrawl / probe_proxy 的 self-skip 模式一致。
+    让 preflight 表里能看到"为什么没探测"。
+    """
+    engines = _darkweb_engine_list(settings_snapshot)
+    return [
+        EngineStatus(
+            f"darkweb/{name}",
+            "skipped",
+            "暗网未启用",
+            kind="darkweb",
+        )
+        for name in engines
+    ]
+
+
 def _probe_darkweb_single(
     instance_url: str, engine_name: str, timeout: int
 ) -> EngineStatus:
@@ -858,17 +878,27 @@ def run_preflight_check(
         engine_futures = {pool.submit(_probe_engine, name): name for name in engines}
         # Firecrawl (in same pool)
         fc_future = pool.submit(probe_firecrawl, settings_snapshot)
-        # 暗网探测仅在开关开启时执行 —— 它的超时是 60s,远高于其他引擎,
-        # 关闭状态下不应让研究启动为此等待。
+        # 暗网探测仅在"三信号"任一为真时执行 —— 它的超时是 60s,远高于
+        # 其他引擎, 关闭状态下不应让研究启动为此等待。
+        # 三信号 OR: 全局开关 OR 主引擎下拉框选了暗网。
+        # (`include_darkweb` 已被 _apply_darkweb_override 编码进
+        # snapshot.darkweb.enabled, 这里只需 OR 上 search.tool)
+        primary_tool = (
+            get_setting_from_snapshot(
+                "search.tool", "searxng", settings_snapshot=settings_snapshot
+            )
+            if settings_snapshot
+            else "searxng"
+        )
         darkweb_enabled = get_bool_setting_from_snapshot(
             "search.engine.web.darkweb.enabled",
             default=False,
             settings_snapshot=settings_snapshot,
         )
-        darkweb_future = (
-            pool.submit(probe_darkweb, settings_snapshot)
-            if darkweb_enabled
-            else None
+        darkweb_requested = darkweb_enabled or primary_tool == "darkweb"
+        darkweb_future = pool.submit(
+            probe_darkweb if darkweb_requested else _darkweb_skipped_status,
+            settings_snapshot,
         )
 
         for fut, name in engine_futures.items():
