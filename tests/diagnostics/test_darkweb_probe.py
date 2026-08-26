@@ -295,6 +295,8 @@ def test_preflight_probes_darkweb_when_primary_engine_selected():
     ), patch(
         "local_deep_research.diagnostics.engine_health.probe_firecrawl"
     ), patch(
+        "local_deep_research.diagnostics.engine_health.probe_ldr_tor_proxy"
+    ), patch(
         "local_deep_research.diagnostics.engine_health.probe_darkweb",
         return_value=fake_statuses,
     ) as pd:
