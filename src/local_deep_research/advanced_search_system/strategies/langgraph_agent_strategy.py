@@ -1464,6 +1464,15 @@ class LangGraphAgentStrategy(BaseSearchStrategy):
         agent_messages: list,
     ) -> Dict[str, Any]:
         """Apply citation handling and build the return dict."""
+        # 2026-08-26 (research 5e033c22): nr_of_links passed in was
+        # captured at analyze_topic ENTRY (line 978) when the collector
+        # was empty, so by the time _finalize runs the collector has
+        # 30+ results but analyze_followup gets nr_of_links=0 — that
+        # means 0 documents in the LLM prompt, which makes the LLM
+        # fabricate citation indices like [[26]] from nowhere.
+        # Recompute from the live collector before handing it to
+        # analyze_followup.
+        nr_of_links = max(nr_of_links, len(self.collector.results))
         self._update_progress(
             f"Synthesizing {len(self.collector.results)} sources with citations",
             90,
