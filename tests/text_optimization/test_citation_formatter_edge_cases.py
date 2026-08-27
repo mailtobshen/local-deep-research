@@ -467,6 +467,58 @@ class TestEnforceSourcesAscending:
         assert self._displayed_n(out) == [1]
         assert "## 参考文献" in out
 
+    def test_bare_inline_cjk_heading_is_also_covered(self):
+        """LLM-emitted bare ``参考文献说明：`` heading (research
+        0b7402fb, 2026-08-27 — langgraph agents append a heading like
+        this without any surrounding ``**`` asterisks). Before the
+        pattern leading-asterisk group was relaxed from ``\\*{1,3}``
+        to ``\\*{0,3}``, this bare heading was invisible to
+        ``find_sources_section`` and survived into the rebuilt
+        report, producing a two-block regression where the user saw
+        the LLM's block AND the canonical ``## 参考文献``.
+
+        Verified by feeding the LLM-emitted content through the full
+        strip+enforce pipeline (the order used by ``research_service``
+        line 2154+ and by ``langgraph_agent_strategy`` line 1583+):
+        ``_ensure_markdown_block_boundaries`` → ``strip_per_section_sources_block``
+        → ``enforce_sources_ascending_and_drop_orphans``. The
+        ``_enforce`` helper alone is NOT enough; it never strips the
+        LLM's block because that's not its job — the enforcer only
+        operates on the canonical ``## Sources`` block it finds.
+        """
+        from local_deep_research.utilities.search_utilities import (
+            _ensure_markdown_block_boundaries,
+        )
+        from local_deep_research.text_optimization.citation_formatter import (
+            enforce_sources_ascending_and_drop_orphans,
+            strip_per_section_sources_block,
+        )
+
+        content = (
+            "# R\n\n"
+            "Cite [3].\n\n"
+            "参考文献说明：\n"
+            "[3] Foo\n   URL: https://foo.example\n\n"
+            "## 参考文献\n\n"
+            "[3] Foo\n   URL: https://foo.example\n\n"
+        )
+        out = enforce_sources_ascending_and_drop_orphans(
+            strip_per_section_sources_block(
+                _ensure_markdown_block_boundaries(content)
+            )
+        )
+        # The LLM's bare "参考文献说明：" heading + its unsorted list
+        # must NOT survive; the canonical ## 参考文献 block is the
+        # only references section.
+        assert "参考文献说明" not in out, (
+            "LLM-emitted bare '参考文献说明：' heading survived the "
+            f"strip+enforce pipeline; the user sees two blocks:\n{out!r}"
+        )
+        # Body marker survives as the rebuilt canonical hyperlink.
+        assert "foo.example" in out
+        # Exactly one ## 参考文献 heading.
+        assert out.count("## 参考文献") == 1
+
     def test_bold_inline_cjk_heading_is_also_covered(self):
         """LLM-invented bold inline ``**参考资料：**`` block (research
         f73ce631, 2026-08-26) followed by a proper ``## 参考文献``

@@ -2151,6 +2151,37 @@ def run_research_process(research_id, query, mode, **kwargs):
                         {"phase": "report_complete"},
                     )
 
+                    # Strip any sources-like block the LLM emitted
+                    # itself (e.g. langgraph agents writing their own
+                    # trailing "## 参考文献说明" / "## Sources" block).
+                    # Without this, research 0b7402fb (2026-08-27
+                    # 01:27) produced TWO references sections because
+                    # the LLM's block survived downstream. We also
+                    # normalise paragraph → list/heading boundaries
+                    # so marked renders inline citation lists even when
+                    # the LLM omitted blank lines (fix for [8] not
+                    # rendering in the 迪士尼 list).
+                    try:
+                        from ...text_optimization.citation_formatter import (
+                            enforce_sources_ascending_and_drop_orphans,
+                            strip_per_section_sources_block,
+                        )
+                        from ...utilities.search_utilities import (
+                            _ensure_markdown_block_boundaries,
+                        )
+
+                        clean_markdown = _ensure_markdown_block_boundaries(
+                            clean_markdown
+                        )
+                        clean_markdown = strip_per_section_sources_block(
+                            clean_markdown
+                        )
+                    except Exception:
+                        logger.exception(
+                            "Pre-enforce markdown normalisation failed; "
+                            "continuing with unenforced content"
+                        )
+
                     # Enforce ascending ## Sources [N] and drop orphan
                     # body citations. See the detailed-mode site for the
                     # rationale (image enhancement is upstream of this

@@ -20,14 +20,17 @@ _SOURCES_SECTION_PATTERNS = [
         r"(?:[\s　]*[\w一-鿿]{1,12})?\s*$",
         re.MULTILINE | re.IGNORECASE,
     ),
-    # Bold-inline heading variant: ``**Sources:**`` / ``**References:**``.
-    # Quick-summary mode LLM (research f73ce631, 2026-08-26) emits its own
-    # unsorted references block under a bold inline heading; the trailing
-    # ``## Sources`` rebuild appends a SECOND block, so the report ends up
-    # with both. Matching this variant here lets the rebuild slice off the
-    # bold block's line and replace it with a single canonical ``## Sources``.
+    # Bold-inline heading variant: ``**Sources:**`` / ``**References:**``
+    # / ``**参考资料说明：**`` (research 0b7402fb, 2026-08-27: langgraph
+    # agents frequently emit "## 参考文献说明：" as a bold-inline
+    # heading followed by their own unsorted URL list, causing a two-
+    # block regression). Matching this variant lets the stripper drop
+    # the LLM's block before the canonical ## 参考文献 is appended.
+    # The leading ``\*{0,3}`` (vs ``\*{1,3}``) accepts both bare and
+    # bold-inline headings — the LLM in 0b7402fb emitted the bare
+    # form without surrounding ``**``.
     re.compile(
-        r"^\*{1,3}\s*"
+        r"^\*{0,3}\s*"
         r"(?:Sources|References|Bibliography|Citations)"
         r"\s*[:：]?\s*\*{0,3}\s*$",
         re.MULTILINE | re.IGNORECASE,
@@ -49,15 +52,20 @@ _SOURCES_SECTION_PATTERNS = [
 _SOURCES_SECTION_CJK_PATTERNS = [
     re.compile(
         r"^#{1,3}\s*(?:\d{1,3}[\.\、]?\s*|\(\d{1,3}\)\s*)?"
-        r"(?:参考文献|参考资料|引用来源|参考来源|资料来源|引用文献)"
+        r"(?:参考文献说明|参考来源说明|参考资料|参考文献|引用来源|参考来源|资料来源|引用文献)"
         r"(?:[\s　]*[\w一-鿿]{1,12})?\s*$",
         re.MULTILINE,
     ),
-    # Bold-inline CJK heading: ``**参考资料：**`` / ``**参考文献：**``.
-    # Same rationale as the English bold variant above (research f73ce631).
+    # Bold-inline CJK heading: ``**参考资料：**`` / ``**参考文献说明：**``.
+    # research 0b7402fb (2026-08-27): langgraph agents append a
+    # "参考文献说明：" heading before their own URL list (sometimes
+    # bare, sometimes wrapped in ``**``). Leading ``\*{0,3}`` accepts
+    # both forms; without matching this variant,
+    # strip_per_section_sources_block misses it and the user sees a
+    # two-block regression.
     re.compile(
-        r"^\*{1,3}\s*"
-        r"(?:参考文献|参考资料|引用来源|参考来源|资料来源|引用文献)"
+        r"^\*{0,3}\s*"
+        r"(?:参考文献说明|参考来源说明|参考资料|参考文献|引用来源|参考来源|资料来源|引用文献)"
         r"\s*[:：]?\s*\*{0,3}\s*$",
         re.MULTILINE,
     ),

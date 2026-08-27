@@ -1579,8 +1579,30 @@ class LangGraphAgentStrategy(BaseSearchStrategy):
                             if str(_lang).startswith("zh")
                             else "## Sources"
                         )
+                        formatted_output = synthesized_content
+                        # Strip the LLM-emitted references block
+                        # and normalise paragraph -> list/heading
+                        # boundaries. research 0b7402fb 2026-08-27
+                        # 01:27: langgraph agents append a trailing
+                        # "参考文献说明:" block of their own which
+        # produces a two-block regression alongside the canonical
+        # ## 参考文献 we append here. Same fix normalises LLM-emitted
+        # lists whose paragraph-above omitted the blank line,
+        # so marked renders [8] etc. as anchors.
+                        from local_deep_research.text_optimization.citation_formatter import (
+                            strip_per_section_sources_block,
+                        )
+                        from local_deep_research.utilities.search_utilities import (
+                            _ensure_markdown_block_boundaries,
+                        )
+                        formatted_output = _ensure_markdown_block_boundaries(
+                            formatted_output
+                        )
+                        formatted_output = strip_per_section_sources_block(
+                            formatted_output
+                        )
                         formatted_output = (
-                            f"{synthesized_content}\n\n"
+                            f"{formatted_output}\n\n"
                             f"{_sources_heading}\n\n{sources_md}"
                         )
             except Exception:
