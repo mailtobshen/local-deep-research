@@ -1784,6 +1784,53 @@ class CitationFormatter:
 
         return self.comma_citation_pattern.sub(_replacer, content)
 
+    def _replace_bare_double_brackets(self, content, lookup, format_one):
+        """Replace bare ``[[N]]`` markers (no URL tail) with the variant's
+        formatted hyperlink form.
+
+        The LLM occasionally emits ``[[6]]`` instead of ``[6]`` /
+        ``[[6]](url)`` — most often after a self-check retry nudge
+        (standard_citation_handler.standard_citation_handler, 9c50e0d9).
+        CITE_INLINE_RE on line 80-82 has negative lookarounds that
+        DELIBERATELY exclude ``[[N]]`` from the regular citation_pattern
+        scan, so without this pass bare markers survive as raw text in
+        any path that calls ``format_document`` directly without going
+        through ``enforce_sources_ascending_and_drop_orphans`` first —
+        the scheduler/background.py:1577 subscription/news auto-research
+        path is the production trigger.
+
+        ``format_one`` is the same ``(num, data) -> str`` callback the
+        variant uses elsewhere (e.g. ``format_number_link`` /
+        ``format_domain_link``); the output shape matches what the
+        regular ``[N]`` flow would have produced for the same number, so
+        downstream renderers see one consistent form.
+
+        Markers whose number is not in *lookup* (orphan — no Sources row
+        owns N) are left verbatim: format_document has no row to render
+        against, and the scheduler path never runs an orphan-drop pass.
+        The f565edb3 ``renumber_citations`` path remains the canonical
+        orphan-killer for the quick/detailed research flows; this helper
+        only fills the gap when that path is bypassed.
+
+        Idempotent: the rewrite emits the variant's normal link text
+        (e.g. ``\\[N\\]`` or ``[domain]``), which does NOT match
+        ``RENUMBER_BARE_DOUBLE_RE`` again on a second pass.
+
+        Negative lookahead ``(?!)`` followed by literal ``(`` on the
+        regex matches the legacy hyperlinked ``[[N]](url)`` form: that
+        form is left untouched here, and the
+        ``test_already_formatted_not_rematched`` invariant (single
+        bracket inside double) is preserved.
+        """
+
+        def _replacer(match):
+            num = match.group(1)
+            if num in lookup:
+                return format_one(num, lookup[num])
+            return match.group(0)
+
+        return RENUMBER_BARE_DOUBLE_RE.sub(_replacer, content)
+
     def format_document(self, content: str) -> str:
         """
         Format citations in the document according to the selected mode.
@@ -1903,6 +1950,13 @@ class CitationFormatter:
 
         content = self.citation_pattern.sub(replace_citation, content)
 
+        # Handle bare ``[[N]]`` markers — the regular citation_pattern
+        # excludes them (negative lookarounds, line 80-82). See
+        # _replace_bare_double_brackets for the rationale.
+        content = self._replace_bare_double_brackets(
+            content, url_sources, format_number_link
+        )
+
         # Also handle "Source X" patterns
         return self.source_word_pattern.sub(
             self._create_source_word_replacer(formatter), content
@@ -1942,6 +1996,11 @@ class CitationFormatter:
             )
 
         content = self.citation_pattern.sub(replace_citation, content)
+
+        # Handle bare ``[[N]]`` markers (see _replace_bare_double_brackets).
+        content = self._replace_bare_double_brackets(
+            content, url_sources, format_domain_link
+        )
 
         # Also handle "Source X" patterns
         return self.source_word_pattern.sub(
@@ -2001,6 +2060,11 @@ class CitationFormatter:
 
         content = self.citation_pattern.sub(replace_citation, content)
 
+        # Handle bare ``[[N]]`` markers (see _replace_bare_double_brackets).
+        content = self._replace_bare_double_brackets(
+            content, citation_to_domain_id, format_domain_id_link
+        )
+
         # Also handle "Source X" patterns
         return self.source_word_pattern.sub(
             self._create_source_word_replacer(formatter), content
@@ -2050,6 +2114,11 @@ class CitationFormatter:
             )
 
         content = self.citation_pattern.sub(replace_citation, content)
+
+        # Handle bare ``[[N]]`` markers (see _replace_bare_double_brackets).
+        content = self._replace_bare_double_brackets(
+            content, citation_to_domain_id, format_domain_id_link
+        )
 
         # Also handle "Source X" patterns
         return self.source_word_pattern.sub(
@@ -2137,6 +2206,11 @@ class CitationFormatter:
             )
 
         content = self.citation_pattern.sub(replace_citation, content)
+
+        # Handle bare ``[[N]]`` markers (see _replace_bare_double_brackets).
+        content = self._replace_bare_double_brackets(
+            content, sources, format_link
+        )
 
         # Also handle "Source X" patterns
         return self.source_word_pattern.sub(

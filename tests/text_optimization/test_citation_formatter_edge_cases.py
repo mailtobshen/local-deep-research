@@ -996,3 +996,169 @@ class TestBracketedLinkText:
         )
         _, s2n, _ = build_citation_index(md, {"findings": []})
         assert sorted(s2n.get(0) or []) == ["3", "5", "7"]
+
+
+class TestFormatDocumentBareDouble:
+    """Regression: format_document alone (no enforce pass) must still
+    hyperlink bare ``[[N]]`` markers.
+
+    Production trigger: scheduler/background.py:1577 calls format_document
+    WITHOUT the prior enforce_sources_ascending_and_drop_orphans pass.
+    enforce's bare-double handling (f565edb3) does rewrite [[N]] → escaped
+    link text, but that rewrite lives in enforce, not format_document —
+    and format_document's CITE_INLINE_RE (line 80-82) has negative
+    lookarounds that deliberately exclude [[N]] from the regular
+    citation_pattern scan. Without _replace_bare_double_brackets in the
+    variant, bare markers survive as raw text in subscription reports.
+
+    Covers all five CitationMode variants (NUMBER / DOMAIN / DOMAIN_ID /
+    DOMAIN_ID_ALWAYS / SOURCE_TAGGED). All must rewrite bare [[N]] to the
+    same shape the variant would have produced for plain [N] given the
+    same sources map.
+    """
+
+    SCHEDULER_DOC = (
+        "# Auto Research\n\n"
+        "This is a fact [[6]] from a source.\n\n"
+        "## 摘要\n\n"
+        "More facts [[6]] and [[7]].\n\n"
+        "## Sources\n\n"
+        "[6] Source A\n   URL: http://a.onion/x\n\n"
+        "[7] Source B\n   URL: http://b.onion/y\n"
+    )
+
+    def _check_no_raw_double(self, result):
+        assert "[[6]]" not in result, f"bare [[6]] survived: {result!r}"
+        assert "[[7]]" not in result, f"bare [[7]] survived: {result!r}"
+
+    def test_number_hyperlinks_hyperlinks_bare_double(self):
+        from local_deep_research.text_optimization.citation_formatter import (
+            CitationFormatter,
+            CitationMode,
+        )
+
+        result = CitationFormatter(
+            CitationMode.NUMBER_HYPERLINKS
+        ).format_document(self.SCHEDULER_DOC)
+        self._check_no_raw_double(result)
+        # cite_link_text escapes the inner brackets (9b514fa0) — match
+        # the existing format_number_hyperlinks output for plain [N].
+        assert "[\\[6\\]](http://a.onion/x)" in result
+        assert "[\\[7\\]](http://b.onion/y)" in result
+
+    def test_domain_hyperlinks_hyperlinks_bare_double(self):
+        from local_deep_research.text_optimization.citation_formatter import (
+            CitationFormatter,
+            CitationMode,
+        )
+
+        result = CitationFormatter(
+            CitationMode.DOMAIN_HYPERLINKS
+        ).format_document(self.SCHEDULER_DOC)
+        self._check_no_raw_double(result)
+        assert "[[a.onion]](http://a.onion/x)" in result
+        assert "[[b.onion]](http://b.onion/y)" in result
+
+    def test_domain_id_hyperlinks_hyperlinks_bare_double(self):
+        from local_deep_research.text_optimization.citation_formatter import (
+            CitationFormatter,
+            CitationMode,
+        )
+
+        result = CitationFormatter(
+            CitationMode.DOMAIN_ID_HYPERLINKS
+        ).format_document(self.SCHEDULER_DOC)
+        self._check_no_raw_double(result)
+        # Single-citation-per-domain → no hyphen suffix
+        assert "[[a.onion]](http://a.onion/x)" in result
+        assert "[[b.onion]](http://b.onion/y)" in result
+
+    def test_domain_id_always_hyperlinks_hyperlinks_bare_double(self):
+        from local_deep_research.text_optimization.citation_formatter import (
+            CitationFormatter,
+            CitationMode,
+        )
+
+        result = CitationFormatter(
+            CitationMode.DOMAIN_ID_ALWAYS_HYPERLINKS
+        ).format_document(self.SCHEDULER_DOC)
+        self._check_no_raw_double(result)
+        # Always-with-IDs mode → hyphen suffix even on singletons
+        assert "[[a.onion-1]](http://a.onion/x)" in result
+        assert "[[b.onion-1]](http://b.onion/y)" in result
+
+    def test_source_tagged_hyperlinks_hyperlinks_bare_double(self):
+        from local_deep_research.text_optimization.citation_formatter import (
+            CitationFormatter,
+            CitationMode,
+        )
+
+        result = CitationFormatter(
+            CitationMode.SOURCE_TAGGED_HYPERLINKS
+        ).format_document(self.SCHEDULER_DOC)
+        self._check_no_raw_double(result)
+        # tag format is {label}-{N}; on .onion URL the label is the
+        # cleaned domain. Both lookups should resolve.
+        assert "(http://a.onion/x)" in result
+        assert "(http://b.onion/y)" in result
+
+    def test_orphan_bare_double_left_verbatim(self):
+        """[[N]] with no Sources row for N is left untouched: format_document
+        has no orphan-drop semantics (that lives in enforce). The scheduler
+        path has no enforce, so an orphan stays orphan.
+        """
+        from local_deep_research.text_optimization.citation_formatter import (
+            CitationFormatter,
+            CitationMode,
+        )
+
+        doc = (
+            "# Body\n\nClaim one [[99]]. Claim two [1].\n\n"
+            "## Sources\n\n"
+            "[1] Only Source\n   URL: http://only.onion/\n"
+        )
+        result = CitationFormatter(
+            CitationMode.NUMBER_HYPERLINKS
+        ).format_document(doc)
+        # The plain [1] gets hyperlinked normally; the bare [[99]] stays.
+        assert "[[99]]" in result
+        assert "[1]" not in result or "[\\[1\\]](http://only.onion/)" in result
+
+    def test_already_hyperlinked_double_not_re_formatted(self):
+        """The legacy hyperlinked ``[[N]](url)`` form must NOT be
+        re-formatted — negative lookahead on the regex already excludes
+        it (preserves test_already_formatted_not_rematched invariant).
+        """
+        from local_deep_research.text_optimization.citation_formatter import (
+            CitationFormatter,
+            CitationMode,
+        )
+
+        doc = (
+            "See [[1]](https://example.com) for details.\n\n"
+            "## Sources\n\n"
+            "[1] Source\n   URL: https://example.com\n"
+        )
+        result = CitationFormatter(
+            CitationMode.NUMBER_HYPERLINKS
+        ).format_document(doc)
+        # The double-bracket-with-url form is left as-is.
+        assert "[[1]](https://example.com)" in result
+        # And NOT wrapped a third time.
+        assert "[[[1]]]" not in result
+
+    def test_idempotent_after_bare_double_fix(self):
+        """format_document called twice on a doc with bare [[N]] must
+        produce identical output the second time — the rewrite emits the
+        variant's normal link text (e.g. \\[N\\]) which does NOT match
+        RENUMBER_BARE_DOUBLE_RE on a second pass.
+        """
+        from local_deep_research.text_optimization.citation_formatter import (
+            CitationFormatter,
+            CitationMode,
+        )
+
+        f = CitationFormatter(CitationMode.NUMBER_HYPERLINKS)
+        first = f.format_document(self.SCHEDULER_DOC)
+        second = f.format_document(first)
+        assert first == second
