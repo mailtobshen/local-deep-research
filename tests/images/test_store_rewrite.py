@@ -29,6 +29,27 @@ def test_rewrite_keeps_markdown_for_oversized():
     assert 'width="2000"' in out and 'height="1000"' in out
 
 
+def test_rewrite_blank_line_after_figure():
+    """A <figure> injected in place of an inline image must be followed
+    by a blank line when body text follows. CommonMark treats an HTML
+    block as extending until the next blank line — with only a single
+    newline the following paragraph (and its ``[\\[N\\]](url)``
+    citation links) is emitted verbatim, un-rendered (research
+    9a880e96, 2026-08-28: ``[\[5\]](url)`` showed as literal text
+    because the paragraph directly followed the Disney ``<figure>``).
+    """
+    md = (
+        "![上海迪士尼](https://example.com/disney.jpg)\n"
+        "正文段落，含引用 [\\[5\\]](https://example.com/src.html)。"
+    )
+    routes = {"https://example.com/disney.jpg": "/images/disney.jpg"}
+    sizes = {"https://example.com/disney.jpg": (600, 450)}
+
+    out = _store().rewrite_markdown(md, routes, sizes)
+
+    assert "</figure>\n\n正文段落" in out
+
+
 def test_rewrite_keeps_markdown_for_small_or_unknown():
     md = "![small](https://example.com/small.jpg)"
     sizes = {"https://example.com/small.jpg": (200, 150)}

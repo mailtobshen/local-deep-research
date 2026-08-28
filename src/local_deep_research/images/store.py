@@ -773,6 +773,14 @@ class ImageStore:
             )
 
         result = _IMG_RE.sub(repl, markdown)
+        # The injected <figure> starts a CommonMark HTML block, which
+        # extends until the next BLANK line. When body text follows the
+        # figure with only a single newline, that whole paragraph is
+        # emitted verbatim — citation links like ``[\\[5\\]](url)`` then
+        # show as literal text (research 9a880e96, 2026-08-28). Insert
+        # the missing blank line after every figure-followed-by-text
+        # boundary. Idempotent: ``\n\n`` boundaries are left as-is.
+        result = re.sub(r"</figure>\n(?!\n)", "</figure>\n\n", result)
         logger.info(
             f"[IMG-TRACE] RESIZE chosen={len(url_to_route)} "
             f"resized={resized} under_threshold={under} unknown_size={unknown} "
