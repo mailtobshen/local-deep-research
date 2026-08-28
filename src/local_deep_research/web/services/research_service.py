@@ -2154,26 +2154,27 @@ def run_research_process(research_id, query, mode, **kwargs):
                     # Strip any sources-like block the LLM emitted
                     # itself (e.g. langgraph agents writing their own
                     # trailing "## 参考文献说明" / "## Sources" block).
-                    # Without this, research 0b7402fb (2026-08-27
-                    # 01:27) produced TWO references sections because
-                    # the LLM's block survived downstream. We also
-                    # normalise paragraph → list/heading boundaries
-                    # so marked renders inline citation lists even when
-                    # the LLM omitted blank lines (fix for [8] not
-                    # rendering in the 迪士尼 list).
+                    # Normalise paragraph → list/heading boundaries so
+                    # marked renders inline citation lists even when the
+                    # LLM omitted blank lines.
+                    #
+                    # 2026-08-27 (research d620e6f5, langgraph-agent):
+                    # _finalize already strips LLM-emitted sources blocks
+                    # and appends a canonical `## 参考文献` block before
+                    # returning formatted_findings. Calling strip again
+                    # here strips the CANONICAL block that _finalize
+                    # just appended (research d620e6f5: report had no
+                    # references block in the final saved file). We
+                    # therefore only run ensure here, not strip.
                     try:
                         from ...text_optimization.citation_formatter import (
                             enforce_sources_ascending_and_drop_orphans,
-                            strip_per_section_sources_block,
                         )
                         from ...utilities.search_utilities import (
                             _ensure_markdown_block_boundaries,
                         )
 
                         clean_markdown = _ensure_markdown_block_boundaries(
-                            clean_markdown
-                        )
-                        clean_markdown = strip_per_section_sources_block(
                             clean_markdown
                         )
                     except Exception:

@@ -524,3 +524,40 @@ class TestLanguageCodeMap:
         assert LANGUAGE_CODE_MAP["italian"] == "it"
         assert LANGUAGE_CODE_MAP["japanese"] == "ja"
         assert LANGUAGE_CODE_MAP["chinese"] == "zh"
+
+
+class TestCanonicalSourcesBlockSurvivesStrip:
+    """Regression test for research d620e6f5 (2026-08-28, langgraph-agent):
+    the canonical `## 参考文献` block that langgraph_agent_strategy._finalize
+    appended was wrongly stripped by research_service.py's redundant call
+    to strip_per_section_sources_block. Verify that callers must NOT call
+    strip on canonical sources blocks.
+    """
+
+    def test_strip_removes_canonical_references_block(self):
+        """Document the current behaviour: strip removes the LAST sources
+        heading. Callers in research_service.py must therefore not invoke
+        strip AFTER langgraph_agent_strategy._finalize has appended the
+        canonical `## 参考文献` block, otherwise the user's final report
+        has no references block (research d620e6f5 regression).
+        """
+        from local_deep_research.text_optimization.citation_formatter import (
+            strip_per_section_sources_block,
+        )
+
+        canonical_block = (
+            "# Research\n\n"
+            "正文 [[1]](https://a.com/1)。\n"
+            "\n"
+            "## 参考文献\n\n"
+            "[1] Title (source nr: 1)\n"
+            "   URL: https://a.com/1\n"
+        )
+        stripped = strip_per_section_sources_block(canonical_block)
+        assert "## 参考文献" not in stripped, (
+            "Canonical sources block must NOT be in stripped output — "
+            "the caller should not have invoked strip. If this fails, "
+            "research d620e6f5 regression has returned."
+        )
+        # Verify the strip only stripped the trailing block, not body content
+        assert "正文" in stripped
