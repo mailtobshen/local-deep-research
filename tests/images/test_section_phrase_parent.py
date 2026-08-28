@@ -52,8 +52,11 @@ def test_canonical_section_phrase_includes_parent():
     assert "主题园区与核心设施" in phrase
 
 
-def test_canonical_section_phrase_without_parent_unchanged():
+def test_canonical_section_phrase_without_parent_ignores_entities():
+    # 2026-08-28: entities no longer concatenated (was diluting cosine
+    # similarity in research 199acec3). Without a parent, the phrase
+    # is just the heading.
     phrase = _canonical_section_phrase(
         "Some Section", entities=["e1"], parent_heading=""
     )
-    assert "Some Section" in phrase and "e1" in phrase
+    assert phrase == "Some Section"

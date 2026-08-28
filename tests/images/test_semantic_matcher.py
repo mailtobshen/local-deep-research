@@ -198,9 +198,15 @@ def test_build_report_entity_pool_handles_mixed_languages():
 # _canonical_section_phrase
 # ---------------------------------------------------------------------------
 
-def test_canonical_section_phrase_joins_heading_and_entities():
-    assert _canonical_section_phrase("故宫", ["故宫", "紫禁城", "明清两代"]) == \
-        "故宫 故宫 紫禁城 明清两代"
+def test_canonical_section_phrase_ignores_entities():
+    # 2026-08-28 (research 199acec3): entity list diluted cosine
+    # similarity — for sec=9 '三、（六）上海新天地与田子坊' the entities
+    # ['田子坊','天地','小店','上海新',...] pulled the heading-only
+    # similarity from 0.40 toward generic "Shanghai city" semantics.
+    # Heading + parent alone is the right input — entities now ignored.
+    assert _canonical_section_phrase(
+        "故宫", ["故宫", "紫禁城", "明清两代"]
+    ) == "故宫"
 
 
 def test_canonical_section_phrase_empty_when_both_empty():
@@ -211,8 +217,9 @@ def test_canonical_section_phrase_heading_only():
     assert _canonical_section_phrase("故宫", []) == "故宫"
 
 
-def test_canonical_section_phrase_entities_only():
-    assert _canonical_section_phrase("", ["故宫", "紫禁城"]) == "故宫 紫禁城"
+def test_canonical_section_phrase_entities_only_ignored():
+    # Empty heading → empty result regardless of entities (callers skip).
+    assert _canonical_section_phrase("", ["故宫", "紫禁城"]) == ""
 
 
 # ---------------------------------------------------------------------------

@@ -230,18 +230,24 @@ def _canonical_section_phrase(
 ) -> str:
     """Build the text the embedding model encodes for one section.
 
-    Heading contributes section topic; the entity list contributes
-    domain terms; ``parent_heading`` (the nearest preceding higher-
-    level heading) gives entity-poor subsections like '主题园区与核心
-    设施' the context of their parent ('上海迪士尼乐园'). Empty inputs
-    return ``""`` and the caller should skip embedding for that section.
+    Heading contributes section topic; ``parent_heading`` (the nearest
+    preceding higher-level heading) gives entity-poor subsections like
+    '主题园区与核心设施' the context of their parent ('上海迪士尼乐园').
+    Entity list is intentionally NOT concatenated — observed 2026-08-28
+    (research 199acec3): for sec=9 '三、（六）上海新天地与田子坊' with
+    entities=['田子坊','天地','小店','上海新','照打卡',...], the alt
+    '上海新天地' scored 0.40 — the entity list (esp. '田子坊','小店',
+    '拍照打卡') diluted the cosine similarity between alt and the
+    heading-only phrase. Removing entities gives the heading+parent
+    phrase alone, which scores much higher because the heading itself
+    contains the alt term. Empty inputs return ``""`` and the caller
+    should skip embedding for that section.
     """
     parts: list[str] = []
     if parent_heading:
         parts.append(parent_heading)
     if heading:
         parts.append(heading)
-    parts.extend(entities)
     return " ".join(parts).strip()
 
 

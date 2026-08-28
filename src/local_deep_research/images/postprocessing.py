@@ -519,8 +519,15 @@ def enhance_report_with_images(
         levels = _section_levels(clean_markdown)
         entity_pool = semantic_matcher.build_report_entity_pool(clean_markdown)
         section_phrases: dict[int, str] = {}
+        # 2026-08-28 (research 199acec3): the previous "skip if no
+        # entities" gate left entity-poor subsections (e.g. "（四）南
+        # 京路步行街：中华商业第一街" with no extracted entities) with
+        # NO cosine scoring at all — even heading-only phrase was
+        # rejected. The new canonical-section-phrase ignores entities
+        # entirely (semantic_matcher.py:228-241), so we always call
+        # it when a heading exists.
         for sidx, entities in entity_pool.items():
-            if sidx >= len(sections) or not entities:
+            if sidx >= len(sections):
                 continue
             parent = _find_parent_heading(sections, levels, sidx)
             phrase = semantic_matcher._canonical_section_phrase(
