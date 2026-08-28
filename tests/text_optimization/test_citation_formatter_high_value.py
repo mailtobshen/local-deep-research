@@ -242,7 +242,11 @@ class TestFormatNumberHyperlinks:
         result = self.fmt._format_number_hyperlinks(
             "See [1] for details.", sources
         )
-        assert "[[1]](https://example.com)" in result
+        # cite_link_text() escapes the inner brackets (9b514fa0) so the
+        # rendered body shows "[1]" — link text is literal \[1\] in the
+        # markdown source. See TestFormatDocumentIdempotent and the
+        # test_citation_formatter_edge_cases.py suite for the same form.
+        assert "[\\[1\\]](https://example.com)" in result
 
     def test_source_without_url_unchanged(self):
         sources = {"1": ("Title", "")}
@@ -257,7 +261,8 @@ class TestFormatNumberHyperlinks:
         result = self.fmt._format_number_hyperlinks(
             "According to Source 1.", sources
         )
-        assert "[[1]](https://example.com)" in result
+        # cite_link_text() escapes the inner brackets (9b514fa0).
+        assert "[\\[1\\]](https://example.com)" in result
 
 
 # ---------------------------------------------------------------------------
