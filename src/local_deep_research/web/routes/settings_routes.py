@@ -1175,6 +1175,27 @@ def api_get_available_models():
             ]
         )
 
+        # Region-blocked / rate-limited providers are hidden from the
+        # research-form dropdown. Each of these fails its availability
+        # probe from this deployment (OpenAI 403
+        # unsupported_country_region_territory; Anthropic unreachable
+        # through the proxy chain; Google 400), and showing them only
+        # yields an empty model list and wasted probe latency on every
+        # dropdown refresh. Configure via LDR_HIDDEN_LLM_PROVIDERS
+        # (comma-separated provider keys) to override.
+        import os
+
+        hidden = {
+            k.strip().upper()
+            for k in os.environ.get(
+                "LDR_HIDDEN_LLM_PROVIDERS", "OPENAI,ANTHROPIC,GOOGLE"
+            ).split(",")
+            if k.strip()
+        }
+        provider_options = [
+            o for o in provider_options if o.get("value", "").upper() not in hidden
+        ]
+
         # Available models by provider
         providers: dict[str, Any] = {}
 
