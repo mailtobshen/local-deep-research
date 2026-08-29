@@ -141,6 +141,7 @@ class IntegratedReportGenerator:
                 "summary": "# 研究摘要",
                 "sources": "## 参考文献",
                 "empty_subsection": "*本节暂未检索到足够信息。*\n",
+                "no_results_subsection": "*本小节未检索到可靠信息。*\n",
                 "summary_lines": [
                     "本报告使用高级搜索系统完成研究。",
                     "研究过程中针对每个章节与子小节进行了定向检索。",
@@ -153,6 +154,9 @@ class IntegratedReportGenerator:
             "sources": "## Sources",
             "empty_subsection": (
                 "*Limited information was found for this subsection.*\n"
+            ),
+            "no_results_subsection": (
+                "*No reliable information was found on this specific point.*\n"
             ),
             "summary_lines": [
                 "This report was researched using an advanced search system.",
@@ -438,6 +442,109 @@ class IntegratedReportGenerator:
             "=== END OF OUTPUT RULES ===\n\n"
         )
 
+    # Markers whose presence in generated content means the LLM echoed
+    # its own prompt (or a prompt-context fence) into the body. Small
+    # local models do this when a section's research material is thin
+    # (verified 2026-08-29, research afdd3cf7: the saved report carried
+    # "Research task:", "=== OUTPUT RULES ... ===", "=== INLINE
+    # CITATIONS ... ===", "CRITICAL:", and the CONTENT ALREADY WRITTEN
+    # context fence as literal body text). A line carrying any of these
+    # markers is process information, never report content — drop the
+    # line (not just the marker) so half-sentences don't survive.
+    _PROMPT_ECHO_LINE_MARKERS = (
+        "Research task:",
+        "=== OUTPUT RULES",
+        "=== END OF OUTPUT RULES",
+        "=== INLINE CITATIONS",
+        "=== END OF INLINE CITATIONS",
+        "=== CONTENT ALREADY WRITTEN",
+        "=== END OF PREVIOUS CONTENT",
+        "CRITICAL: The above content",
+        "This is a standalone section requiring",
+        "Focus ONLY on information specific to your subsection",
+        "IMPORTANT: Avoid repeating information",
+    )
+
+    # Whole-block leak: a section heading the LLM writes to narrate its
+    # own sourcing, plus the body that follows it (up to the next blank
+    # line). Nothing in that narration is research content.
+    _SOURCING_NOTE_HEADINGS = (
+        "五、参考资料说明",
+        "四、参考资料说明",
+        "## 参考资料说明",
+        "## 参考文献标注说明",
+        "参考资料说明",
+    )
+
+    # The strategy's no-results sentinel (langgraph_agent_strategy
+    # "## 未搜索到相关结果" block) is a whole-run user-facing message.
+    # When it lands as ONE subsection's body it reads as process
+    # chatter; replace the whole block with a single brief notice.
+    _NO_RESULTS_SENTINEL_MARKERS = (
+        "未搜索到相关结果",
+        "本次研究主动停止",
+        "engines-darkweb.yml",
+    )
+
+    def _strip_process_leakage(self, content: str) -> str:
+        """Remove process/LLM-prompt leakage from generated section text.
+
+        Called on every ``current_knowledge`` before it enters the
+        report body (and therefore before it re-enters the NEXT
+        section's "CONTENT ALREADY WRITTEN" context, which is how one
+        echo propagated into every later section in afdd3cf7). Clean
+        content passes through unchanged, byte-for-byte.
+        """
+        if not content:
+            return content
+        # Whole-block replacement first: the no-results sentinel.
+        marker_hits = sum(
+            1 for m in self._NO_RESULTS_SENTINEL_MARKERS if m in content
+        )
+        if marker_hits >= 2:
+            headings = self._get_chapter_headings()
+            return headings.get(
+                "no_results_subsection",
+                "*No reliable information was found on this specific point.*",
+            )
+        lines = content.split("\n")
+        kept: list[str] = []
+        skipping_note_block = False
+        for line in lines:
+            stripped = line.strip()
+            if skipping_note_block:
+                # The sourcing-note heading is dropped along with its
+                # narration paragraph: stop skipping at a blank line
+                # (paragraph end) or the next heading.
+                if not stripped or stripped.startswith("#"):
+                    skipping_note_block = False
+                    if not stripped:
+                        continue
+                else:
+                    continue
+            if any(
+                m in line for m in self._PROMPT_ECHO_LINE_MARKERS
+            ):
+                continue
+            heading_hit = next(
+                (
+                    h
+                    for h in self._SOURCING_NOTE_HEADINGS
+                    if stripped == h or stripped.startswith(h)
+                ),
+                None,
+            )
+            if heading_hit is not None:
+                # Drop the heading line; skip its narration paragraph.
+                if stripped == heading_hit or stripped.startswith(
+                    heading_hit
+                ):
+                    skipping_note_block = True
+                    continue
+            kept.append(line)
+        return "\n".join(kept)
+
+
     def _research_and_generate_sections(
         self,
         initial_findings: Dict,
@@ -701,9 +808,16 @@ class IntegratedReportGenerator:
                 else:
                     section_documents_per_subsection.append([])
 
-                # Add the researched content for this subsection
+                # Add the researched content for this subsection.
+                # _strip_process_leakage removes prompt echoes and the
+                # no-results sentinel BEFORE the text enters the body
+                # (and before it is recycled into the next section's
+                # CONTENT ALREADY WRITTEN context — the propagation
+                # path in research afdd3cf7).
                 if subsection_results.get("current_knowledge"):
-                    generated_content = subsection_results["current_knowledge"]
+                    generated_content = self._strip_process_leakage(
+                        subsection_results["current_knowledge"]
+                    )
                     section_content.append(generated_content)
                     # Accumulate for context in subsequent sections
                     accumulated_findings.append(
