@@ -7,6 +7,8 @@ Extraction is handled by the shared pipeline in extraction/pipeline.py.
 
 from typing import Optional, Dict, Any
 from urllib.parse import urlparse
+import re
+
 import requests
 from loguru import logger
 from bs4 import BeautifulSoup
@@ -156,6 +158,44 @@ class HTMLDownloader(BaseDownloader):
         except Exception:
             logger.exception(f"Failed to download HTML from {url}")
             return None, None
+
+    @staticmethod
+    def _decode_body(response: requests.Response, url: str) -> str:
+        """Decode the response body honouring the page's real charset.
+
+        Servers that omit a ``charset`` in the Content-Type header make
+        requests fall back to ISO-8859-1 per RFC 2616, which mojibakes
+        UTF-8 pages (verified 2026-08-29 on
+        https://www.president.gov.tw/Page/694: title decoded as
+        ``è³´æ¸å¾·ç¸½çµ±`` instead of ``賴清德總統``). Re-decode from
+        the raw bytes using, in order: the HTML ``<meta charset>``
+        declaration, chardet's ``apparent_encoding``, falling back to
+        the response's declared encoding then UTF-8 with replacement.
+        """
+        encoding = (response.encoding or "").lower()
+        if encoding == "utf-8":
+            return response.text
+        body = response.content
+        meta_charset = None
+        head = body[:4096].decode("ascii", errors="ignore").lower()
+        m = re.search(r'charset=["\']?([\w-]+)', head)
+        if m:
+            meta_charset = m.group(1)
+        for candidate in (
+            meta_charset,
+            response.apparent_encoding,
+        ):
+            if candidate:
+                try:
+                    return body.decode(candidate)
+                except (UnicodeDecodeError, LookupError):
+                    continue
+        if encoding:
+            try:
+                return body.decode(encoding)
+            except (UnicodeDecodeError, LookupError):
+                pass
+        return body.decode("utf-8", errors="replace")
 
     def _fetch_html(self, url: str) -> Optional[str]:
         """Fetch raw HTML content from URL."""
@@ -342,7 +382,7 @@ class HTMLDownloader(BaseDownloader):
                 # Circuit breaker: success resets the host's counter.
                 if is_onion_url:
                     self._onion_host_fails.pop(host, None)
-                return response.text
+                return self._decode_body(response, url)
             # Non-HTML 200 -- common on darkweb (binary, captcha
             # challenge, JS-only page that returns 1-line stub).
             logger.warning(

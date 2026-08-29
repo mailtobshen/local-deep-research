@@ -26,7 +26,7 @@ in-strategy implementation, so downstream prompt formatting is unchanged.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Optional
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.tools import tool
@@ -390,12 +390,34 @@ def _make_summary_fetch_tool(
                     fmt_kwargs["overall_query"] = overall_query
                 prompt = template.format(**fmt_kwargs)
 
-                try:
-                    summary_msg = model.invoke(prompt)
-                    summary = getattr(
-                        summary_msg, "content", str(summary_msg)
-                    ).strip()
-                except Exception as exc:
+                # The summarizer LLM streams its response; a dropped
+                # proxy/TCP connection mid-stream surfaces as a
+                # JSONDecodeError from the Ollama client's line parser
+                # (verified 2026-08-29 on research 6216a2f2:
+                # "Unterminated string starting at: line 1 column
+                # 126" while summarizing president.gov.tw — the page
+                # itself fetched fine). Transient by nature: retry
+                # once before giving up.
+                summary = None
+                last_exc: Optional[Exception] = None
+                for attempt in (1, 2):
+                    try:
+                        summary_msg = model.invoke(prompt)
+                        summary = getattr(
+                            summary_msg, "content", str(summary_msg)
+                        ).strip()
+                        last_exc = None
+                        break
+                    except Exception as exc:
+                        last_exc = exc
+                        if attempt == 1:
+                            logger.warning(
+                                f"[OBS-B] SUMMARY_RETRY url={url} "
+                                f"attempt=1/2 exc_type={type(exc).__name__} "
+                                f"err={(str(exc) or '')[:200]!r}"
+                            )
+                if last_exc is not None or summary is None:
+                    exc = last_exc or RuntimeError("empty summary")
                     # OBS-B: summarizer-LLM exception (distinct from
                     # ContentFetcher exception above — the page may have
                     # been fetched fine but the LLM summarise step blew
