@@ -541,43 +541,24 @@ def _deferred_image_fill(
     settings_snapshot: dict,
     progress_callback=None,
 ) -> int:
-    """One-pass image fill for the cited URLs of a finalized report.
+    """One-pass image fetch for the cited URLs of a FINALIZED report.
 
-    Replaces the previous per-LLM-round ``_ensure_images_for_results``
-    fetch loop, which dominated research walltime on langgraph runs
-    (the Shanghai 2026-08-03 study spent ~7 hours scraping ~80-200
-    pages per LLM reasoning round for 22 rounds, while the langgraph
-    agent itself only wanted the text snippets).
+    2026-08-29 reorder: this pass now runs AFTER sources_enforce +
+    citation_format. The finalized References block is the single
+    source of truth for the fetch set — the previous Plan B filter
+    (membership check against ``findings[].search_results[]``) is
+    REMOVED from the image path because detailed-mode reports cite
+    URLs that drifted from the raw search-results set (research
+    6216a2f2: 32/32 cited URLs dropped, 0 images fetched). The
+    html_content already-fetched bookkeeping is likewise gone: every
+    body-cited URL is fetched unconditionally in this single pass
+    and payloads are returned to the caller via
+    ``results["_image_fetch_html"]`` for
+    ``enhance_report_with_images`` (fetched_html channel).
 
-    New contract:
-
-    1. Run AFTER the markdown report + ``## Sources`` block are
-       finalised (i.e. after ``report_generator.generate_report`` in
-       quick mode or after the detailed-mode per-subsection assembly
-       in detailed mode) and BEFORE
-       ``enhance_report_with_images``.
-    2. Parse the report's ``## Sources`` block to extract the LLM-
-       cited URL set (``num_to_url`` keys), exactly the same set
-       ``build_citation_index`` will use downstream.
-    3. Fetch images (Playwright first, Firecrawl fallback per URL)
-       for every cited URL whose ``html_content`` slot in
-       ``results["findings"][].search_results[]`` is still empty.
-       URLs that already have ``html_content`` from earlier text
-       fetches are left untouched.
-    4. JSON-serialize the per-URL image list and write it back to
-       the matching ``search_results`` record so
-       ``enhance_report_with_images``'s ``build_citation_index``
-       finds the populated ``url_to_html`` map and proceeds.
-
-    Returns the count of cited URLs whose ``html_content`` was
-    filled in this pass. ``0`` is normal when the LLM never
-    cited a URL, when ``report.enable_images`` is off, or when
-    every cited URL was already fetched for text. Errors at the
-    fetch / serialization level are downgraded to debug logs so
-    a partial fill does not fail the whole research.
+    Returns ``{url: serialized_images}`` count — the number of URLs
+    whose fetched payload is available to the enhancement stage.
     """
-    # Only meaningful when images are enabled — the caller should
-    # gate on the same setting the postprocessing gate uses.
     from ...config.thread_settings import get_setting_from_snapshot
 
     if not get_setting_from_snapshot(
@@ -589,33 +570,16 @@ def _deferred_image_fill(
         )
         return 0
 
-    # 1. Parse the cited URL set out of the finalised report.
-    try:
-        from ...advanced_search_system.strategies.langgraph_agent_strategy import (
-            _parse_sources_markdown_urls,
-        )
-    except Exception:
-        _parse_sources_markdown_urls = None  # type: ignore[assignment]
-
-    # Build the cited-URL set AND the per-URL citation-number map.
-    # We always go through ``build_citation_index`` (which is cheap
-    # and reuses the existing infrastructure) so the deferred pass
-    # has the (cite_num, ref_url) pair per URL available to emit on
-    # the DEFERRED_FETCHED_IMG / DEFERRED_FILLED log lines.
+    # 1. Parse the cited-URL set out of the FINALIZED References
+    #    block. build_citation_index gives (num_to_url,
+    #    section_to_nums); the results argument is only used for the
+    #    legacy url_to_html table which this pass no longer reads.
     try:
         from ...images.relevance import build_citation_index
 
-        num_to_url, section_to_nums, url_to_html = build_citation_index(
+        num_to_url, section_to_nums, _ = build_citation_index(
             final_markdown, results
         )
-        # 2026-08-25 (research 610f5486): converge the fetch set to
-        # sources the BODY actually cites. num_to_url covers every
-        # Sources-block row; when the LLM leans on 2 of 57 rows the
-        # fill pass still scraped 31 URLs (8.4 min) whose material
-        # could never be placed. Union of section_to_nums is the set
-        # of numbers with an inline marker; rows without one are
-        # dropped from the fetch set only (the rendered Sources block
-        # is untouched — same contract as the Plan-B filter below).
         body_cited_nums = {
             n for nums in section_to_nums.values() for n in nums
         }
@@ -632,60 +596,13 @@ def _deferred_image_fill(
                 f"reason=body_cite_convergence"
             )
         elif num_to_url:
-            # 2026-08-25 (research 860c9362): the body has ZERO inline
-            # citations (LLM refused to cite / retry failed). Every
-            # fetched page's material is unplaceable — the image bank
-            # binds exclusively via body cite markers, so
-            # ELIGIBLE_BANK is guaranteed 0. Skip the network pass
-            # entirely (that run spent 17.7 min scraping 31 URLs for
-            # nothing) and let the postprocessing stage report
-            # BANK_EMPTY with its own diagnostics.
             logger.info(
                 f"[IMG-TRACE] DEFERRED_FILL research={research_id} "
                 f"skipped reason=no_body_citations "
                 f"rows={len(num_to_url)}"
             )
             return 0
-        # Plan B: drop LLM-hallucinated URLs that are not in the real
-        # search results set. The LLM is free to cite URLs in
-        # ``## Sources`` that never came back from the search engine
-        # — typically hallucinated darkweb marketplace / forum URLs
-        # generated from the LLM's pretraining. Verified 2026-08-20
-        # on research d2ac1028: 216 cited URLs but only 155 unique,
-        # 0 OBS-A hits — the LLM is generating most of the
-        # ``## Sources`` entries from memory. Without this filter the
-        # deferred image fill would point at URLs that the search
-        # engine never returned, all of which fail to fetch, masking
-        # the real failure modes in the OBS-G / OBS-F probe stream.
-        # The filter does NOT delete LLM-cited URLs from the
-        # rendered markdown — only from the *fetch set* the image
-        # pass iterates over, so the user-visible Sources block
-        # keeps every entry the LLM wrote.
-        real_search_urls: set[str] = set()
-        for finding in results.get("findings", []) or []:
-            for sr in finding.get("search_results", []) or []:
-                u = sr.get("url") or sr.get("link")
-                if u:
-                    real_search_urls.add(u)
-        if real_search_urls:
-            before_count = len(num_to_url)
-            num_to_url = {
-                num: url
-                for num, url in num_to_url.items()
-                if url in real_search_urls
-            }
-            dropped = before_count - len(num_to_url)
-            if dropped:
-                logger.warning(
-                    f"[CITATION-DEDUP] dropped {dropped} LLM-cited URLs "
-                    f"not in search results "
-                    f"(num_to_url: {before_count} -> {len(num_to_url)})"
-                )
         cited_urls = set(num_to_url.values())
-        # Per-URL inverse: {url: citation_number_str}. One URL
-        # may appear under multiple cite numbers in pathological
-        # cases (e.g. LLM cites the same source twice); we keep
-        # the first occurrence (insertion order in Python 3.7+).
         _url_to_cite_num: dict[str, str] = {}
         for num, url in num_to_url.items():
             if url not in _url_to_cite_num:
@@ -696,11 +613,6 @@ def _deferred_image_fill(
         )
         cited_urls = set()
         _url_to_cite_num = {}
-        # Mirror the success-path binding so the downstream
-        # _split_cited_urls call site doesn't NameError if
-        # build_citation_index raised. An empty map is the right
-        # value here — every cited URL needs a fetch.
-        url_to_html = {}
 
     if not cited_urls:
         logger.info(
@@ -709,30 +621,11 @@ def _deferred_image_fill(
         )
         return 0
 
-    # 2. Compute covered/gap from the same source build_citation_index
-    # used downstream. Pre-#3 the loop iterated search_results[]
-    # only, which gave `already_html=2 / to_fetch=0` even when 9
-    # subsections had fetched cited URLs but only the last survived
-    # the per-subsection reset() (e2ec21ad 2026-08-05).
-    # url_to_html is the truth — covered + gap == len(cited_urls)
-    # always holds.
-    url_already_has_html, urls_to_fetch = _split_cited_urls(
-        cited_urls, url_to_html
-    )
-    # Invariant check — log a loud warning if the inputs are inconsistent
-    # rather than silently producing self-contradicting counts.
-    total = len(cited_urls)
-    cov = len(url_already_has_html)
-    gap = len(urls_to_fetch)
-    if cov + gap != total:
-        logger.warning(
-            f"[IMG-TRACE] DEFERRED_FILL invariant_violated research={research_id} "
-            f"cited={total} covered={cov} gap={gap} sum={cov+gap}"
-        )
     logger.info(
         f"[IMG-TRACE] DEFERRED_FILL research={research_id} "
-        f"cited={total} covered={cov} gap={gap}"
+        f"cited={len(cited_urls)} (post-enforce References-direct pass)"
     )
+    urls_to_fetch = sorted(cited_urls)
     # Filter out structural no-image domains BEFORE fetching. These
     # domains' HTML has no extractable <img> (social/video JS-injected
     # media, document previews). Skipping them saves network + the
@@ -847,23 +740,15 @@ def _deferred_image_fill(
         )
         return 0
 
-    # 4. Serialise + write back to ``search_results[].html_content``.
+    # 4. Serialise + hand payloads to the enhancement stage directly
+    #    via results["_image_fetch_html"]. No search_results[]
+    #    backwrite, no canonical-attach pass — the finalized
+    #    References block is the single join key downstream.
+    fetched_html: dict[str, str] = {}
     filled = 0
     for url, entry in (data or {}).items():
         images = (entry or {}).get("images", []) if entry else []
         text = (entry or {}).get("text") if entry else None
-        # Build the attach payload. Two sources:
-        #   - images present (normal path): dumps_images(images) — JSON
-        #     list of ExtractedImage for the image-enhancement gate.
-        #   - images empty BUT text non-empty (degenerate page like
-        #     darkweb forums with no <img>): fall back to the raw
-        #     text payload so url_to_html still gets populated and
-        #     build_citation_index sees html_covered > 0. Without
-        #     this fallback the BANK_EMPTY gate fires even when the
-        #     fetch pipeline ran cleanly (verified 2026-08-20 on
-        #     research 2a603351: 193/193 .onion URLs fetched with
-        #     text but no images, all skipped by the old
-        #     `if not images: continue`).
         payload: Optional[str] = None
         if images:
             try:
@@ -874,60 +759,20 @@ def _deferred_image_fill(
                 )
                 continue
         elif text:
-            # Text-only page (no <img> survived extraction). Write a
-            # canonical EMPTY image list, not the raw markdown: the
-            # only downstream consumer of html_content is
-            # loads_images, which expects image JSON and logs a
-            # JSONDecodeError warning for every text payload
-            # (observed 2026-08-21 research 46976715: 3 LONELY ROAD
-            # pages produced LOADS_FAIL noise). "[]" is still a
-            # truthy string, so url_to_html keeps the URL and
-            # html_covered>0 semantics from d7866f38 intact.
             payload = "[]"
         else:
-            # OBS-F: per-URL zero-images probe. fetch_content_with_images
-            # returned the URL with empty images AND empty text — the
-            # fetch pipeline ran end-to-end without error yet produced
-            # nothing attachable. Silent `continue` previously left
-            # this class invisible, indistinguishable from "fetch
-            # raised" or "URL was never attempted". One grep over
-            # `[OBS-F] DEFERRED_FETCH_EMPTY` lists every URL that
-            # entered the pipeline and came out empty, tagged with
-            # cite_num so the operator can map back to report [[N]].
-            #
-            # text_len fields partition the failure modes:
-            #   text_len=0  text=None — Playwright/firecrawl failed
-            #                            (verify via=none per-URL
-            #                            [IMG-TRACE] url= event).
-            #   text_len=N  text=real string — HTML fetched but
-            #                                 extract_images found no
-            #                                 <img> (page genuinely
-            #                                 image-free).
-            # The d7866f38 fix promotes entry[text] to html_content
-            # so the text_len=N case flows into url_to_html and
-            # build_citation_index's html gate.
+            # OBS-F probe kept: URL entered the pipeline and came out
+            # with neither images nor text.
             cite_num_for_empty = _url_to_cite_num.get(url, "-")
             text_len = len(text) if isinstance(text, str) else 0
             logger.info(
                 f"[OBS-F] DEFERRED_FETCH_EMPTY research={research_id} "
                 f"url={url} cite_num={cite_num_for_empty} "
-                f"reason=no_images_no_text text_len={text_len} "
-                f"entry_keys={list((entry or {}).keys())}"
+                f"reason=no_images_no_text text_len={text_len}"
             )
             continue
-        # Per-URL summary that records the cite_num + ref_url
-        # association we know about (extracted from the
-        # ``## Sources`` block before the fetch ran) plus the count
-        # of images attached. A log consumer can union this with
-        # the per-image DEFERRED_FETCHED_IMG lines below to get
-        # the (alt, source_url, ref_url, cite_num) tuple per image.
         cite_num_for_url = _url_to_cite_num.get(url, "-")
-        # Per-image DEFERRED_FETCHED_IMG so the deferred pass leaves
-        # the same five-key trail as the other IMG-TRACE stages.
-        # ``cite_num`` is unknown at fetch time, ``ref_url`` is the
-        # URL itself (== the cited reference page that the agent
-        # will reference). ``img_source_url`` is the page the image
-        # was extracted from (= ref_url in this single-pass case).
+        # Per-image five-key trail (unchanged schema).
         for img in images:
             logger.info(
                 f"[IMG-TRACE] DEFERRED_FETCHED_IMG research={research_id} "
@@ -937,149 +782,24 @@ def _deferred_image_fill(
                 f"cite_num={cite_num_for_url} "
                 f"ref_url={url}"
             )
-        # Darkweb-only cite-URL bind rollup. One line per (cite, url)
-        # pair so a single grep recovers the bind table. Gated on
-        # the URL itself — by definition, all .onion runs surface
-        # .onion URLs here so the gate is exact.
-        from local_deep_research.utilities.is_darkweb_url import (
-            is_darkweb_url,
+        fetched_html[url] = payload
+        filled += 1
+        alts_repr = ", ".join(
+            repr((getattr(img, "alt", "") or "")) for img in images
         )
-        if is_darkweb_url(url):
-            logger.info(
-                f"[IMG-TRACE-DARKWEB] CITEBIND research={research_id} "
-                f"cite_num={cite_num_for_url} ref_url={url} "
-                f"bound={len(images)}"
-            )
-        canonical_hit: str | None = None
-        attached = False
-        findings_scanned = 0
-        for finding in results.get("findings", []) or []:
-            for sr in finding.get("search_results", []) or []:
-                findings_scanned += 1
-                sr_url = sr.get("url") or sr.get("link") or ""
-                if sr_url != url:
-                    continue
-                sr["html_content"] = payload
-                attached = True
-        # Also write the cumulative cross-subsection list. In detailed
-        # mode ``collector.reset()`` clears ``_results`` between
-        # subsections, so a cited URL often survives ONLY here.
-        # ``build_citation_index`` already READS this list (relevance.py
-        # "Merge in the cross-subsection cumulative list (fix #1+#6)");
-        # writing it keeps the read and write surfaces symmetric.
-        all_links_scanned = 0
-        for record in results.get("all_links_of_system") or []:
-            all_links_scanned += 1
-            rec_url = record.get("link") or record.get("url") or ""
-            if rec_url != url:
-                continue
-            record["html_content"] = payload
-            attached = True
-        if not attached:
-            # Canonical pass: promote same-origin detection (previously
-            # observe-only NEAR_MATCH) to an attach criterion. Only runs
-            # when no exact match was found. First canonical-equal record
-            # wins; ``filled`` still counts this citation at most once
-            # because ``attached`` gates the ``filled += 1`` below.
-            from ...images.relevance import _canonicalize_url
-            ref_canon = _canonicalize_url(url)
-            if ref_canon:
-                for finding in results.get("findings", []) or []:
-                    for sr in finding.get("search_results", []) or []:
-                        cand = sr.get("url") or sr.get("link") or ""
-                        if cand and cand != url and _canonicalize_url(cand) == ref_canon:
-                            sr["html_content"] = payload
-                            canonical_hit = cand
-                            attached = True
-                            break
-                    if canonical_hit:
-                        break
-                if canonical_hit is None:
-                    for record in results.get("all_links_of_system") or []:
-                        cand = record.get("link") or record.get("url") or ""
-                        if cand and cand != url and _canonicalize_url(cand) == ref_canon:
-                            record["html_content"] = payload
-                            canonical_hit = cand
-                            attached = True
-                            break
-        if not attached:
-            # Fetched images with nowhere to put them. Records the
-            # candidate-set sizes so a reader can tell "no records at
-            # all" from "records present but no URL matched".
-            logger.info(
-                f"[IMG-TRACE] ATTACH_MISS research={research_id} "
-                f"cite_num={cite_num_for_url} "
-                f"ref_url={url} "
-                f"findings_scanned={findings_scanned} "
-                f"all_links_scanned={all_links_scanned}"
-            )
-            # Observe-only diagnostic: was there a canonical
-            # near-neighbor the canonical pass still refused? Under the
-            # new same-origin-attach semantics this fires only for
-            # exotic drifts the canonical rule does not cover.
-            from ...images.relevance import _canonicalize_url
-            ref_canon = _canonicalize_url(url)
-            near_match: str | None = None
-            if ref_canon:
-                for finding in results.get("findings", []) or []:
-                    for sr in finding.get("search_results", []) or []:
-                        cand = sr.get("url") or sr.get("link") or ""
-                        if cand and cand != url and _canonicalize_url(cand) == ref_canon:
-                            near_match = cand
-                            break
-                    if near_match:
-                        break
-                if near_match is None:
-                    for record in results.get("all_links_of_system") or []:
-                        cand = record.get("link") or record.get("url") or ""
-                        if cand and cand != url and _canonicalize_url(cand) == ref_canon:
-                            near_match = cand
-                            break
-            if near_match is not None:
-                via = _classify_url_diff(url, near_match)
-                logger.info(
-                    f"[IMG-TRACE] ATTACH_NEAR_MATCH research={research_id} "
-                    f"cite_num={cite_num_for_url} ref_url={url} "
-                    f"canonical_match_url={near_match} via={via}"
-                )
-        if attached:
-            filled += 1
-            if canonical_hit is not None:
-                # Same-origin attach via canonical equality (exact match
-                # found nothing). Records the record-side URL and the
-                # classified raw difference so a reader can see why the
-                # exact pass missed.
-                via = _classify_url_diff(url, canonical_hit)
-                logger.info(
-                    f"[IMG-TRACE] ATTACH_CANONICAL research={research_id} "
-                    f"cite_num={cite_num_for_url} ref_url={url} "
-                    f"record_url={canonical_hit} via={via}"
-                )
-            # Summary event — carries the full four-field vocabulary
-            # the user asked for (cite_num, ref_url, img_source_url,
-            # img_alt) so a single grep ``DEFERRED_FILLED`` line tells
-            # you the citation number, the reference URL, the page
-            # the images came from, and the alt text of every image
-            # that was attached. The per-image ``DEFERRED_FETCHED_IMG``
-            # lines above carry the same fields one image at a time;
-            # this is the at-a-glance summary.
-            alts_repr = ", ".join(
-                repr((getattr(img, "alt", "") or ""))
-                for img in images
-            )
-            src_url = (
-                getattr(images[0], "source_url", "")
-                if images
-                else url
-            )
-            logger.info(
-                f"[IMG-TRACE] DEFERRED_FILLED research={research_id} "
-                f"img_alt_count={len(images)} "
-                f"img_source_url={src_url} "
-                f"img_alt=[{alts_repr}] "
-                f"cite_num={cite_num_for_url} "
-                f"ref_url={url}"
-            )
+        src_url = (
+            getattr(images[0], "source_url", "") if images else url
+        )
+        logger.info(
+            f"[IMG-TRACE] DEFERRED_FILLED research={research_id} "
+            f"img_alt_count={len(images)} "
+            f"img_source_url={src_url} "
+            f"img_alt=[{alts_repr}] "
+            f"cite_num={cite_num_for_url} "
+            f"ref_url={url}"
+        )
+    # Publish the channel for enhance_report_with_images.
+    results["_image_fetch_html"] = fetched_html
     logger.info(
         f"[IMG-TRACE] DEFERRED_FILL research={research_id} done "
         f"filled={filled}/{len(urls_to_fetch)}"
@@ -2073,70 +1793,6 @@ def run_research_process(research_id, query, mode, **kwargs):
                         len(clean_markdown),
                     )
 
-                    # === Image post-processing (gated by report.enable_images) ===
-                    try:
-                        from ...images.postprocessing import (
-                            enhance_report_with_images,
-                        )
-                        with _open_image_enhancer_session(
-                            username, settings_snapshot
-                        ) as (img_args, img_db_session):
-                            if not img_args["enable_images"]:
-                                logger.info(
-                                    f"[IMG-TRACE] SKIP research={research_id} "
-                                    f"reason=enable_images=False"
-                                )
-                            else:
-                                # Deferred image fill: scrape the cited
-                                # source pages once, AFTER the report
-                                # is finalised, and attach the
-                                # extracted images to
-                                # ``search_results[].html_content``
-                                # so the postprocessing stage finds
-                                # them via ``build_citation_index``.
-                                # This replaces the per-LLM-round
-                                # image-fill that previously ran
-                                # inside the langgraph agent loop
-                                # and dominated research walltime
-                                # (~7 h on the 2026-08-03 Shanghai
-                                # run).
-                                #
-                                # Inject the cross-subsection
-                                # cumulative all_links_of_system
-                                # so build_citation_index sees
-                                # fetch results from every
-                                # subsection, not just the last
-                                # one (fix #1+#6).
-                                results_for_fill = _inject_all_links_of_system(
-                                    results, system
-                                )
-                                _deferred_image_fill(
-                                    research_id,
-                                    final_markdown=clean_markdown,
-                                    results=results_for_fill,
-                                    settings_snapshot=settings_snapshot,
-                                    progress_callback=progress_callback,
-                                )
-                                progress_callback(
-                                    "Enhancing report with real images...",
-                                    92,
-                                    {"phase": "image_enhancement"},
-                                )
-                                with _perf_stage(
-                                    research_id, f"image_enhancement:quick"
-                                ):
-                                    clean_markdown = enhance_report_with_images(
-                                        research_id=research_id,
-                                        clean_markdown=clean_markdown,
-                                        results=results_for_fill,
-                                        db_session=img_db_session,
-                                        **img_args,
-                                    )
-                    except Exception:
-                        logger.exception(
-                            "Image enhancement step failed; continuing with text-only report"
-                        )
-
                     # First send a progress update for generating the summary
                     progress_callback(
                         "Generating clean summary from research data...",
@@ -2184,9 +1840,10 @@ def run_research_process(research_id, query, mode, **kwargs):
                         )
 
                     # Enforce ascending ## Sources [N] and drop orphan
-                    # body citations. See the detailed-mode site for the
-                    # rationale (image enhancement is upstream of this
-                    # step so its citation matching is unaffected).
+                    # body citations. 2026-08-29 reorder: image fetch +
+                    # insertion now runs AFTER this stage and AFTER
+                    # citation_format, reading the finalized References
+                    # block directly (see the image block below).
                     try:
                         from ...text_optimization.citation_formatter import (
                             enforce_sources_ascending_and_drop_orphans,
@@ -2209,6 +1866,57 @@ def run_research_process(research_id, query, mode, **kwargs):
                     with _perf_stage(research_id, "citation_format:quick"):
                         formatted_content = formatter.format_document(
                             clean_markdown
+                        )
+
+                    # === Image fetch + insertion (2026-08-29 reorder) ===
+                    # Runs AFTER enforce + format: the finalized
+                    # References block is the single fetch-set source
+                    # (no findings[].search_results[] membership
+                    # check), and inserted <figure>s land in the
+                    # already-formatted final markdown untouched.
+                    try:
+                        from ...images.postprocessing import (
+                            enhance_report_with_images,
+                        )
+                        with _open_image_enhancer_session(
+                            username, settings_snapshot
+                        ) as (img_args, img_db_session):
+                            if not img_args["enable_images"]:
+                                logger.info(
+                                    f"[IMG-TRACE] SKIP research={research_id} "
+                                    f"reason=enable_images=False"
+                                )
+                            else:
+                                results_for_fill = _inject_all_links_of_system(
+                                    results, system
+                                )
+                                _deferred_image_fill(
+                                    research_id,
+                                    final_markdown=formatted_content,
+                                    results=results_for_fill,
+                                    settings_snapshot=settings_snapshot,
+                                    progress_callback=progress_callback,
+                                )
+                                progress_callback(
+                                    "Enhancing report with real images...",
+                                    92,
+                                    {"phase": "image_enhancement"},
+                                )
+                                with _perf_stage(
+                                    research_id, "image_enhancement:quick"
+                                ):
+                                    formatted_content = (
+                                        enhance_report_with_images(
+                                            research_id=research_id,
+                                            clean_markdown=formatted_content,
+                                            results=results_for_fill,
+                                            db_session=img_db_session,
+                                            **img_args,
+                                        )
+                                    )
+                    except Exception:
+                        logger.exception(
+                            "Image enhancement step failed; continuing with text-only report"
                         )
 
                     # Prepare complete report content
@@ -2506,72 +2214,6 @@ def run_research_process(research_id, query, mode, **kwargs):
                 results, query, progress_callback=report_progress_callback
             )
 
-            # === Detailed-mode image enhancement (parity with quick branch) ===
-            try:
-                # The previous per-LLM-round image-fill loop was
-                # removed (2026-08-04). The image fetch is now a
-                # single post-finalise pass — see
-                # ``_deferred_image_fill`` for the new contract.
-                logger.info(
-                    f"[IMG-TRACE] DETAILED_MODE_BEGIN research={research_id} "
-                    f"markdown_len={len(final_report['content'])}"
-                )
-                from ...images.postprocessing import (
-                    enhance_report_with_images,
-                )
-                with _open_image_enhancer_session(
-                    username, settings_snapshot
-                ) as (img_args, img_db_session):
-                    if not img_args["enable_images"]:
-                        logger.info(
-                            f"[IMG-TRACE] SKIP research={research_id} "
-                            f"reason=enable_images=False"
-                        )
-                    else:
-                        # One-pass image fill for the cited sources
-                        # of the now-finalised detailed report.
-                        # Replaces the per-round langgraph auto-
-                        # fill that previously added ~7 h of
-                        # Playwright rendering to a 7-round
-                        # Shanghai run.
-                        #
-                        # Inject the cross-subsection cumulative
-                        # all_links_of_system so the deferred pass
-                        # sees fetch results from every subsection
-                        # (fix #1+#6).
-                        results_for_fill = _inject_all_links_of_system(
-                            results, search_system
-                        )
-                        _deferred_image_fill(
-                            research_id,
-                            final_markdown=final_report["content"],
-                            results=results_for_fill,
-                            settings_snapshot=settings_snapshot,
-                            progress_callback=progress_callback,
-                        )
-                        progress_callback(
-                            "Enhancing detailed report with real images...",
-                            92,
-                            {"phase": "image_enhancement"},
-                        )
-                        with _perf_stage(
-                            research_id, f"image_enhancement:detailed"
-                        ):
-                            final_report["content"] = (
-                                enhance_report_with_images(
-                                    research_id=research_id,
-                                    clean_markdown=final_report["content"],
-                                    results=results_for_fill,
-                                    db_session=img_db_session,
-                                    **img_args,
-                                )
-                            )
-            except Exception:
-                logger.exception(
-                    "Detailed-mode image enhancement step failed; "
-                    "continuing with text-only report"
-                )
-
             progress_callback(
                 "Report generation complete", 95, {"phase": "report_complete"}
             )
@@ -2580,10 +2222,9 @@ def run_research_process(research_id, query, mode, **kwargs):
             # citations. Runs BEFORE the citation formatter so the
             # formatter only sees the cleaned body + ascending block;
             # the formatter then hyperlinks each remaining [[N]].
-            # Image enhancement runs upstream and relies on the original
-            # [N] numbers for citation matching — by placing the
-            # enforcer after it, we preserve that match while
-            # guaranteeing ascending order in the user-visible report.
+            # 2026-08-29 reorder: image fetch + insertion runs AFTER
+            # enforce + format (see the image block below citation_
+            # format), reading the finalized References block directly.
             try:
                 from ...text_optimization.citation_formatter import (
                     enforce_sources_ascending_and_drop_orphans,
@@ -2606,6 +2247,62 @@ def run_research_process(research_id, query, mode, **kwargs):
             with _perf_stage(research_id, "citation_format:detailed"):
                 formatted_content = formatter.format_document(
                     final_report["content"]
+                )
+
+            # === Detailed-mode image fetch + insertion (2026-08-29
+            # reorder; parity with quick branch) ===
+            # Single post-finalise pass AFTER enforce + format. The
+            # finalized References block is the fetch-set source; the
+            # fetched payloads travel via results["_image_fetch_html"]
+            # into enhance_report_with_images (fetched_html channel).
+            try:
+                logger.info(
+                    f"[IMG-TRACE] DETAILED_MODE_BEGIN research={research_id} "
+                    f"markdown_len={len(formatted_content)}"
+                )
+                from ...images.postprocessing import (
+                    enhance_report_with_images,
+                )
+                with _open_image_enhancer_session(
+                    username, settings_snapshot
+                ) as (img_args, img_db_session):
+                    if not img_args["enable_images"]:
+                        logger.info(
+                            f"[IMG-TRACE] SKIP research={research_id} "
+                            f"reason=enable_images=False"
+                        )
+                    else:
+                        results_for_fill = _inject_all_links_of_system(
+                            results, search_system
+                        )
+                        _deferred_image_fill(
+                            research_id,
+                            final_markdown=formatted_content,
+                            results=results_for_fill,
+                            settings_snapshot=settings_snapshot,
+                            progress_callback=progress_callback,
+                        )
+                        progress_callback(
+                            "Enhancing detailed report with real images...",
+                            92,
+                            {"phase": "image_enhancement"},
+                        )
+                        with _perf_stage(
+                            research_id, f"image_enhancement:detailed"
+                        ):
+                            formatted_content = (
+                                enhance_report_with_images(
+                                    research_id=research_id,
+                                    clean_markdown=formatted_content,
+                                    results=results_for_fill,
+                                    db_session=img_db_session,
+                                    **img_args,
+                                )
+                            )
+            except Exception:
+                logger.exception(
+                    "Detailed-mode image enhancement step failed; "
+                    "continuing with text-only report"
                 )
 
             # Save sources to database (non-fatal - report should still be saved

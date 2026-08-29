@@ -440,10 +440,18 @@ def enhance_report_with_images(
     firecrawl_client=None,
     alt_similarity_threshold: float = _DEFAULT_THRESHOLD,
     alt_similarity_min_margin: float = _DEFAULT_MIN_MARGIN,
+    fetched_html: Optional[Dict[str, str]] = None,
 ) -> str:
     """Return markdown with real images inserted + mirrored locally.
 
     When enable_images is False, returns clean_markdown unchanged.
+
+    ``fetched_html`` (2026-08-29 reorder) is the direct payload channel
+    from ``_deferred_image_fill``: ``{url: serialized_images}``. When
+    present it takes precedence over the legacy
+    ``results["findings"][].search_results[].html_content`` reads in
+    build_citation_index, decoupling image placement from the search
+    -results bookkeeping entirely.
     """
     if not enable_images:
         return clean_markdown
@@ -454,6 +462,14 @@ def enhance_report_with_images(
     try:
         # Stage 1: drop References rows the body never cites.
         clean_markdown = sanitize_references(clean_markdown)
+
+        # Legacy channel bridging: when the caller passes the direct
+        # fetched_html channel, publish it onto results so
+        # build_citation_index's url_to_html assembly (findings +
+        # all_links reads) picks the payloads up through the same
+        # "_image_fetch_html" key the deferred fill writes.
+        if fetched_html is not None:
+            results["_image_fetch_html"] = fetched_html
 
         # Stage 0: build citation index from the cleaned markdown + results.
         num_to_url, section_to_nums, url_to_html = build_citation_index(

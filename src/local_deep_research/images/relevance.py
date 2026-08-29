@@ -819,6 +819,15 @@ def build_citation_index(
         if url and html and url not in url_to_html:
             url_to_html[url] = html
 
+    # Direct payload channel (2026-08-29 reorder): the deferred fill
+    # publishes {url: serialized_images} on "_image_fetch_html" after
+    # fetching the FINALIZED References-block URLs. It takes
+    # precedence over any stale html_content above so post-enforce
+    # payloads win the join.
+    for url, html in (results.get("_image_fetch_html") or {}).items():
+        if url and html:
+            url_to_html[url] = html
+
     # OBS-E (aggregate): per-section diagnostic that explains the
     # ``html_covered`` aggregate at the IMG-TRACE CITATION_INDEX event
     # level. For each section, reports:
