@@ -167,9 +167,10 @@ def test_darkweb_cap5_and_tiebreak_order():
     binding = {u: [(1, 3, 0.0)] for u in bank}
 
     dark = _build_placements(binding, bank, _caption_fallback=True, darkweb=True)
-    clear = _build_placements(binding, bank, _caption_fallback=True, darkweb=False)
+    clear = _build_placements(binding, bank, _caption_fallback=True,
+                              darkweb=False, spread=False)
     assert len(dark) == 5, "darkweb cap = 5"
-    assert len(clear) == 3, "clearnet cap = 3"
+    assert len(clear) == 3, "clearnet legacy cap = 3 (spread disabled)"
     # area desc + substance rank: big-content wins over big-empty
     assert dark[0][1].endswith("big-content.jpg")
     # with cap=5 of 6 candidates, the UI icon (shop, tiny, no

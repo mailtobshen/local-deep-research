@@ -163,6 +163,12 @@ def _log_end(research_id: str, status: str) -> None:
 
 
 SECTION_IMAGE_CAP = 3  # max images adopted per section, by score (clearnet)
+# Spread-pass threshold relaxation (e14f3600, 2026-08-30): an over-cap
+# image may re-seat into another SAME-CITE section when its alt-vs-
+# section cosine clears (main threshold − this margin). 0.15 keeps
+# the "some similarity" bar meaningfully above zero while admitting
+# heading/parent overlap the strict gate rejected.
+_SPREAD_THRESHOLD_RELAX = 0.15
 SECTION_IMAGE_CAP_DARKWEB = 5  # darkweb runs adopt more per section
 
 # Sorting rank for the tie-break chain (lower = wins). A meaningful
@@ -221,6 +227,13 @@ def _build_placements(
     cap: int = SECTION_IMAGE_CAP,
     _caption_fallback: bool = False,
     darkweb: bool = False,
+    spread: bool = True,
+    num_to_url: Optional[dict] = None,
+    section_to_nums: Optional[dict] = None,
+    section_vecs: Optional[dict] = None,
+    section_phrases: Optional[dict] = None,
+    alt_vecs: Optional[dict] = None,
+    spread_relaxed_threshold: float = 0.0,
 ) -> list[tuple[int, str, str]]:
     """Build (sidx, url, alt) placements, capped per section.
 
@@ -240,6 +253,13 @@ def _build_placements(
     source page's title so the image still renders with a caption.
     """
     eff_cap = cap if not darkweb else SECTION_IMAGE_CAP_DARKWEB
+    if spread and not darkweb:
+        # e14f3600 spread policy: at most ONE seated image per section
+        # on clearnet — everything else the gate adopted becomes the
+        # spread pool that the pass below redistributes into image-
+        # less same-cite sections. (The caller passes cap=SECTION_
+        # IMAGE_CAP for API compat; the spread mode overrides it.)
+        eff_cap = 1
 
     def _caption_for(img) -> str:
         alt = (img.alt or "").strip()
@@ -273,6 +293,7 @@ def _build_placements(
         for _num, sidx, score in pairs:
             by_sec.setdefault(sidx, []).append((score, url))
     placements: list[tuple[int, str, str]] = []
+    seated: set[str] = set()  # one placement per image URL overall
     for sidx, cands in by_sec.items():
         cands_sorted = sorted(cands, key=_sort_key)
         dropped = max(0, len(cands_sorted) - eff_cap)
@@ -283,8 +304,120 @@ def _build_placements(
                 f"candidates={len(cands_sorted)} kept={eff_cap} "
                 f"dropped={dropped}"
             )
-        for _score, url in cands_sorted[:eff_cap]:
+        placed_this_sec: list[str] = []
+        for _score, url in cands_sorted:
+            # Per-section cap counts SEATED images; multi-bind URLs
+            # bound to several sections are seated ONCE overall (first
+            # section by binding order), later sections skip them and
+            # the next candidate takes the slot. Under the e14f3600
+            # spread policy the seat count is what the spread pass
+            # redistributes — a URL placed twice would be collapsed by
+            # _dedupe_images anyway, leaving a phantom slot.
+            if url in seated:
+                continue
+            if len(placed_this_sec) >= eff_cap:
+                break
             placements.append((sidx, url, _caption_for(bank_by_url[url])))
+            seated.add(url)
+            placed_this_sec.append(url)
+    placements.sort(key=lambda p: (p[0], p[1]))
+
+    # --- Spread pass (research e14f3600, 2026-08-30) ---
+    # Observed: all adopted images clustered in a handful of sections
+    # (sec 15/22/34/36/43/50 carried 3 each from the same 2 cites)
+    # while dozens of image-less sections cited the SAME URLs. Policy:
+    #   S1  one image per section max (per-section cap above drops
+    #       the over-cap images → they enter the spread pool instead);
+    #   S2  an over-cap image may be re-seated into ANOTHER section
+    #       that cites the SAME cite_num (its provenance is intact:
+    #       the section genuinely references the image's source page)
+    #       and whose alt-vs-section cosine clears a RELAXED threshold
+    #       (below the strict adoption gate — "some similarity" per
+    #       the spread policy);
+    #   S3  earliest matching section wins (front sections have
+    #       spread priority), each section still receives ≤1 spread
+    #       image, and an image is never placed twice (the downstream
+    #       _dedupe_images pass is the final backstop).
+    if not (spread and num_to_url and section_to_nums and section_vecs):
+        return placements
+
+    def _sec_cites(sec: int) -> set:
+        return set(section_to_nums.get(sec) or ())
+
+    placed_by_sec: dict[int, list[str]] = {}
+    placed_urls: set[str] = set()
+    for sidx, url, _alt in placements:
+        placed_by_sec.setdefault(sidx, []).append(url)
+        placed_urls.add(url)
+
+    # url -> the cite_num(s) it was adopted under (provenance for
+    # matching candidate sections).
+    url_cites: dict[str, set] = {}
+    for url, pairs in binding.items():
+        url_cites.setdefault(url, set()).update(p[0] for p in pairs)
+
+    def _alt_vec(url):
+        if alt_vecs is not None:
+            return alt_vecs.get(url)
+        return None
+
+    spread_moves: list[tuple[int, str, str, int, float]] = []
+    # Sections already carrying ≥1 placement are ineligible targets.
+    for sidx, cands in sorted(by_sec.items()):
+        cands_sorted = sorted(cands, key=_sort_key)
+        overflow = cands_sorted[eff_cap:]
+        if not overflow:
+            continue
+        for _score, url in overflow:
+            if url in placed_urls:
+                # Already seated somewhere — the dedup pass keeps only
+                # its first occurrence anyway; don't spread a dupe.
+                continue
+            img = bank_by_url.get(url)
+            if img is None or not (img.alt and img.alt.strip()):
+                continue
+            vec = _alt_vec(url)
+            if vec is None:
+                continue
+            cites = url_cites.get(url) or set()
+            # Candidate sections: cite the same number, have a
+            # section vector, no placement yet — ascending (front
+            # priority).
+            targets = sorted(
+                sec
+                for sec, sc_vec in section_vecs.items()
+                if sec != sidx
+                and not placed_by_sec.get(sec)
+                and _sec_cites(sec) & cites
+                and sc_vec is not None
+            )
+            for t_sec in targets:
+                t_vec = section_vecs.get(t_sec)
+                if t_vec is None:
+                    continue
+                sim = _cosine(vec, t_vec)
+                if round_score(sim) >= round_score(spread_relaxed_threshold):
+                    alt_txt = _caption_for(img)
+                    placements.append((t_sec, url, alt_txt))
+                    placed_by_sec.setdefault(t_sec, []).append(url)
+                    placed_urls.add(url)
+                    spread_moves.append(
+                        (sidx, url, alt_txt, t_sec, round_score(sim))
+                    )
+                    logger.info(
+                        f"[IMG-TRACE] SPREAD_MOVE url={url} "
+                        f"from_sec={sidx} to_sec={t_sec} "
+                        f"sec_phrase=\"{(section_phrases or {}).get(t_sec, '')[:80]}\" "
+                        f"cite_nums={sorted(cites)} sim={round_score(sim):.2f} "
+                        f"threshold={round_score(spread_relaxed_threshold):.2f}"
+                    )
+                    break
+    if spread_moves:
+        logger.info(
+            f"[IMG-TRACE] SPREAD_SUMMARY moves={len(spread_moves)} "
+            f"from_secs={sorted({m[0] for m in spread_moves})} "
+            f"to_secs={sorted({m[3] for m in spread_moves})}"
+        )
     placements.sort(key=lambda p: (p[0], p[1]))
     return placements
 
@@ -584,6 +717,11 @@ def enhance_report_with_images(
             return clean_markdown
 
         threshold = alt_similarity_threshold
+        # Alt-vector cache: one entry per image URL, filled by the
+        # scoring loop below, consumed by the spread pass in
+        # _build_placements (re-seating over-cap images into other
+        # same-cite sections without re-encoding).
+        alt_vecs_cache: dict[str, list[float]] = {}
         bank = ImageBank()
         # binding maps an image URL to every (cite_num, section_idx)
         # pair where the image was selected for placement. A single
@@ -884,6 +1022,10 @@ def enhance_report_with_images(
                         continue
                     raw = model.encode([img.alt], normalize_embeddings=True)[0]
                     alt_vec = list(raw.tolist()) if hasattr(raw, "tolist") else list(raw)
+                    # Cache the alt vector for the spread pass (it
+                    # re-scores over-cap images against OTHER sections
+                    # without re-running the encoder).
+                    alt_vecs_cache.setdefault(img.url, alt_vec)
                     # Emit the raw inputs that feed the cosine call:
                     # the image's alt text and the section's canonical
                     # phrase text (heading + entities joined). The
@@ -1062,6 +1204,19 @@ def enhance_report_with_images(
             bank_by_url,
             _caption_fallback=True,
             darkweb=_any_dark,
+            spread=not _any_dark,
+            num_to_url=num_to_url,
+            section_to_nums=section_to_nums,
+            section_vecs=section_vecs,
+            section_phrases=section_phrases,
+            alt_vecs=alt_vecs_cache,
+            # Spread gate: relaxed below the strict adoption threshold
+            # ("some similarity" — heading/parent overlap), floored at
+            # 0 so a misconfigured low main threshold can't turn the
+            # spread pass into an unconditional dump.
+            spread_relaxed_threshold=max(
+                0.0, threshold - _SPREAD_THRESHOLD_RELAX
+            ),
         )
         for sidx, p_url, p_alt in placements:
             # Find the (num, sec) pair for this placement. If the

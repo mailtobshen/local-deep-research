@@ -307,16 +307,19 @@ def test_beijing_scenario_full_pipeline(monkeypatch):
         ln for ln in trace_lines
         if "INSERT research=test-beijing-86132889" in ln
     )
-    # Multi-bind semantics: each (url, section) pair emits its own
-    # PLACEMENT, so the count is >= bank size. The post-insert
-    # _dedupe_images pass then collapses any duplicates produced by
-    # the multi-bind. We assert >= 18 and check DEDUPE_SUMMARY below.
+    # Spread policy (e14f3600, 2026-08-30): one seated image per
+    # section, one seat per URL overall; over-cap adopted images are
+    # re-seated into image-less same-cite sections by the spread pass.
+    # 18 bank images across 14 content sections → placements must be
+    # ≤ section count and every URL appears at most once (the INSERT
+    # count equals unique seated URLs; duplicates would be collapsed
+    # by _dedupe_images anyway).
     assert "placements=" in insert_line
     placements_count = int(
         insert_line.split("placements=")[1].split()[0]
     )
-    assert placements_count >= 18, (
-        f"placements {placements_count} < 18 (bank size)"
+    assert 1 <= placements_count <= 14, (
+        f"placements {placements_count} outside spread-policy range"
     )
 
     # 3. status=ok and the returned markdown contains the images.
