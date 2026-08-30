@@ -307,18 +307,18 @@ def test_beijing_scenario_full_pipeline(monkeypatch):
         ln for ln in trace_lines
         if "INSERT research=test-beijing-86132889" in ln
     )
-    # Spread policy (e14f3600, 2026-08-30): one seated image per
-    # section, one seat per URL overall; over-cap adopted images are
-    # re-seated into image-less same-cite sections by the spread pass.
-    # 18 bank images across 14 content sections → placements must be
-    # ≤ section count and every URL appears at most once (the INSERT
-    # count equals unique seated URLs; duplicates would be collapsed
-    # by _dedupe_images anyway).
+    # Spread policy (e14f3600, 2026-08-30, incl. fallback rule): one
+    # seated image per section when a qualified same-cite target
+    # exists; over-cap adopted images that find NO qualified target
+    # keep their original bind position (spread is an optimization,
+    # never a content-loss path). So placements ≥ what the strict
+    # 1-per-section pass seats, every URL seated at most once, and
+    # the count is bounded by bank size.
     assert "placements=" in insert_line
     placements_count = int(
         insert_line.split("placements=")[1].split()[0]
     )
-    assert 1 <= placements_count <= 14, (
+    assert 1 <= placements_count <= 18, (
         f"placements {placements_count} outside spread-policy range"
     )
 

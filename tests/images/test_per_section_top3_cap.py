@@ -39,8 +39,10 @@ def test_legacy_under_3_all_kept():
 
 
 def test_spread_mode_caps_section_at_one():
-    """spread=True (production clearnet): one seat per section — the
-    highest-scoring candidate stays, the rest join the spread pool."""
+    """spread=True (production clearnet): one seat per section when a
+    qualified spread target exists; with NO spread context (single
+    section, no alt vectors) the overflow falls back to its ORIGINAL
+    position — adopted images are never dropped."""
     binding = {
         "u1": [(1, 0, 0.90)],
         "u2": [(1, 0, 0.80)],
@@ -52,7 +54,8 @@ def test_spread_mode_caps_section_at_one():
         bank_by_url,
         cap=3,
         spread=True,
-        # no alt_vecs: spread can't re-seat, so overflow simply drops
+        # no alt_vecs → no spread possible → fallback keeps all three
+        # adopted images in their original section.
         num_to_url={1: "https://s.example.com"},
         section_to_nums={0: [1]},
         section_vecs={0: [1.0, 0.0]},
@@ -61,4 +64,6 @@ def test_spread_mode_caps_section_at_one():
         spread_relaxed_threshold=0.0,
     )
     urls_in_sec0 = [u for (sidx, u, _a) in placements if sidx == 0]
-    assert urls_in_sec0 == ["u1"], "only the top-score seat stays"
+    assert urls_in_sec0 == ["u1", "u2", "u3"], (
+        "no qualified target → all adopted images keep home position"
+    )

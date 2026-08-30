@@ -100,7 +100,8 @@ class TestSpreadPass:
 
     def test_no_spread_to_different_cite_section(self):
         # sec2 cites a DIFFERENT number — overflow must NOT move there
-        # even with perfect similarity (provenance rule).
+        # even with perfect similarity (provenance rule) — it FALLS
+        # BACK to its original section instead of being dropped.
         imgA, imgB = _Img("https://x/a.jpg", "A"), _Img("https://x/b.jpg", "B")
         bank = {i.url: i for i in (imgA, imgB)}
         binding = {
@@ -111,10 +112,14 @@ class TestSpreadPass:
         alt_vecs = {"https://x/b.jpg": [1.0, 0.0]}
         nums_by_sec = {0: [1], 2: [7]}  # sec2 cites 7, not 1
         placements = self._run(binding, bank, sec_vecs, alt_vecs, nums_by_sec)
-        assert {p[0] for p in placements} == {0}
+        # Both adopted images keep their original home (sec 0).
+        assert (0, "https://x/a.jpg") in [(p[0], p[1]) for p in placements]
+        assert (0, "https://x/b.jpg") in [(p[0], p[1]) for p in placements]
 
-    def test_below_relaxed_threshold_no_move(self):
-        # Target section orthogonal to the alt vector → sim ~0 < relax.
+    def test_below_relaxed_threshold_falls_back_home(self):
+        # Target section orthogonal to the alt vector → sim ~0 < relax
+        # → no qualified target → the overflow image FALLS BACK to its
+        # original section (never dropped).
         imgA, imgB = _Img("https://x/a.jpg", "A"), _Img("https://x/b.jpg", "B")
         bank = {i.url: i for i in (imgA, imgB)}
         binding = {
@@ -125,7 +130,10 @@ class TestSpreadPass:
         alt_vecs = {"https://x/b.jpg": [1.0, 0.0]}
         nums_by_sec = {0: [1], 2: [1]}
         placements = self._run(binding, bank, sec_vecs, alt_vecs, nums_by_sec)
-        assert {p[0] for p in placements} == {0}
+        assert (0, "https://x/a.jpg") in [(p[0], p[1]) for p in placements]
+        assert (0, "https://x/b.jpg") in [(p[0], p[1]) for p in placements]
+        # And it never landed in the orthogonal section.
+        assert 2 not in {p[0] for p in placements}
 
     def test_already_placed_url_never_duplicated(self):
         # URL already seated in another section is skipped by spread

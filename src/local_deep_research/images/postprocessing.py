@@ -362,6 +362,11 @@ def _build_placements(
         return None
 
     spread_moves: list[tuple[int, str, str, int, float]] = []
+    # Fallback ledger (user rule, 2026-08-30): when the minimum
+    # spread conditions are not met, the adopted image KEEPS its
+    # original bind position — spread is an optimization, never a
+    # content-loss path.
+    spread_fallbacks: list[tuple[int, str, str]] = []
     # Sections already carrying ≥1 placement are ineligible targets.
     for sidx, cands in sorted(by_sec.items()):
         cands_sorted = sorted(cands, key=_sort_key)
@@ -375,10 +380,16 @@ def _build_placements(
                 continue
             img = bank_by_url.get(url)
             if img is None or not (img.alt and img.alt.strip()):
+                # Not spread-eligible AND never seated: the adoption
+                # decision stands — keep the image at its ORIGINAL
+                # bind position rather than dropping it (fallback
+                # rule, see below).
+                placements.append((sidx, url, _caption_for(img)))
+                placed_by_sec.setdefault(sidx, []).append(url)
+                placed_urls.add(url)
+                spread_fallbacks.append((sidx, url, "no_alt_or_missing"))
                 continue
             vec = _alt_vec(url)
-            if vec is None:
-                continue
             cites = url_cites.get(url) or set()
             # Candidate sections: cite the same number, have a
             # section vector, no placement yet — ascending (front
@@ -391,32 +402,61 @@ def _build_placements(
                 and _sec_cites(sec) & cites
                 and sc_vec is not None
             )
-            for t_sec in targets:
-                t_vec = section_vecs.get(t_sec)
-                if t_vec is None:
-                    continue
-                sim = _cosine(vec, t_vec)
-                if round_score(sim) >= round_score(spread_relaxed_threshold):
-                    alt_txt = _caption_for(img)
-                    placements.append((t_sec, url, alt_txt))
-                    placed_by_sec.setdefault(t_sec, []).append(url)
-                    placed_urls.add(url)
-                    spread_moves.append(
-                        (sidx, url, alt_txt, t_sec, round_score(sim))
-                    )
-                    logger.info(
-                        f"[IMG-TRACE] SPREAD_MOVE url={url} "
-                        f"from_sec={sidx} to_sec={t_sec} "
-                        f"sec_phrase=\"{(section_phrases or {}).get(t_sec, '')[:80]}\" "
-                        f"cite_nums={sorted(cites)} sim={round_score(sim):.2f} "
-                        f"threshold={round_score(spread_relaxed_threshold):.2f}"
-                    )
-                    break
+            spread_target = None
+            if vec is not None:
+                for t_sec in targets:
+                    t_vec = section_vecs.get(t_sec)
+                    if t_vec is None:
+                        continue
+                    sim = _cosine(vec, t_vec)
+                    if round_score(sim) >= round_score(spread_relaxed_threshold):
+                        spread_target = (t_sec, round_score(sim))
+                        break
+            if spread_target is not None:
+                t_sec, sim = spread_target
+                alt_txt = _caption_for(img)
+                placements.append((t_sec, url, alt_txt))
+                placed_by_sec.setdefault(t_sec, []).append(url)
+                placed_urls.add(url)
+                spread_moves.append((sidx, url, alt_txt, t_sec, sim))
+                logger.info(
+                    f"[IMG-TRACE] SPREAD_MOVE url={url} "
+                    f"from_sec={sidx} to_sec={t_sec} "
+                    f"sec_phrase=\"{(section_phrases or {}).get(t_sec, '')[:80]}\" "
+                    f"cite_nums={sorted(cites)} sim={sim:.2f} "
+                    f"threshold={round_score(spread_relaxed_threshold):.2f}"
+                )
+            else:
+                # Minimum spread conditions NOT met (no same-cite
+                # image-less target above the relaxed threshold, or no
+                # alt vector available): the image was ADOPTED by the
+                # gate — keep its ORIGINAL insertion position in the
+                # home section instead of dropping it. The 1-per-
+                # section ideal yields to not losing adopted content.
+                placements.append((sidx, url, _caption_for(img)))
+                placed_by_sec.setdefault(sidx, []).append(url)
+                placed_urls.add(url)
+                reason = (
+                    "no_alt_vec" if vec is None else "no_qualified_target"
+                )
+                spread_fallbacks.append((sidx, url, reason))
+                logger.info(
+                    f"[IMG-TRACE] SPREAD_FALLBACK url={url} "
+                    f"sec={sidx} reason={reason} "
+                    f"candidates={len(targets)}"
+                )
     if spread_moves:
         logger.info(
             f"[IMG-TRACE] SPREAD_SUMMARY moves={len(spread_moves)} "
             f"from_secs={sorted({m[0] for m in spread_moves})} "
-            f"to_secs={sorted({m[3] for m in spread_moves})}"
+            f"to_secs={sorted({m[3] for m in spread_moves})} "
+            f"fallbacks={len(spread_fallbacks)}"
+        )
+    elif spread_fallbacks:
+        logger.info(
+            f"[IMG-TRACE] SPREAD_SUMMARY moves=0 "
+            f"fallbacks={len(spread_fallbacks)} "
+            f"fallback_secs={sorted({f[0] for f in spread_fallbacks})}"
         )
     placements.sort(key=lambda p: (p[0], p[1]))
     return placements
