@@ -1,4 +1,6 @@
+import hashlib
 import importlib
+import re
 from typing import Any, Dict, List, Optional
 from datetime import datetime, UTC
 
@@ -346,13 +348,47 @@ class IntegratedReportGenerator:
         # Fallback to hard truncation
         return truncated + "\n[...truncated]"
 
+    # Per-finding body summary budget for the CONTENT ALREADY WRITTEN
+    # context (Fix B). Full bodies fed the synthesis LLM its own prior
+    # output at length, which small local models copied verbatim into
+    # the next subsection (research e14f3600: identical bodies under
+    # variant headings, 3x). Headings + a short lead excerpt give the
+    # "do not repeat" signal without the copy bait.
+    _CONTEXT_EXCERPT_CHARS = 300
+
+    def _summarize_finding_for_context(self, finding: str) -> str:
+        """Reduce one accumulated finding to heading list + lead excerpt.
+
+        Keeps the ``[Section > Subsection]`` tag line and each markdown
+        heading verbatim (that is what tells the LLM what is already
+        covered), plus one short excerpt from the first body paragraph.
+        """
+        lines = finding.split("\n")
+        tag = lines[0] if lines else ""
+        headings = [ln.strip() for ln in lines[1:] if ln.lstrip().startswith("#")]
+        # Lead excerpt: first non-empty, non-heading line.
+        excerpt = ""
+        for ln in lines[1:]:
+            s = ln.strip()
+            if s and not s.startswith("#") and not s.startswith("["):
+                excerpt = s[: self._CONTEXT_EXCERPT_CHARS]
+                break
+        parts = [tag]
+        if headings:
+            parts.append("Headings covered: " + "; ".join(headings))
+        if excerpt:
+            parts.append(f"Excerpt: {excerpt}…")
+        return "\n".join(parts)
+
     def _build_previous_context(self, accumulated_findings: List[str]) -> str:
         """Build context block from previously generated sections.
 
-        Creates a formatted context block containing content from the last
-        N sections (defined by self.max_context_sections) with explicit instructions
-        not to repeat this content. Context is truncated if it exceeds
-        self.max_context_chars to stay safe for smaller local models.
+        Each finding is reduced to its headings + a short lead excerpt
+        (see ``_summarize_finding_for_context``) rather than included
+        in full: full bodies gave small local models copy bait, and
+        the 2026-08-29 e14f3600 run showed the LLM echoing whole prior
+        subsections verbatim into new sections. The context is still
+        capped by self.max_context_chars.
 
         Args:
             accumulated_findings: List of previously generated section content,
@@ -366,7 +402,10 @@ class IntegratedReportGenerator:
             return ""
 
         recent_findings = accumulated_findings[-self.max_context_sections :]
-        previous_context = "\n\n---\n\n".join(recent_findings)
+        summarized = [
+            self._summarize_finding_for_context(f) for f in recent_findings
+        ]
+        previous_context = "\n\n---\n\n".join(summarized)
 
         # Truncate at sentence boundary if too long
         if len(previous_context) > self.max_context_chars:
@@ -485,6 +524,81 @@ class IntegratedReportGenerator:
         "本次研究主动停止",
         "engines-darkweb.yml",
     )
+
+    # Regexes shared by subsection dedup (Fix A) — strip citation
+    # markers (the LLM renumbers citations across repeated copies,
+    # which is the only systematic difference between them), then
+    # whitespace and punctuation, so two copies of the same text
+    # hash identically. The leading heading line is excluded from
+    # the hash input because the LLM varies the heading between
+    # copies (e.g. 转世灵童的认定过程 vs 转世灵童的宗教理论基础
+    # prefixed identical bodies, research e14f3600).
+    _CITE_MARKER_RE = re.compile(
+        r"\[\[\d+\]\]\([^)]*\)|\[\d+\]\([^)]*\)|\[\[\d+\]\]|\[\d+\]"
+    )
+    _HEADING_LINE_RE = re.compile(r"^#{2,6}\s.*$", re.MULTILINE)
+    _NORMALIZE_STRIP_RE = re.compile(r"[\s\W_]+", re.UNICODE)
+    _SUBSECTION_SPLIT_RE = re.compile(r"(?=^#{2,3}\s)", re.MULTILINE)
+
+    @classmethod
+    def _normalized_block_hash(cls, block: str) -> Optional[str]:
+        """Hash a subsection block independent of citations/whitespace.
+
+        Returns None for blocks with no hashable text (heading-only
+        fragments, empty blocks) — those never participate in dedup,
+        which keeps short transition lines safe from false positives.
+        """
+        body = cls._HEADING_LINE_RE.sub("", block)
+        body = cls._CITE_MARKER_RE.sub("", body)
+        body = cls._NORMALIZE_STRIP_RE.sub("", body).lower()
+        if len(body) < 40:
+            # Too little signal to trust an exact-match verdict.
+            return None
+        return hashlib.sha1(body.encode("utf-8")).hexdigest()
+
+    def _dedupe_repeated_subsections(self, content: str) -> str:
+        """Drop repeated subsection blocks the LLM copied verbatim.
+
+        2026-08-29 research e14f3600 (第十四世达赖喇嘛丹增嘉措): the
+        synthesis LLM (qwen3.5-opus:9b), given a long CONTENT ALREADY
+        WRITTEN context, emitted the same subsection body three times
+        under different headings (第十三世达赖喇嘛圆寂后的特殊历史背景
+        appeared 4x in the final report). Detection is hash-only: a
+        block is dropped only when its citation-stripped normalized
+        text is byte-identical to an earlier block — no fuzzy
+        similarity, so legitimately similar sections (same topic from
+        different angles) are never touched. The first occurrence is
+        always kept, preserving the original citation numbering the
+        downstream Sources enforcer and image pipeline anchor on.
+        """
+        if not content or "##" not in content:
+            return content
+        blocks = [
+            b for b in self._SUBSECTION_SPLIT_RE.split(content) if b.strip()
+        ]
+        if len(blocks) < 2:
+            return content
+        seen: set[str] = set()
+        kept_blocks: list[str] = []
+        dropped_titles: list[str] = []
+        for block in blocks:
+            h = self._normalized_block_hash(block)
+            if h is not None and h in seen:
+                title_match = re.match(r"#{2,3}\s*(.+)", block)
+                dropped_titles.append(
+                    (title_match.group(1).strip() if title_match else "?")[:40]
+                )
+                continue
+            if h is not None:
+                seen.add(h)
+            kept_blocks.append(block)
+        if dropped_titles:
+            logger.info(
+                f"[SEC-DEDUP] dropped={len(dropped_titles)} "
+                f"blocks={dropped_titles} "
+                f"bytes={len(content)}->{len(''.join(kept_blocks))}"
+            )
+        return "".join(kept_blocks)
 
     def _strip_process_leakage(self, content: str) -> str:
         """Remove process/LLM-prompt leakage from generated section text.
@@ -817,6 +931,13 @@ class IntegratedReportGenerator:
                 if subsection_results.get("current_knowledge"):
                     generated_content = self._strip_process_leakage(
                         subsection_results["current_knowledge"]
+                    )
+                    # Hash-only dedup AFTER leakage-strip, BEFORE the
+                    # text enters the body and the accumulated context
+                    # (single choke point for both propagation paths).
+                    # Preserves first occurrence + its citations.
+                    generated_content = self._dedupe_repeated_subsections(
+                        generated_content
                     )
                     section_content.append(generated_content)
                     # Accumulate for context in subsequent sections

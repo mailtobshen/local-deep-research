@@ -66,6 +66,51 @@ def _count_distinct_cited_sources(body: str) -> int:
     return len(seen)
 
 
+# --- verbatim-subsection-duplication detection (2026-08-29, e14f3600) ---
+# Same normalization contract as
+# report_generator.SpecializedReportGenerator._normalized_block_hash:
+# strip citation markers / whitespace / punctuation, drop the leading
+# heading line. Kept as a local copy rather than an import so the
+# citation handler has no upward dependency on the report generator
+# module (which pulls in the full search system).
+_CITE_MARKER_RE = re.compile(
+    r"\[\[\d+\]\]\([^)]*\)|\[\d+\]\([^)]*\)|\[\[\d+\]\]|\[\d+\]"
+)
+_HEADING_LINE_RE = re.compile(r"^#{2,6}\s.*$", re.MULTILINE)
+_NORMALIZE_STRIP_RE = re.compile(r"[\s\W_]+", re.UNICODE)
+_SUBSECTION_SPLIT_RE = re.compile(r"(?=^#{2,3}\s)", re.MULTILINE)
+
+
+def _count_duplicate_subsection_blocks(body: str) -> int:
+    """Count subsection blocks whose normalized text repeats an earlier one.
+
+    Hash-only exact match (no fuzzy similarity) — mirrors the
+    report-generator dedup gate's verdict, so ``dup_blocks`` in the
+    self_check log predicts how many blocks SEC-DEDUP will drop.
+    """
+    if not body or "##" not in body:
+        return 0
+    blocks = [
+        b for b in _SUBSECTION_SPLIT_RE.split(body) if b.strip()
+    ]
+    seen: set[str] = set()
+    dups = 0
+    for block in blocks:
+        text = _NORMALIZE_STRIP_RE.sub(
+            "", _CITE_MARKER_RE.sub("", _HEADING_LINE_RE.sub("", block))
+        ).lower()
+        if len(text) < 40:
+            continue
+        import hashlib
+
+        h = hashlib.sha1(text.encode("utf-8")).hexdigest()
+        if h in seen:
+            dups += 1
+        else:
+            seen.add(h)
+    return dups
+
+
 class StandardCitationHandler(BaseCitationHandler):
     """Standard citation handler with detailed analysis."""
 
@@ -202,10 +247,18 @@ CITATION DIVERSITY (REQUIRED, 2026-08-25, post 610f5486): spread your citations 
             or available_sources < _MIN_DISTINCT_SOURCES
         )
         needs_retry = inline_cite_count == 0 or not diversity_ok
+        # 2026-08-29 (research e14f3600): log verbatim-duplicated
+        # subsection blocks (hash-only, same normalization as the
+        # report_generator._dedupe_repeated_subsections gate). Pure
+        # observability — never triggers the retry; it measures how
+        # often the LLM copies prior content so downstream SEC-DEDUP
+        # coverage can be audited per run.
+        dup_blocks = _count_duplicate_subsection_blocks(body)
         logger.info(
             f"[CITE-INLINE] self_check "
             f"hits={inline_cite_count} "
             f"distinct={distinct_sources}/{available_sources} "
+            f"dup_blocks={dup_blocks} "
             f"action={'retry' if needs_retry else 'pass'}"
         )
         if needs_retry:
