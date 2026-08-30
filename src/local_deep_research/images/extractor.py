@@ -120,6 +120,18 @@ _MIN_DIM = 150  # px; entry threshold — width AND height must both be
 # AND clearnet alike). Unknown dimensions (attrs missing, alt carries
 # no dims) stay lenient.
 
+# Per-page image flood cap (research e14f3600, 2026-08-30): one page
+# (dlbs.liberal.ntu.edu.tw fulltext listing) yielded 7088 filename-alt
+# icons and two tsemrinpoche articles 198/203 — together 98% of the
+# run's 45k CANDIDATE_SCORED events and ~20 min of enhance walltime,
+# while no flood page ever contributed an adopted image (SECTION_CAP
+# is 3). When a page's extract exceeds _PAGE_IMAGE_FLOOD_AT, it is a
+# listing/directory page, not an article: keep only the first
+# _PAGE_IMAGE_FLOOD_KEEP images (document order ≈ content prominence)
+# and mark the truncation in the ALT_RESOLVE_SUMMARY probe.
+_PAGE_IMAGE_FLOOD_AT = 100
+_PAGE_IMAGE_FLOOD_KEEP = 30
+
 # Default CSS selectors tried in order to find the page's main content
 # area. Tuned to cover the most common blog / news / wiki structures;
 # the first match wins. If none match, extraction falls back to the
@@ -502,6 +514,16 @@ def extract_images(
                 height=height,
             )
         )
+    # Flood cap (see _PAGE_IMAGE_FLOOD_AT): truncate listing/directory
+    # pages before their images ever reach the scoring loop. Applied
+    # AFTER the per-image probes above so the summary's images= count
+    # reflects what the page actually contained, with flood_kept/
+    # flood_dropped recording the truncation.
+    flood_dropped = 0
+    if len(out) > _PAGE_IMAGE_FLOOD_AT:
+        flood_dropped = len(out) - _PAGE_IMAGE_FLOOD_KEEP
+        out = out[:_PAGE_IMAGE_FLOOD_KEEP]
+
     # Page-level summary. ``wiki_page``/``baike_page`` are computed from
     # source_url alone (the page's own domain); an individual image can
     # still be eligible via its image host, which the per-image ALT_MISS
@@ -513,7 +535,7 @@ def extract_images(
         pages=1,
         wiki_pages=1 if wiki_page else 0,
         baike_pages=1 if baike_page else 0,
-        images=len(out),
+        images=len(out) + flood_dropped,
         had_alt=had_alt,
         wiki_hits=via_counts["figcaption"],
         baike_hits=via_counts["baike"],
@@ -526,10 +548,12 @@ def extract_images(
         f"host={(urlparse(source_url).hostname or '-').lower()} "
         f"wiki_page={str(wiki_page).lower()} "
         f"baike_page={str(baike_page).lower()} "
-        f"images={len(out)} had_alt={had_alt} "
+        f"images={len(out) + flood_dropped} had_alt={had_alt} "
         f"via_figcaption={via_counts['figcaption']} "
         f"via_baike={via_counts['baike']} "
         f"via_filename={via_counts['filename']} "
-        f"empty={empty_alt}"
+        f"empty={empty_alt} "
+        f"flood={'1' if flood_dropped else '0'} "
+        f"flood_kept={len(out)} flood_dropped={flood_dropped}"
     )
     return out

@@ -122,6 +122,16 @@ _global_research_semaphore = threading.Semaphore(_MAX_GLOBAL_CONCURRENT)
 # Socket.IO emission throttling: minimum interval between progress emissions per research
 _EMIT_THROTTLE_SECONDS = 0.2  # 200ms
 _EMIT_TTL_SECONDS = 3600  # 1 hour — evict stale entries from orphaned research
+
+# zh.wikipedia language-variant path prefix: /zh-cn/<title>,
+# /zh-tw/<title>, /zh-hk/<title>, /zh-sg/<title> (also /zh/<title>)
+# all serve the same article as /wiki/<title>. Group 2 = title.
+# Used by _deferred_image_fill to collapse variant fetches (e14f3600:
+# /wiki/ + /zh-cn/ + /zh-tw/ each fetched and extracted 18 duplicate
+# images into the bank).
+_WIKI_VARIANT_PATH_RE = __import__("re").compile(
+    r"^/(?:zh-(?:cn|tw|hk|sg|my)|zh)/([^/]+)$"
+)
 _emit_cleanup_counter = 0
 _last_emit_times: dict[str, float] = {}
 _last_emit_lock = threading.Lock()
@@ -687,6 +697,42 @@ def _deferred_image_fill(
     if not urls_to_fetch:
         return 0
 
+    # 2b. Collapse Wikipedia language-variant URLs onto ONE canonical
+    # fetch (research e14f3600, 2026-08-30): zh.wikipedia serves the
+    # same page at /wiki/, /zh-cn/, /zh-tw/, /zh-hk/ (and *.m.
+    # mobile hosts). All variants passed the cite filter and each was
+    # fetched + extracted separately — 3×18 duplicate images into the
+    # bank and 2 redundant page fetches. Canonicalise to /wiki/ (the
+    # default variant the extractor's figcaption channel expects) and
+    # keep a variant→canonical map so the fetched payload is written
+    # back under EVERY variant URL the enhancement stage will look up
+    # (url_to_html keys must match what References cites).
+    _wiki_variant_map: dict[str, str] = {}
+    canonical_fetch: list[str] = []
+    for u in urls_to_fetch:
+        canon = u
+        try:
+            sp = urlsplit(u)
+            host = sp.netloc.lower()
+            path = sp.path or "/"
+            m = _WIKI_VARIANT_PATH_RE.match(path)
+            if m and m.group(2) and host.endswith("wikipedia.org"):
+                canon = sp._replace(path=f"/wiki/{m.group(2)}").geturl()
+        except Exception:
+            canon = u
+        if canon != u:
+            _wiki_variant_map[u] = canon
+        if canon not in canonical_fetch:
+            canonical_fetch.append(canon)
+    if _wiki_variant_map:
+        logger.info(
+            f"[IMG-TRACE] WIKI_VARIANT_COLLAPSE research={research_id} "
+            f"variants={len(_wiki_variant_map)} "
+            f"canonical={len(canonical_fetch)} "
+            f"map={_wiki_variant_map}"
+        )
+        urls_to_fetch = canonical_fetch
+
     # 3. Fetch the remaining URLs in a single batch.
     try:
         from ...research_library.downloaders.extraction import (
@@ -784,6 +830,14 @@ def _deferred_image_fill(
             )
         fetched_html[url] = payload
         filled += 1
+        # Wiki-variant collapse write-back: the fetch loop iterates
+        # CANONICAL URLs; alias the same payload under every variant
+        # URL that collapsed onto this canonical so the enhancement
+        # stage's url_to_html lookups (keyed by what References
+        # actually cites) still hit.
+        for variant, canon in _wiki_variant_map.items():
+            if canon == url and variant not in fetched_html:
+                fetched_html[variant] = payload
         alts_repr = ", ".join(
             repr((getattr(img, "alt", "") or "")) for img in images
         )
