@@ -365,7 +365,16 @@ class IntegratedReportGenerator:
         """
         lines = finding.split("\n")
         tag = lines[0] if lines else ""
-        headings = [ln.strip() for ln in lines[1:] if ln.lstrip().startswith("#")]
+        # 2026-08-30 (research 03b9f926): strip the leading ``#`` marks.
+        # Feeding prior headings verbatim WITH hashes ("### 基本信息")
+        # gave small local models copy bait: the next subsection's
+        # heading came back as "### ### 业务领域", which renders with a
+        # literal "###" in the heading text.
+        headings = [
+            ln.strip().lstrip("#").strip() or ln.strip()
+            for ln in lines[1:]
+            if ln.lstrip().startswith("#")
+        ]
         # Lead excerpt: first non-empty, non-heading line.
         excerpt = ""
         for ln in lines[1:]:
@@ -656,8 +665,16 @@ class IntegratedReportGenerator:
                     skipping_note_block = True
                     continue
             kept.append(line)
-        return "\n".join(kept)
+        return self._DOUBLED_HEADING_RE.sub(r"\1 ", "\n".join(kept))
 
+    # 2026-08-30 (research 03b9f926): the synthesis LLM occasionally
+    # emits a heading whose text begins with another ``#`` run — e.g.
+    # ``### ### 业务领域`` — which Markdown parses as an H3 whose
+    # visible text literally contains "### 业务领域". Collapse any
+    # repeated ``#``-run prefix on an ATX heading line to a single run.
+    _DOUBLED_HEADING_RE = re.compile(
+        r"^(#{1,6})\s+(#+\s+)+", re.MULTILINE
+    )
 
     def _research_and_generate_sections(
         self,
