@@ -636,6 +636,43 @@ class IntegratedReportGenerator:
             return None
         return hashlib.sha1(body.encode("utf-8")).hexdigest()
 
+    def _dedupe_repeated_paragraphs(self, content: str) -> str:
+        """Drop paragraphs whose normalized text repeats an earlier one.
+
+        2026-09-13 research c34cb8fa (7.2 资助方与合作伙伴): the block-level
+        dedup below missed a paragraph copied verbatim INSIDE one
+        subsection — the LLM emitted the same 资金来源 paragraph twice
+        (identical down to the [19]/[24]/[67] markers) in a single
+        block, so the block hash never collided. Same contract as the
+        block dedup: citation-stripped normalization, exact-hash match
+        only, ≥40 normalized chars to participate, first occurrence
+        kept with its original citation numbering.
+        """
+        if not content:
+            return content
+        paragraphs = content.split("\n\n")
+        seen: set[str] = set()
+        kept: list[str] = []
+        dropped = 0
+        for para in paragraphs:
+            body = self._CITE_MARKER_RE.sub("", para)
+            body = "\n".join(
+                ln
+                for ln in body.split("\n")
+                if not ln.lstrip().startswith("#")
+            )
+            key = self._NORMALIZE_STRIP_RE.sub("", body).lower()
+            if len(key) >= 40:
+                h = hashlib.sha1(key.encode("utf-8")).hexdigest()
+                if h in seen:
+                    dropped += 1
+                    continue
+                seen.add(h)
+            kept.append(para)
+        if dropped:
+            logger.info(f"[PARA-DEDUP] dropped={dropped} paragraphs")
+        return "\n\n".join(kept)
+
     def _dedupe_repeated_subsections(self, content: str) -> str:
         """Drop repeated subsection blocks the LLM copied verbatim.
 
@@ -652,12 +689,12 @@ class IntegratedReportGenerator:
         downstream Sources enforcer and image pipeline anchor on.
         """
         if not content or "##" not in content:
-            return content
+            return self._dedupe_repeated_paragraphs(content)
         blocks = [
             b for b in self._SUBSECTION_SPLIT_RE.split(content) if b.strip()
         ]
         if len(blocks) < 2:
-            return content
+            return self._dedupe_repeated_paragraphs(content)
         seen: set[str] = set()
         kept_blocks: list[str] = []
         dropped_titles: list[str] = []
@@ -678,7 +715,7 @@ class IntegratedReportGenerator:
                 f"blocks={dropped_titles} "
                 f"bytes={len(content)}->{len(''.join(kept_blocks))}"
             )
-        return "".join(kept_blocks)
+        return self._dedupe_repeated_paragraphs("".join(kept_blocks))
 
     def _strip_process_leakage(self, content: str) -> str:
         """Remove process/LLM-prompt leakage from generated section text.

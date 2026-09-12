@@ -81,11 +81,14 @@ class TestDedupeRepeatedSubsections:
         content = "## A\n\n短句。\n\n## B\n\n短句。\n\n"
         assert generator._dedupe_repeated_subsections(content) == content
 
-    def test_content_without_headings_unchanged(self, generator):
+    def test_content_without_headings_dup_still_dropped(self, generator):
+        # 2026-09-13 contract change: heading-less content no longer
+        # bypasses dedup entirely — paragraph-level dedup (research
+        # c34cb8fa, duplicated 资金来源 paragraph inside 7.2) runs even
+        # without ## block structure. First occurrence kept.
         content = f"{_BODY_A} [[2]]\n\n{_BODY_A} [[2]]\n\n"
-        # No ## headings -> no block structure -> passthrough (dedup
-        # happens at block granularity only).
-        assert generator._dedupe_repeated_subsections(content) == content
+        result = generator._dedupe_repeated_subsections(content)
+        assert result == f"{_BODY_A} [[2]]\n\n"
 
     def test_empty_and_single_block_passthrough(self, generator):
         assert generator._dedupe_repeated_subsections("") == ""
