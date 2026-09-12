@@ -701,8 +701,18 @@ class IntegratedReportGenerator:
         lines = content.split("\n")
         kept: list[str] = []
         skipping_note_block = False
+        in_fence = False
         for line in lines:
             stripped = line.strip()
+            if stripped.startswith("```"):
+                in_fence = not in_fence
+                kept.append(line)
+                continue
+            if not in_fence:
+                # Doubled-hash heading collapse must not touch fenced
+                # code blocks (markdown-syntax samples legitimately
+                # contain literal heading lines there).
+                line = self._DOUBLED_HEADING_RE.sub(r"\1 ", line)
             if skipping_note_block:
                 # The sourcing-note heading is dropped along with its
                 # narration paragraph: stop skipping at a blank line
@@ -733,16 +743,17 @@ class IntegratedReportGenerator:
                     skipping_note_block = True
                     continue
             kept.append(line)
-        return self._DOUBLED_HEADING_RE.sub(r"\1 ", "\n".join(kept))
+        return "\n".join(kept)
 
     # 2026-08-30 (research 03b9f926): the synthesis LLM occasionally
     # emits a heading whose text begins with another ``#`` run — e.g.
     # ``### ### 业务领域`` — which Markdown parses as an H3 whose
     # visible text literally contains "### 业务领域". Collapse any
     # repeated ``#``-run prefix on an ATX heading line to a single run.
-    _DOUBLED_HEADING_RE = re.compile(
-        r"^(#{1,6})\s+(#+\s+)+", re.MULTILINE
-    )
+    # Applied per-line inside _strip_process_leakage (fence-aware);
+    # ``[ \t]`` (not ``\s``) so the pattern can never span a newline
+    # and merge two adjacent heading lines (bare-``#`` heading edge).
+    _DOUBLED_HEADING_RE = re.compile(r"^(#{1,6})[ \t]+(#+[ \t]+)+")
 
     def _research_and_generate_sections(
         self,

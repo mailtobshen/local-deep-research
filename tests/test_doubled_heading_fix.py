@@ -48,6 +48,26 @@ class TestStripProcessLeakageCollapsesDoubledHeadings:
         content = "使用 C# 与 F# 编写的工具。"
         assert generator._strip_process_leakage(content) == content
 
+    def test_no_merge_across_newline(self, generator):
+        # Regression: \s in the old pattern matched the newline after a
+        # bare '###' heading, silently merging it with the NEXT heading
+        # line and dropping one heading. Must stay two lines.
+        content = "###\n### 标题二\n\n正文。"
+        result = generator._strip_process_leakage(content)
+        assert result.split("\n")[1] == "### 标题二"
+
+    def test_inside_code_fence_untouched(self, generator):
+        # A doubled-hash line inside a fenced code block is literal
+        # sample text, not a heading — must not be collapsed.
+        content = "```\n### ### markdown sample\n```"
+        assert generator._strip_process_leakage(content) == content
+
+    def test_collapse_applies_after_fence_closes(self, generator):
+        content = "```\nsample\n```\n\n### ### 业务领域\n\n正文。"
+        result = generator._strip_process_leakage(content)
+        assert "### 业务领域" in result
+        assert "### ###" not in result
+
 
 class TestSummarizeFindingStripsHeadingHashes:
     def test_context_headings_have_no_hash_marks(self, generator):
