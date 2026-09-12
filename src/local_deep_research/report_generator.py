@@ -241,7 +241,10 @@ class IntegratedReportGenerator:
         parentheses is the canonical reference wording for Chinese reports).
         Merge an item into a closely-related subsection only if it is
         genuinely inapplicable to the subject; never omit an item for
-        which evidence exists.
+        which evidence exists. These mandatory items are the MINIMUM
+        baseline: "make the structure specific to the content" applies
+        to each item's purpose wording and to any additional
+        subsections — never as license to drop a mandatory item.
 
         PERSON - mandatory key items:
         - Identity and background (人物背景介绍)
