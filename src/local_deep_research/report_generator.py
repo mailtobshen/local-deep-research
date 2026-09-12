@@ -221,6 +221,69 @@ class IntegratedReportGenerator:
 
         return report
 
+    # Topic-profile directive (2026-09-12): when the research subject
+    # is a PERSON, an ORGANIZATION, or an EVENT, the report MUST cover
+    # the corresponding mandatory sections below — regardless of what
+    # the raw findings suggest. The LLM classifies the subject itself;
+    # "如果有" items may be merged into a related subsection when the
+    # subject genuinely has no such aspect, but must not be silently
+    # dropped when evidence exists. Section titles follow the report
+    # language directive; the Chinese titles below are the canonical
+    # reference wording.
+    _TOPIC_PROFILE_DIRECTIVE = """
+        SUBJECT CLASSIFICATION (MANDATORY - READ FIRST):
+        Classify the research subject of the query as:
+        (a) a PERSON, (b) an ORGANIZATION, (c) an EVENT, or
+        (d) none of these (general topic).
+        If (a), (b), or (c) applies, the structure MUST include subsections
+        covering ALL of the corresponding key items below. Render each
+        subsection title in the report language (the Chinese label in
+        parentheses is the canonical reference wording for Chinese reports).
+        Merge an item into a closely-related subsection only if it is
+        genuinely inapplicable to the subject; never omit an item for
+        which evidence exists.
+
+        PERSON - mandatory key items:
+        - Identity and background (人物背景介绍)
+        - Contact details (人物联系方式)
+        - Immediate family members and their circumstances (直系亲属人员基本情况)
+        - Habits and hobbies (习惯爱好)
+        - Personality traits (性格特征)
+        - Personal and family financial assets (个人及家庭财产情况)
+        - Key social relationships (主要社会关系)
+        - Religious affiliation, if any (宗教信仰)
+        - Education and career history (教育经历和工作履历)
+        - Political positions and views (政治主张)
+        - Social activities (社会活动情况)
+        - China-related statements and business activities, if any
+          (与中国相关的言论和商业活动情况)
+
+        ORGANIZATION - mandatory key items:
+        - Organizational background (组织背景介绍)
+        - Country of registration and office addresses (机构注册国家及办公地址)
+        - Contact details (联系方式)
+        - Official website URL (互联网官方主页地址)
+        - Founding purpose and objectives (组织成立的宗旨和目标)
+        - Key core members (主要核心成员详情)
+        - Major historical activities (组织主要历史活动情况)
+        - Funding sources in detail: government appropriations or donations
+          (组织经费来源详情（政府拨款或受捐赠）)
+        - Affiliations with other organizations (与其它组织关联情况)
+        - Organizational structure and activities within mainland China,
+          if any (在中国境内的组织架构及其活动情况)
+
+        EVENT - mandatory key items:
+        - Earliest occurrence: time and place (事件最早发生时间和地点)
+        - Background and causes of the event (事件发生的背景和原因)
+        - Political factors influencing the event, if any (是否有政治因素影响)
+        - Main development timeline and social impact (事件发展主要过程和社会影响)
+        - Involved parties and key figures in detail (事件涉及相关方和主要人物详情)
+        - Mainstream media coverage (主流媒体报道情况)
+        - Government response and intervention, if any
+          (政府对该事件的反应和介入情况)
+        - Assessment of the event's future trajectory (未来事件发展态势预测)
+"""
+
     def _determine_report_structure(
         self, findings: Dict, query: str
     ) -> List[Dict]:
@@ -232,10 +295,15 @@ class IntegratedReportGenerator:
         Content Summary:
         {combined_content[:1000]}... [truncated]
 
+        {self._TOPIC_PROFILE_DIRECTIVE}
+
         Determine the most appropriate report structure by:
-        1. Analyzing the type of content (technical, business, academic, etc.)
+        1. Classifying the subject per SUBJECT CLASSIFICATION above
+           (person / organization / event / general topic)
         2. Identifying main themes and logical groupings
         3. Considering the depth and breadth of the research
+        4. If the subject is a person, organization, or event, mapping
+           every applicable mandatory key item to a subsection
 
         Return a table of contents structure in this exact format:
         STRUCTURE
