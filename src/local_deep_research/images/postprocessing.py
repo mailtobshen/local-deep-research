@@ -1229,6 +1229,43 @@ def enhance_report_with_images(
                             _cosine(alt_vec, query_vec)
                         )
                     surface = max(surface_scores, key=surface_scores.get)
+                    # ref_text anti-rubber-stamp (2026-09-13, research
+                    # b7ec824a): ref_text compares the alt to its OWN
+                    # source page, so it is near-always high — a CapCut
+                    # Black-Friday banner cited into a "非洲地区办公室"
+                    # section passed with ref_text=0.67 while sec=0.01.
+                    # ref_text may only be the winning surface when at
+                    # least one report-anchored surface (sec or query)
+                    # clears the alignment floor.
+                    ref_alignment_floor = 0.30
+                    ref_text_vetoed = False
+                    if surface == "ref_text":
+                        anchored = max(
+                            surface_scores.get("sec", 0.0),
+                            surface_scores.get("query", 0.0),
+                        )
+                        if round_score(anchored) < round_score(
+                            ref_alignment_floor
+                        ):
+                            ref_text_vetoed = True
+                            logger.info(
+                                f"[IMG-TRACE] REF_TEXT_VETO research={research_id} "
+                                f"img_alt={(img.alt or '')!r} "
+                                f"img_url={img.url} "
+                                f"img_source_url={img.source_url} "
+                                f"cite_num={num} ref_url={url} sec={sidx} "
+                                f"ref_text={surface_scores['ref_text']:.2f} "
+                                f"anchored_max={anchored:.2f} "
+                                f"floor={ref_alignment_floor:.2f}"
+                            )
+                            surface_scores = {
+                                k: v
+                                for k, v in surface_scores.items()
+                                if k != "ref_text"
+                            }
+                            surface = max(
+                                surface_scores, key=surface_scores.get
+                            )
                     score = surface_scores[surface]
                     if score >= round_score(threshold):
                         # Per-image trace on the mandatory path. We
