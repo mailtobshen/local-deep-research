@@ -14,6 +14,7 @@ from .relevance import (
     _section_levels,
     _split_sections,
     build_citation_index,
+    build_url_text_index,
     domains_match,
 )
 from .semantic_matcher import (
@@ -163,6 +164,41 @@ def _log_end(research_id: str, status: str) -> None:
 
 
 SECTION_IMAGE_CAP = 3  # max images adopted per section, by score (clearnet)
+
+# --- alt semantic-content gate (2026-09-13, research c34cb8fa) ---
+# The multilingual encoder embeds filename-derived token soup
+# ('ldgjhfknbaicem1496932883', Baidu CDN hashes) near Chinese section
+# phrases (cosine 0.61-0.65, verified offline 2026-09-13), so such alts
+# must never reach the encoder. An alt participates only if it carries
+# real lexical content: >=2 CJK chars, or >=1 latin word (>=3 letters)
+# that is neither an ID/timestamp (>=6-digit run attached to letters)
+# nor consonant soup (>=10 letters with <25% vowels).
+_ALT_CJK_RE = re.compile(r"[一-鿿]{2,}")
+_ALT_WORD_RE = re.compile(r"[A-Za-z]{3,}")
+_ALT_DIGIT_RUN_RE = re.compile(r"\d{6,}")
+
+
+def _is_junk_latin_token(token: str) -> bool:
+    if _ALT_DIGIT_RUN_RE.search(token):
+        return True
+    letters = [c for c in token if c.isalpha()]
+    if len(letters) >= 10:
+        vowels = sum(c in "aeiouAEIOU" for c in letters)
+        if vowels / len(letters) < 0.25:
+            return True
+    return False
+
+
+def _alt_has_semantic_content(alt: Optional[str]) -> bool:
+    if not alt or not alt.strip():
+        return False
+    if _ALT_CJK_RE.search(alt):
+        return True
+    return any(
+        not _is_junk_latin_token(w) for w in _ALT_WORD_RE.findall(alt)
+    )
+
+
 # Spread-pass threshold relaxation (e14f3600, 2026-08-30): an over-cap
 # image may re-seat into another SAME-CITE section when its alt-vs-
 # section cosine clears (main threshold − this margin). 0.15 keeps
@@ -614,6 +650,7 @@ def enhance_report_with_images(
     alt_similarity_threshold: float = _DEFAULT_THRESHOLD,
     alt_similarity_min_margin: float = _DEFAULT_MIN_MARGIN,
     fetched_html: Optional[Dict[str, str]] = None,
+    research_query: Optional[str] = None,
 ) -> str:
     """Return markdown with real images inserted + mirrored locally.
 
@@ -757,6 +794,19 @@ def enhance_report_with_images(
             return clean_markdown
 
         threshold = alt_similarity_threshold
+        # 2026-09-13 (research c34cb8fa): multi-surface scoring inputs.
+        # Section headings under the topic-profile directive are fixed
+        # templates without named entities, so alt-vs-heading cosine is
+        # weak. Each candidate is additionally scored against (a) its
+        # cited reference's textual passage and (b) the original
+        # research query; the gate takes the max. Both extra surfaces
+        # share language/entity density with real alt text, while
+        # filename-derived token-soup alts score low on them (verified
+        # 2026-09-13: real alt 0.27→0.59 on ref-text/query surfaces,
+        # junk alt 0.65→0.32).
+        url_to_text = build_url_text_index(results)
+        text_vecs_cache: dict[str, list[float]] = {}
+        query_vec: Optional[list[float]] = None
         # Alt-vector cache: one entry per image URL, filled by the
         # scoring loop below, consumed by the spread pass in
         # _build_placements (re-seating over-cap images into other
@@ -1060,6 +1110,23 @@ def enhance_report_with_images(
                             f"src_url={url} img_url={img.url}"
                         )
                         continue
+                    if not _alt_has_semantic_content(img.alt):
+                        # 2026-09-13 (research c34cb8fa): filename-derived
+                        # token-soup alts ('ldgjhfknbaicem1496932883')
+                        # embed near Chinese section phrases (cosine
+                        # 0.61-0.65, verified offline) — the multilingual
+                        # encoder's OOV corner. Such alts are rejected
+                        # BEFORE the encoder, deterministically.
+                        logger.info(
+                            f"[IMG-TRACE] CANDIDATE_DROPPED research={research_id} "
+                            f"img_alt={(img.alt or '')!r} "
+                            f"img_url={img.url} "
+                            f"img_source_url={img.source_url} "
+                            f"cite_num={num} "
+                            f"ref_url={url} sec={sidx} score=0.00 "
+                            f"reason=alt_junk_token"
+                        )
+                        continue
                     raw = model.encode([img.alt], normalize_embeddings=True)[0]
                     alt_vec = list(raw.tolist()) if hasattr(raw, "tolist") else list(raw)
                     # Cache the alt vector for the spread pass (it
@@ -1084,7 +1151,46 @@ def enhance_report_with_images(
                         f"cite_num={num} ref_url={url} sec={sidx} "
                         f"sec_phrase_text={sec_phrase_text!r}"
                     )
-                    score = round_score(_cosine(alt_vec, sec_vec))
+                    # Multi-surface gate (2026-09-13): max over the
+                    # section phrase, the cited reference's textual
+                    # passage, and the original research query. The
+                    # heading surface alone under-scores real alts when
+                    # the report language differs from the alt language
+                    # and headings are entity-free templates.
+                    surface_scores: dict[str, float] = {
+                        "sec": round_score(_cosine(alt_vec, sec_vec))
+                    }
+                    ref_text = url_to_text.get(url)
+                    if ref_text:
+                        t_vec = text_vecs_cache.get(url)
+                        if t_vec is None:
+                            t_raw = model.encode(
+                                [ref_text], normalize_embeddings=True
+                            )[0]
+                            t_vec = (
+                                list(t_raw.tolist())
+                                if hasattr(t_raw, "tolist")
+                                else list(t_raw)
+                            )
+                            text_vecs_cache[url] = t_vec
+                        surface_scores["ref_text"] = round_score(
+                            _cosine(alt_vec, t_vec)
+                        )
+                    if research_query and research_query.strip():
+                        if query_vec is None:
+                            q_raw = model.encode(
+                                [research_query], normalize_embeddings=True
+                            )[0]
+                            query_vec = (
+                                list(q_raw.tolist())
+                                if hasattr(q_raw, "tolist")
+                                else list(q_raw)
+                            )
+                        surface_scores["query"] = round_score(
+                            _cosine(alt_vec, query_vec)
+                        )
+                    surface = max(surface_scores, key=surface_scores.get)
+                    score = surface_scores[surface]
                     if score >= round_score(threshold):
                         # Per-image trace on the mandatory path. We
                         # carry the four fields the user asks for
@@ -1135,7 +1241,8 @@ def enhance_report_with_images(
                             f"[IMG-TRACE] CANDIDATE_SCORED_DETAIL research={research_id} "
                             f"sec={sidx} cite_num={num} ref_url={url} "
                             f"img_alt={(img.alt or '')!r} img_url={img.url} "
-                            f"score={score:.2f} decision=keep reason=phrase_similarity"
+                            f"score={score:.2f} decision=keep reason=phrase_similarity "
+                            f"surface={surface} surfaces={surface_scores}"
                         )
                         # Event 8 (closes G4): BIND_ADOPTED —
                         # final-stage adoption trail. Aug 6 had no
@@ -1186,7 +1293,8 @@ def enhance_report_with_images(
                             f"[IMG-TRACE] CANDIDATE_SCORED_DETAIL research={research_id} "
                             f"sec={sidx} cite_num={num} ref_url={url} "
                             f"img_alt={(img.alt or '')!r} img_url={img.url} "
-                            f"score={score:.2f} decision=drop reason=below_threshold"
+                            f"score={score:.2f} decision=drop reason=below_threshold "
+                            f"surface={surface} surfaces={surface_scores}"
                         )
                         dropped_low += 1
                 logger.info(

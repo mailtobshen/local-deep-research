@@ -1965,6 +1965,7 @@ def run_research_process(research_id, query, mode, **kwargs):
                                             clean_markdown=formatted_content,
                                             results=results_for_fill,
                                             db_session=img_db_session,
+                                            research_query=query,
                                             **img_args,
                                         )
                                     )
@@ -2350,6 +2351,7 @@ def run_research_process(research_id, query, mode, **kwargs):
                                     clean_markdown=formatted_content,
                                     results=results_for_fill,
                                     db_session=img_db_session,
+                                    research_query=query,
                                     **img_args,
                                 )
                             )

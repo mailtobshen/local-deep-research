@@ -700,6 +700,47 @@ def extract_segment_sources(
     return out
 
 
+def build_url_text_index(
+    results: Dict[str, Any], *, max_chars: int = 800
+) -> Dict[str, str]:
+    """Map every cited source URL to its textual passage.
+
+    2026-09-13 (research c34cb8fa): section headings under the
+    topic-profile directive are fixed templates with no named entities
+    (人物背景介绍/联系方式/…), so alt-vs-heading cosine is no longer a
+    meaningful signal. The scoring gate instead matches the alt against
+    the cited reference's own text (title + content + snippet — same
+    language as the alt, entity-dense) and the original research query.
+    This index supplies the former; it reads the same channels as the
+    ``url_to_html`` loops in build_citation_index (findings'
+    search_results + all_links_of_system).
+    """
+    url_to_text: Dict[str, str] = {}
+
+    def _add(sr: Dict[str, Any]) -> None:
+        if not isinstance(sr, dict):
+            return
+        url = sr.get("url") or sr.get("link")
+        if not url or url in url_to_text:
+            return
+        parts = [
+            sr.get(key)
+            for key in ("title", "content", "snippet", "source_title")
+            if isinstance(sr.get(key), str) and sr.get(key)
+        ]
+        text = " ".join(parts).strip()
+        if text:
+            url_to_text[url] = text[:max_chars]
+
+    for finding in results.get("findings", []) or []:
+        if isinstance(finding, dict):
+            for sr in finding.get("search_results", []) or []:
+                _add(sr)
+    for r in results.get("all_links_of_system") or []:
+        _add(r)
+    return url_to_text
+
+
 def build_citation_index(
     markdown: str,
     results: dict,
