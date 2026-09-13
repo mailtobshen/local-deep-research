@@ -452,6 +452,26 @@ def _open_image_enhancer_session(username, settings_snapshot):
         )
         alt_similarity_threshold = _ALT_SIMILARITY_FLOOR
 
+    # Dedicated gate for the ref_text surface (alt vs the report-body
+    # context around the citation). Cross-lingual alt-vs-context cosine
+    # caps at ~0.44–0.55 even for matching pairs, so this defaults
+    # below the main threshold. Floor 0.35: observed unrelated-image
+    # ref_text tops out ~0.32 (research b7ec824a, CapCut banners vs
+    # Winrock prose).
+    alt_ref_text_threshold = get_setting_from_snapshot(
+        "report.image_alt_ref_text_threshold", 0.45,
+        settings_snapshot=settings_snapshot,
+    )
+    _ALT_REF_TEXT_FLOOR = 0.35
+    if alt_ref_text_threshold < _ALT_REF_TEXT_FLOOR:
+        logger.info(
+            f"[IMG-TRACE] SETTING_CLAMP "
+            f"report.image_alt_ref_text_threshold "
+            f"requested={alt_ref_text_threshold} "
+            f"floor={_ALT_REF_TEXT_FLOOR}"
+        )
+        alt_ref_text_threshold = _ALT_REF_TEXT_FLOOR
+
     args = dict(
         vision_model=vision_model,
         vision_url=vision_url or None,
@@ -461,6 +481,7 @@ def _open_image_enhancer_session(username, settings_snapshot):
         firecrawl_client=firecrawl_client,
         enable_images=enable_images,
         alt_similarity_threshold=alt_similarity_threshold,
+        alt_ref_text_threshold=alt_ref_text_threshold,
     )
     with get_user_db_session(username) as db_session:
         yield args, db_session

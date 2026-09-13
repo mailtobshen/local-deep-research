@@ -688,6 +688,13 @@ def enhance_report_with_images(
     firecrawl_client=None,
     alt_similarity_threshold: float = _DEFAULT_THRESHOLD,
     alt_similarity_min_margin: float = _DEFAULT_MIN_MARGIN,
+    # 2026-09-13: the ref_text surface (alt vs the report-body context
+    # around the [N] citation) gets its OWN threshold — multilingual
+    # encoders cap cross-lingual alt-vs-context cosine at ~0.44–0.55
+    # even for perfectly matching pairs (EN alt, ZH report), so the
+    # uniform 0.6 gate systematically drops them. None = use the main
+    # threshold (backward-compatible behavior).
+    alt_ref_text_threshold: Optional[float] = None,
     fetched_html: Optional[Dict[str, str]] = None,
     research_query: Optional[str] = None,
 ) -> str:
@@ -1234,9 +1241,39 @@ def enhance_report_with_images(
                         surface_scores["query"] = round_score(
                             _cosine(alt_vec, query_vec)
                         )
-                    surface = max(surface_scores, key=surface_scores.get)
-                    score = surface_scores[surface]
-                    if score >= round_score(threshold):
+                    # Per-surface thresholds (2026-09-13): sec/query
+                    # keep the main gate; ref_text — anchored to the
+                    # report body but cross-lingually capped at
+                    # ~0.44–0.55 — may use the dedicated, typically
+                    # lower alt_ref_text_threshold. A candidate passes
+                    # if ANY surface clears its own threshold; the
+                    # winning surface is the highest scorer among the
+                    # passing ones.
+                    ref_text_threshold = (
+                        threshold
+                        if alt_ref_text_threshold is None
+                        else alt_ref_text_threshold
+                    )
+                    surface_thresholds = {
+                        "sec": threshold,
+                        "query": threshold,
+                        "ref_text": ref_text_threshold,
+                    }
+                    passing = {
+                        k: v
+                        for k, v in surface_scores.items()
+                        if round_score(v)
+                        >= round_score(surface_thresholds[k])
+                    }
+                    if passing:
+                        surface = max(passing, key=passing.get)
+                        score = passing[surface]
+                    else:
+                        surface = max(
+                            surface_scores, key=surface_scores.get
+                        )
+                        score = surface_scores[surface]
+                    if passing:
                         # Per-image trace on the mandatory path. We
                         # carry the four fields the user asks for
                         # verbatim so log parsers (and humans tailing

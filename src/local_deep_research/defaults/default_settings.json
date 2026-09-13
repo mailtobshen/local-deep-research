@@ -956,7 +956,7 @@
     },
     "report.image_alt_similarity_threshold": {
         "category": "report_parameters",
-        "description": "Minimum cosine similarity (0–1) between an image's alt text and its section heading+content required for the image to be kept in the report. Lower = more images but more mismatches; higher = fewer, more precise images. Clamped to a floor of 0.45. Default 0.6.",
+        "description": "Minimum cosine similarity (0–1) an image's alt text must reach against its section heading or the original research query for the image to be kept in the report. The alt-vs-citation-context check has its own, typically lower threshold ('Image alt-context similarity threshold') because cross-lingual pairs score lower. Lower = more images but more mismatches; higher = fewer, more precise images. Clamped to a floor of 0.45. Default 0.6.",
         "editable": true,
         "max_value": 1.0,
         "min_value": 0.45,
@@ -966,6 +966,20 @@
         "type": "REPORT",
         "ui_element": "number",
         "value": 0.6,
+        "visible": true
+    },
+    "report.image_alt_ref_text_threshold": {
+        "category": "report_parameters",
+        "description": "Minimum cosine similarity between an image's alt text and the report paragraph that cites the image's source ([N] context) for the image to be kept. Separate from the heading/query threshold: multilingual encoders cap cross-lingual pairs (e.g. an English alt in a Chinese report) at roughly 0.44–0.55 even when the alt genuinely matches the paragraph, so a uniform 0.6 gate would drop them. Clamped to a floor of 0.35 (unrelated images top out near 0.32). Default 0.45.",
+        "editable": true,
+        "max_value": 1.0,
+        "min_value": 0.35,
+        "name": "Image alt-context similarity threshold",
+        "options": null,
+        "step": 0.05,
+        "type": "REPORT",
+        "ui_element": "number",
+        "value": 0.45,
         "visible": true
     },
     "report.enable_file_backup": {

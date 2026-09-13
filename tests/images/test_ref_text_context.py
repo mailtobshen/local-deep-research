@@ -62,7 +62,7 @@ def _fake_model(vectors):
     return _M()
 
 
-def _run(monkeypatch, vectors):
+def _run(monkeypatch, vectors, **extra):
     md = (
         "## 非洲地区\n\n"
         "Winrock 在肯尼亚设有办公室 [1]。\n\n"
@@ -98,8 +98,38 @@ def _run(monkeypatch, vectors):
             enable_images=True,
             vision_model="",
             research_query=QUERY,
+            **extra,
         )
     return out, context
+
+
+def test_cross_lingual_ref_text_kept_by_dedicated_threshold(
+    monkeypatch, loguru_caplog
+):
+    """The WWII case (research b7ec824a): EN alt genuinely matching the
+    ZH citing paragraph scores 0.50 — below the uniform 0.6 gate but
+    above the dedicated alt_ref_text_threshold=0.45 → keep."""
+    _, context = _run(monkeypatch, {})
+    # Unit alt vector: ref_text=0.55 (context=e1), sec=0.30 (e2),
+    # query=0.00 — only the dedicated 0.45 gate can pass it.
+    vectors = {
+        ALT: [0.55, 0.30, 0.50, 0.5932],
+        context: [1.0, 0.0, 0.0, 0.0],
+        SEC_PHRASE: [0.0, 1.0, 0.0, 0.0],
+        QUERY: [0.0, 0.0, 0.0, 1.0],
+    }
+    # Without the dedicated threshold: uniform 0.6 → drop.
+    out, _ = _run(monkeypatch, vectors)
+    assert "CANDIDATE_DROPPED" in "\n".join(
+        r.getMessage() for r in loguru_caplog.records
+    )
+    # With alt_ref_text_threshold=0.45: keep via the ref_text surface.
+    out, _ = _run(monkeypatch, vectors, alt_ref_text_threshold=0.45)
+    text = "\n".join(r.getMessage() for r in loguru_caplog.records)
+    assert "CANDIDATE_KEPT" in text
+    detail = [l for l in text.splitlines()
+              if "CANDIDATE_SCORED_DETAIL" in l and "decision=keep" in l]
+    assert detail and "surface=ref_text" in detail[0]
 
 
 def test_b7ec824a_replay_now_drops(monkeypatch, loguru_caplog):
