@@ -564,28 +564,40 @@ def probe_proxy(
         )
 
     # Stage 2: real HTTPS request THROUGH the proxy.
-    try:
-        resp = requests.get(
-            "https://www.google.com/generate_204",
-            proxies={"http": proxy_url, "https": proxy_url},
-            timeout=timeout,
-            headers=_BROWSER_HEADERS,
-        )
-    except requests.Timeout:
+    # 2026-09-13: retry up to 3 attempts. The upstream Shadowsocks node
+    # is intermittently flaky (~40% momentary ConnectError even while
+    # healthy); a single-shot verdict failed the whole pre-flight ~1 in
+    # 3 runs and blocked research. A genuinely dead proxy still fails
+    # all 3 attempts quickly, so this absorbs jitter without masking
+    # outages.
+    resp = None
+    last_exc: Optional[Exception] = None
+    for attempt in range(3):
+        try:
+            resp = requests.get(
+                "https://www.google.com/generate_204",
+                proxies={"http": proxy_url, "https": proxy_url},
+                timeout=timeout,
+                headers=_BROWSER_HEADERS,
+            )
+            break
+        except requests.Timeout as e:
+            last_exc = e
+        except Exception as e:  # noqa: BLE001
+            last_exc = e
+        if attempt < 2:
+            time.sleep(0.5)
+    if resp is None:
         latency = int((time.monotonic() - start) * 1000)
         return EngineStatus(
             "proxy",
             "error",
-            f"TCP 通但代理请求超时 ({proxy_url})",
-            latency,
-            kind="proxy",
-        )
-    except Exception as e:  # noqa: BLE001
-        latency = int((time.monotonic() - start) * 1000)
-        return EngineStatus(
-            "proxy",
-            "error",
-            f"TCP 通但无法经代理出站: {str(e)[:60]}",
+            (
+                f"TCP 通但代理请求超时 ({proxy_url})"
+                if isinstance(last_exc, requests.Timeout)
+                else f"TCP 通但无法经代理出站 (3 次重试均失败): "
+                f"{str(last_exc)[:60]}"
+            ),
             latency,
             kind="proxy",
         )
