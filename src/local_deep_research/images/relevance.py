@@ -741,6 +741,56 @@ def build_url_text_index(
     return url_to_text
 
 
+# Strips every citation marker form from a body paragraph so the
+# remaining text is pure prose: ``[N](url)``, ``[[N]]``, ``[N]`` and
+# grouped ``[1, 2]`` / ``[[1, 2]]``.
+_CITE_MARKER_STRIP_RE = re.compile(
+    r"\[+\s*\d+(?:\s*,\s*\d+)*\s*\]+(?:\([^)]*\))?"
+)
+
+
+def build_cite_context_index(
+    markdown: str, *, max_chars: int = 400
+) -> dict[str, str]:
+    """Map each citation number to the report-body text around its marker.
+
+    2026-09-13 redefinition (research b7ec824a): the ref_text surface
+    used to compare the alt to its own source page's passage
+    (:func:`build_url_text_index`), which rubber-stamped any image
+    whose page got cited — a CapCut Black-Friday banner cited into a
+    Winrock-International report's Africa-offices section scored
+    ref_text=0.67 while sec=0.01. The surface now anchors to the
+    report itself: the value is the paragraph containing the FIRST
+    body occurrence of the ``[N]`` marker (hyperlink, bare
+    double-bracket or plain form), markers stripped, whitespace
+    collapsed, truncated to ``max_chars``. The References block is
+    excluded. Numbers cited nowhere in the body are absent.
+    """
+    refs_start = _find_references_block_start(markdown)
+    body = markdown if refs_start < 0 else markdown[:refs_start]
+    context: dict[str, str] = {}
+    for para in body.split("\n\n"):
+        nums: list[str] = []
+        seen: set[str] = set()
+        for regex in (
+            CITE_HYPERLINK_RE,
+            _BARE_DOUBLE_BRACKET_RE,
+            CITE_INLINE_RE,
+        ):
+            for m in regex.finditer(para):
+                n = m.group(1)
+                if n not in seen:
+                    seen.add(n)
+                    nums.append(n)
+        for n in nums:
+            if n in context:
+                continue
+            text = " ".join(_CITE_MARKER_STRIP_RE.sub(" ", para).split())
+            if text:
+                context[n] = text[:max_chars]
+    return context
+
+
 def build_citation_index(
     markdown: str,
     results: dict,

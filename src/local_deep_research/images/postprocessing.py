@@ -14,7 +14,7 @@ from .relevance import (
     _section_levels,
     _split_sections,
     build_citation_index,
-    build_url_text_index,
+    build_cite_context_index,
     domains_match,
 )
 from .semantic_matcher import (
@@ -836,14 +836,15 @@ def enhance_report_with_images(
         # 2026-09-13 (research c34cb8fa): multi-surface scoring inputs.
         # Section headings under the topic-profile directive are fixed
         # templates without named entities, so alt-vs-heading cosine is
-        # weak. Each candidate is additionally scored against (a) its
-        # cited reference's textual passage and (b) the original
-        # research query; the gate takes the max. Both extra surfaces
-        # share language/entity density with real alt text, while
-        # filename-derived token-soup alts score low on them (verified
-        # 2026-09-13: real alt 0.27→0.59 on ref-text/query surfaces,
-        # junk alt 0.65→0.32).
-        url_to_text = build_url_text_index(results)
+        # weak. Each candidate is additionally scored against (a) the
+        # report-body context around its ``[N]`` citation marker (the
+        # ref_text surface — redefined 2026-09-13, research b7ec824a,
+        # from "alt vs its own source page's passage", which
+        # rubber-stamped any cited page's images, to "alt vs the
+        # paragraph citing it", anchoring the surface to the report
+        # itself) and (b) the original research query; the gate takes
+        # the max.
+        num_to_context = build_cite_context_index(clean_markdown)
         text_vecs_cache: dict[str, list[float]] = {}
         query_vec: Optional[list[float]] = None
         # Alt-vector cache: one entry per image URL, filled by the
@@ -1199,9 +1200,14 @@ def enhance_report_with_images(
                     surface_scores: dict[str, float] = {
                         "sec": round_score(_cosine(alt_vec, sec_vec))
                     }
-                    ref_text = url_to_text.get(url)
+                    # ref_text (2026-09-13 redefinition): the report-body
+                    # context around this citation marker — NOT the
+                    # source page's own text, which rubber-stamped
+                    # every cited page's images (research b7ec824a:
+                    # CapCut banner, ref_text=0.67 vs sec=0.01).
+                    ref_text = num_to_context.get(num)
                     if ref_text:
-                        t_vec = text_vecs_cache.get(url)
+                        t_vec = text_vecs_cache.get(num)
                         if t_vec is None:
                             t_raw = model.encode(
                                 [ref_text], normalize_embeddings=True
@@ -1211,7 +1217,7 @@ def enhance_report_with_images(
                                 if hasattr(t_raw, "tolist")
                                 else list(t_raw)
                             )
-                            text_vecs_cache[url] = t_vec
+                            text_vecs_cache[num] = t_vec
                         surface_scores["ref_text"] = round_score(
                             _cosine(alt_vec, t_vec)
                         )
@@ -1229,43 +1235,6 @@ def enhance_report_with_images(
                             _cosine(alt_vec, query_vec)
                         )
                     surface = max(surface_scores, key=surface_scores.get)
-                    # ref_text anti-rubber-stamp (2026-09-13, research
-                    # b7ec824a): ref_text compares the alt to its OWN
-                    # source page, so it is near-always high — a CapCut
-                    # Black-Friday banner cited into a "非洲地区办公室"
-                    # section passed with ref_text=0.67 while sec=0.01.
-                    # ref_text may only be the winning surface when at
-                    # least one report-anchored surface (sec or query)
-                    # clears the alignment floor.
-                    ref_alignment_floor = 0.30
-                    ref_text_vetoed = False
-                    if surface == "ref_text":
-                        anchored = max(
-                            surface_scores.get("sec", 0.0),
-                            surface_scores.get("query", 0.0),
-                        )
-                        if round_score(anchored) < round_score(
-                            ref_alignment_floor
-                        ):
-                            ref_text_vetoed = True
-                            logger.info(
-                                f"[IMG-TRACE] REF_TEXT_VETO research={research_id} "
-                                f"img_alt={(img.alt or '')!r} "
-                                f"img_url={img.url} "
-                                f"img_source_url={img.source_url} "
-                                f"cite_num={num} ref_url={url} sec={sidx} "
-                                f"ref_text={surface_scores['ref_text']:.2f} "
-                                f"anchored_max={anchored:.2f} "
-                                f"floor={ref_alignment_floor:.2f}"
-                            )
-                            surface_scores = {
-                                k: v
-                                for k, v in surface_scores.items()
-                                if k != "ref_text"
-                            }
-                            surface = max(
-                                surface_scores, key=surface_scores.get
-                            )
                     score = surface_scores[surface]
                     if score >= round_score(threshold):
                         # Per-image trace on the mandatory path. We
