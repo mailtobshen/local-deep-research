@@ -1650,6 +1650,23 @@ class LangGraphAgentStrategy(BaseSearchStrategy):
                 all_links = extract_links_from_search_results(
                     all_search_results
                 )
+                # 2026-09-13 (research a4c512fa): keep only the
+                # sources the synthesis body actually cites. The
+                # previous behaviour listed EVERY accumulated search
+                # result (188 rows that run), so zero-relevance
+                # SearXNG noise (Mattress Firm, PIGAV,
+                # platform.deepseek.com ...) survived into 参考文献
+                # as uncited rows — enforce deliberately keeps
+                # uncited rows, so the gate has to happen here.
+                # Falls back to the full list when the body cites
+                # nothing (empty-references regression guard).
+                from local_deep_research.text_optimization.citation_formatter import (
+                    filter_links_to_cited,
+                )
+
+                all_links = filter_links_to_cited(
+                    all_links, synthesized_content
+                )
                 if all_links:
                     # numbered=True: rows carry the same continuous
                     # 1..K the documents prompt used (see

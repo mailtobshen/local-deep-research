@@ -99,6 +99,74 @@ def cite_link_text(n) -> str:
     """Escaped link text ``\\[73\\]`` for a citation number."""
     return f"\\[{n}\\]"
 
+
+def extract_cited_targets(body: str) -> Tuple[set, set]:
+    """Collect the citation targets a report body actually uses.
+
+    2026-09-13 (research a4c512fa): the langgraph Sources block was
+    built from ALL accumulated search results, so irrelevant SearXNG
+    noise (Mattress Firm, PIGAV, platform.deepseek.com ...) survived
+    into 参考文献 as uncited rows. This helper is the extraction half
+    of the fix; see :func:`filter_links_to_cited`.
+
+    Recognizes the same marker shapes the enforcer does: hyperlinked
+    ``[[N]](url)`` / ``\\[N\\](url)``, plain ``[N]``, and comma-group
+    ``[1, 2]``.
+
+    Returns:
+        ``(nums, canonical_urls)`` — cited source numbers and the
+        canonical form of every hyperlinked citation URL.
+    """
+    from ..utilities.url_utils import canonical_url_key
+
+    nums: set = set()
+    canonical_urls: set = set()
+    if not body:
+        return nums, canonical_urls
+    for match in CITE_HYPERLINK_RE.finditer(body):
+        nums.add(int(match.group(1)))
+        canon = canonical_url_key(match.group(2) or "")
+        if canon:
+            canonical_urls.add(canon)
+    for match in CITE_INLINE_RE.finditer(body):
+        nums.add(int(match.group(1)))
+    for match in CITE_INLINE_GROUP_RE.finditer(body):
+        for part in match.group(1).split(","):
+            part = part.strip()
+            if part.isdigit():
+                nums.add(int(part))
+    return nums, canonical_urls
+
+
+def filter_links_to_cited(
+    links: List[Dict], body: str
+) -> List[Dict]:
+    """Keep only links whose row the body actually cites.
+
+    A link survives when its canonical URL is hyperlinked in *body*
+    or its ``index`` number appears as a citation marker. When the
+    body contains no citations at all, *links* is returned unchanged
+    (empty-references regression guard — the citation self-check
+    retry path relies on the block never silently emptying).
+    """
+    from ..utilities.url_utils import canonical_url_key
+
+    nums, canonical_urls = extract_cited_targets(body)
+    if not nums and not canonical_urls:
+        return links
+    kept = [
+        link
+        for link in links
+        if canonical_url_key(link.get("url") or link.get("link") or "")
+        in canonical_urls
+        or str(link.get("index", "")).strip() in {str(n) for n in nums}
+    ]
+    logger.info(
+        f"[SOURCES-CITED] bank={len(links)} kept={len(kept)} "
+        f"cited_nums={len(nums)} cited_urls={len(canonical_urls)}"
+    )
+    return kept
+
 # Inline comma-group citations like [1, 2, 3] — a single bracket pair
 # containing several citation numbers. LLMs emit this style as well as
 # the single-number [N] form. Group 1 is the comma-separated number
