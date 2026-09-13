@@ -30,6 +30,7 @@ from .serialize import loads_images
 from .store import ImageStore, _IMG_RE
 from .extractor import _MIN_DIM, pop_channel_coverage
 from local_deep_research.utilities.is_darkweb_url import is_darkweb_url
+from local_deep_research.utilities.url_utils import canonical_url_key
 
 # Meaningless-alt patterns for the darkweb adoption fast path. Keep
 # this STRICT (drop only truly content-free alts): per the 2026-08-22
@@ -568,7 +569,16 @@ def _dedupe_images(markdown: str) -> tuple[str, int, int]:
         # one, regardless of whether we keep or drop the current
         # match.
         parts.append(markdown[last_end:m.start()])
-        if url in seen:
+        # Dedup key is the canonical URL, not the raw string: the same
+        # physical image can reach the markdown with different
+        # tracking params (research a4c512fa: the Nury Turkel headshot
+        # arrived twice as thumb.wikimedia.org/...250px-...jpg with
+        # utm_source=zh.wikipedia.org vs utm_source=commons.wikimedia.
+        # org — both KEPT, duplicate rendered in two sections).
+        # canonical_url_key strips utm_*/fbclid/... so those variants
+        # collapse; everything else about the key matches the raw URL.
+        key = canonical_url_key(url)
+        if key in seen:
             # Drop the duplicate match. Surrounding prose stays
             # intact. The trailing newlines may collapse and create
             # runs of blank lines, which we squeeze below.
@@ -578,7 +588,7 @@ def _dedupe_images(markdown: str) -> tuple[str, int, int]:
                 f"img_url={url}"
             )
         else:
-            seen.add(url)
+            seen.add(key)
             parts.append(m.group(0))
             logger.info(
                 f"[IMG-TRACE] DEDUPE_KEEP alt={alt!r} "

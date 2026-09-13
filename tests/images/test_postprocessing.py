@@ -159,3 +159,45 @@ def test_no_eligible_bank_preserves_markdown():
         )
     assert result == "# 广州建筑\n## 广州塔\n介绍"
     store_cls.assert_not_called()
+
+
+def test_dedupe_images_collapses_utm_variants():
+    """Regression (research a4c512fa, 2026-09-13): the same Wikimedia
+    headshot reached the markdown twice, identical except for tracking
+    params (utm_source=zh.wikipedia.org vs utm_source=commons.
+    wikimedia.org). The raw-string dedup key kept both — duplicate
+    image rendered in two sections. The canonical key collapses them.
+    """
+    from local_deep_research.images.postprocessing import _dedupe_images
+
+    base = (
+        "https://thumb.wikimedia.org/wikipedia/commons/thumb/c/c5/"
+        "Nury_Turkel_headshot_2.jpg/250px-Nury_Turkel_headshot_2.jpg"
+    )
+    md = (
+        "# Section A\n\n"
+        f"![Nury Turkel headshot]({base}?utm_source=zh.wikipedia.org"
+        "&utm_campaign=parser&utm_content=thumbnail)\n\n"
+        "# Section B\n\n"
+        f"![Nury Turkel headshot]({base}?utm_source=commons.wikimedia.org"
+        "&utm_campaign=parser&utm_content=thumbnail)\n"
+    )
+    out, orig, unique = _dedupe_images(md)
+    assert orig == 2
+    assert unique == 1
+    # Only the FIRST variant (zh.wikipedia.org) survives.
+    assert out.count("zh.wikipedia.org") == 1
+    assert "commons.wikimedia.org" not in out
+
+
+def test_dedupe_images_distinct_urls_still_unique():
+    """Canonical keying must not over-merge: genuinely different paths
+    (different px renditions) stay distinct."""
+    from local_deep_research.images.postprocessing import _dedupe_images
+
+    md = (
+        "![a](https://thumb.wikimedia.org/x/250px-photo.jpg)"
+        "![b](https://thumb.wikimedia.org/x/500px-photo.jpg)"
+    )
+    out, orig, unique = _dedupe_images(md)
+    assert orig == unique == 2
