@@ -275,6 +275,16 @@ class IntegratedReportGenerator:
         - Organizational structure and activities within mainland China,
           if any (在中国境内的组织架构及其活动情况)
 
+        SOURCE PRIORITY (ORGANIZATION subjects): the subject's official
+        website is a PRIMARY information source, not just one URL among
+        many. Identify the official homepage domain early and reuse its
+        full content across every applicable subsection — its "about",
+        history, programs, leadership, and contact pages ground the
+        background/purpose/members/contacts sections. Cite official-site
+        pages inline wherever they substantiate a claim, so their text
+        AND their images (logos, facility photos, program photos, maps)
+        flow into the report's source pool for reuse.
+
         EVENT - mandatory key items:
         - Earliest occurrence: time and place (事件最早发生时间和地点)
         - Background and causes of the event (事件发生的背景和原因)
@@ -286,6 +296,35 @@ class IntegratedReportGenerator:
           (政府对该事件的反应和介入情况)
         - Assessment of the event's future trajectory (未来事件发展态势预测)
 """
+
+    # 2026-09-13 (user request): for ORGANIZATION subjects the official
+    # website is a primary source whose full content — text AND images —
+    # must be deliberately reused, not incidentally encountered. This
+    # block rides every subsection research prompt so the search/fetch
+    # strategy keeps returning to the official domain and cites it, which
+    # is also what feeds the official site's images into the report's
+    # image-pipeline candidate pool (images anchor on inline citations
+    # of their source page).
+    _ORG_OFFICIAL_SITE_DIRECTIVE = (
+        "\n=== OFFICIAL-SITE PRIORITY ===\n"
+        "If the report subject is an ORGANIZATION: identify its official "
+        "website homepage domain FIRST, and treat the official site as a "
+        "primary information source throughout your research.\n"
+        "1. Prefer fetching official-site pages (home, about, history, "
+        "programs, leadership, contact) over third-party summaries "
+        "whenever both can substantiate a claim.\n"
+        "2. Reuse the official site's full content: quote its exact "
+        "wording for mission/purpose statements, extract concrete facts "
+        "(addresses, phone/email, founding dates, program names, "
+        "leadership names, funding statements) from it, and cite the "
+        "official-site page inline for each such claim.\n"
+        "3. Do NOT relegate the official site to a single 'website URL' "
+        "mention — its pages should appear as inline citations across "
+        "all applicable subsections, so its textual AND visual material "
+        "(logos, facility/program photos, maps) enters the report's "
+        "source pool for reuse.\n"
+        "=== END OFFICIAL-SITE PRIORITY ===\n"
+    )
 
     def _determine_report_structure(
         self, findings: Dict, query: str
@@ -941,6 +980,7 @@ class IntegratedReportGenerator:
                         f"Use tables to organize information where applicable. "
                         f"For conclusion sections: synthesize key findings and provide forward-looking insights. "
                         f"Build upon the research findings from earlier sections to create a cohesive narrative. "
+                        f"{self._ORG_OFFICIAL_SITE_DIRECTIVE}"
                         f"{self._get_language_directive()}"
                         f"{self._build_no_boilerplate_directive()}"
                         f"\n=== INLINE CITATIONS (REQUIRED) ===\n"
@@ -970,6 +1010,7 @@ class IntegratedReportGenerator:
                         f"Use tables to organize information where applicable. "
                         f"IMPORTANT: Avoid repeating information that would logically be covered in other sections - focus on what makes this subsection unique. "
                         f"Previous research exists - find specific angles for this subsection. "
+                        f"{self._ORG_OFFICIAL_SITE_DIRECTIVE}"
                         f"{self._get_language_directive()}"
                         f"{self._build_no_boilerplate_directive()}"
                         f"\n=== INLINE CITATIONS (REQUIRED) ===\n"

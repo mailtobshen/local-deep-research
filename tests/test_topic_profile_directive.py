@@ -93,3 +93,21 @@ class TestTopicProfileDirective:
         assert prompt.index("SUBJECT CLASSIFICATION") < prompt.index(
             "Determine the most appropriate report structure"
         )
+
+    def test_org_official_site_priority_in_structure_prompt(self, generator):
+        """ORGANIZATION subjects: official site is a primary source
+        (2026-09-13 user request) — structure prompt must say so."""
+        prompt = _capture_structure_prompt(generator, "某组织调研")
+        assert "SOURCE PRIORITY (ORGANIZATION subjects)" in prompt
+        assert "PRIMARY information source" in prompt
+        assert "images" in prompt
+
+    def test_org_official_site_directive_constant(self, generator):
+        """The per-subsection research prompt rides the same priority
+        block: identify homepage first, prefer official pages, cite
+        them inline so text AND images enter the source pool."""
+        d = generator._ORG_OFFICIAL_SITE_DIRECTIVE
+        assert "OFFICIAL-SITE PRIORITY" in d
+        assert "ORGANIZATION" in d
+        assert "homepage domain FIRST" in d
+        assert "inline" in d and "visual material" in d
