@@ -1,5 +1,6 @@
 import enum
 import json
+import re
 import time
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
@@ -12,6 +13,80 @@ from ...config import search_config
 from ...config.thread_settings import get_setting_from_snapshot
 from ...security.safe_requests import safe_get
 from ..search_engine_base import BaseSearchEngine
+
+# A term must carry at least one CJK char (and be >= 2 chars) or be an
+# alphanumeric token of length >= 2 to be usable for relevance
+# matching. Single Latin chars and punctuation-only fragments are
+# dropped — they match almost anything and would gut the filter.
+_CJK_CHAR_RE = re.compile(r"[一-鿿぀-ヿ가-힯]")
+_ALNUM_TERM_RE = re.compile(r"[A-Za-z0-9]{2,}")
+
+
+def _usable_query_terms(query: str) -> List[str]:
+    """Extract substring-matchable terms from *query*.
+
+    Quoted phrases (``"Nury Turkel"``) are kept whole; boolean
+    punctuation, stopword-ish single chars, and empty fragments are
+    dropped.
+    """
+    if not query:
+        return []
+    terms: List[str] = []
+    for raw in query.split():
+        term = raw.strip('"“”‘’()[]{}:').strip()
+        if not term:
+            continue
+        if _CJK_CHAR_RE.search(term):
+            if len(term) >= 2:
+                terms.append(term)
+        elif _ALNUM_TERM_RE.fullmatch(term):
+            terms.append(term)
+    return terms
+
+
+def filter_zero_overlap_results(
+    query: str, results: List[Dict[str, Any]]
+) -> List[Dict[str, Any]]:
+    """Drop results sharing zero query terms with *query*.
+
+    2026-09-13 (research a4c512fa): for rare-entity CJK queries,
+    upstream engines return unrelated fallback/ad results (Mattress
+    Firm, Jim Croce, platform.deepseek.com ...) that SearXNG
+    aggregates as "valid" results. Those results carry none of the
+    query's terms anywhere in title/URL/snippet, so a zero-overlap
+    check is a safe conservative gate — anything with even one term
+    occurrence (e.g. only in the URL) survives. No usable terms in
+    the query disables the filter entirely.
+    """
+    if not results:
+        return results
+    terms = _usable_query_terms(query)
+    if not terms:
+        return results
+    kept: List[Dict[str, Any]] = []
+    for result in results:
+        haystack = " ".join(
+            (
+                str(result.get("title") or ""),
+                str(result.get("url") or ""),
+                str(result.get("content") or ""),
+            )
+        ).lower()
+        if any(term.lower() in haystack for term in terms):
+            kept.append(result)
+        else:
+            logger.info(
+                f"[QUERY-RELEVANCE] dropped zero-overlap result "
+                f"title={str(result.get('title'))[:60]!r} "
+                f"url={str(result.get('url'))[:100]!r}"
+            )
+    if len(kept) < len(results):
+        logger.info(
+            f"[QUERY-RELEVANCE] query={query[:60]!r} "
+            f"kept={len(kept)}/{len(results)}"
+        )
+    return kept
+
 
 
 @enum.unique
@@ -507,6 +582,10 @@ class SearXNGSearchEngine(BaseSearchEngine):
                             f"[DOMAIN-BLOCK] dropped {blocked_count} results "
                             f"from blocked domains for query: {query[:60]}"
                         )
+                    # Zero-overlap relevance gate (2026-09-13,
+                    # research a4c512fa): engines return unrelated
+                    # fallback/ad results for rare-entity queries.
+                    results = filter_zero_overlap_results(query, results)
                     if results:
                         logger.info(
                             f"SearXNG returned {len(results)} valid results from HTML parsing"
