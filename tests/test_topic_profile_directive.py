@@ -111,3 +111,16 @@ class TestTopicProfileDirective:
         assert "ORGANIZATION" in d
         assert "homepage domain FIRST" in d
         assert "inline" in d and "visual material" in d
+
+    def test_org_directive_excludes_technical_site_study(self, generator):
+        """The official site is a SOURCE, not a subject: the directive
+        must forbid technical audits of the website itself."""
+        d = generator._ORG_OFFICIAL_SITE_DIRECTIVE
+        assert "not a research subject" in d
+        for banned in (
+            "domain-usage",
+            "multilingual-access",
+            "mobile adaptation",
+            "online-platform-integration",
+        ):
+            assert banned in d, banned

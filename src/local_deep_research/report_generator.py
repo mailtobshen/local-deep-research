@@ -323,6 +323,12 @@ class IntegratedReportGenerator:
         "all applicable subsections, so its textual AND visual material "
         "(logos, facility/program photos, maps) enters the report's "
         "source pool for reuse.\n"
+        "4. The official site is a SOURCE about the ORGANIZATION, not a "
+        "research subject itself. Use its pages to learn about the "
+        "organization; do NOT produce a technical study of the website — "
+        "no domain-usage/validation analysis, no multilingual-access "
+        "support review, no mobile adaptation/responsive-design "
+        "assessment, no online-platform-integration audit.\n"
         "=== END OFFICIAL-SITE PRIORITY ===\n"
     )
 
