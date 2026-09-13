@@ -12,6 +12,8 @@ Tests cover:
 import threading
 from unittest.mock import MagicMock, patch
 
+from langchain_core.messages import AIMessage, ToolMessage
+
 
 # ---------------------------------------------------------------------------
 # SearchResultsCollector tests
@@ -821,3 +823,167 @@ class TestResolveEngineNameIgnoresNonString:
         """
         strategy = self._make_strategy_with_search_tool_value(42)
         assert strategy._search_engine_name == "brave"
+
+
+class TestSubtopicDecompositionRetry:
+    """2026-09-13 detect-and-retry guard: a final answer produced without
+    a single research_subtopic call must trigger one corrective re-run
+    (research Nury Turkel — qwen3.5-opus:9b satisfied itself with
+    parallel web_search batches and skipped the decomposition tool)."""
+
+    def _make_strategy(self):
+        from local_deep_research.advanced_search_system.strategies.langgraph_agent_strategy import (
+            LangGraphAgentStrategy,
+        )
+
+        return LangGraphAgentStrategy(
+            model=MagicMock(),
+            search=MagicMock(),
+            all_links_of_system=[],
+            settings_snapshot={"search.tool": {"value": "duckduckgo"}},
+        )
+
+    def test_final_answer_without_subtopic_triggers_retry(self):
+        strategy = self._make_strategy()
+
+        def ai_tool_call(name, args, call_id):
+            return AIMessage(
+                content="",
+                tool_calls=[{"name": name, "args": args, "id": call_id}],
+            )
+
+        def tool_result(name, call_id, text):
+            return ToolMessage(content=text, name=name, tool_call_id=call_id)
+
+        class FakeAgent:
+            def __init__(self):
+                self.calls = 0
+
+            def stream(self, messages, config, stream_mode):
+                self.calls += 1
+                if self.calls == 1:
+                    # Skips research_subtopic: parallel web_search then
+                    # writes a final answer straight away.
+                    yield {
+                        "agent": {
+                            "messages": [
+                                ai_tool_call("web_search", {"query": "x"}, "c1")
+                            ]
+                        }
+                    }
+                    yield {
+                        "tools": {
+                            "messages": [
+                                tool_result("web_search", "c1", "search results")
+                            ]
+                        }
+                    }
+                    # analyze_topic() resets the collector on entry, so
+                    # seed it here — the real web_search tool is what
+                    # populates the collector during a run, and the
+                    # retry guard requires results in hand.
+                    strategy.collector.add_results(
+                        [
+                            {
+                                "title": "A",
+                                "link": "http://a.com",
+                                "snippet": "a",
+                            }
+                        ],
+                        engine_name="test",
+                    )
+                    yield {
+                        "agent": {"messages": [AIMessage(content="draft")]}
+                    }
+                else:
+                    yield {
+                        "agent": {
+                            "messages": [
+                                ai_tool_call(
+                                    "research_subtopic",
+                                    {"subtopics": ["a", "b"]},
+                                    "c2",
+                                )
+                            ]
+                        }
+                    }
+                    yield {
+                        "tools": {
+                            "messages": [
+                                tool_result("research_subtopic", "c2", "findings")
+                            ]
+                        }
+                    }
+                    yield {
+                        "agent": {
+                            "messages": [AIMessage(content="final report")]
+                        }
+                    }
+
+        fake_agent = FakeAgent()
+        strategy._build_tools = lambda overall_query="": [MagicMock()]
+        strategy._finalize = MagicMock(return_value={"content": "ok"})
+
+        with patch(
+            "langchain.agents.create_agent", return_value=fake_agent
+        ):
+            result = strategy.analyze_topic("test query")
+
+        assert fake_agent.calls == 2, "retry round must run exactly once"
+        assert result == {"content": "ok"}
+        # The accepted final answer is the one written AFTER the forced
+        # decomposition round, not the original subtopic-less draft.
+        assert strategy._finalize.call_args[0][1] == "final report"
+
+    def test_no_retry_when_subtopic_was_used(self):
+        strategy = self._make_strategy()
+        strategy.collector.add_results(
+            [{"title": "A", "link": "http://a.com", "snippet": "a"}],
+            engine_name="test",
+        )
+
+        class FakeAgent:
+            def __init__(self):
+                self.calls = 0
+
+            def stream(self, messages, config, stream_mode):
+                self.calls += 1
+                yield {
+                    "agent": {
+                        "messages": [
+                            AIMessage(
+                                content="",
+                                tool_calls=[
+                                    {
+                                        "name": "research_subtopic",
+                                        "args": {"subtopics": ["a"]},
+                                        "id": "c1",
+                                    }
+                                ],
+                            )
+                        ]
+                    }
+                }
+                yield {
+                    "tools": {
+                        "messages": [
+                            ToolMessage(
+                                content="findings",
+                                name="research_subtopic",
+                                tool_call_id="c1",
+                            )
+                        ]
+                    }
+                }
+                yield {"agent": {"messages": [AIMessage(content="report")]}}
+
+        fake_agent = FakeAgent()
+        strategy._build_tools = lambda overall_query="": [MagicMock()]
+        strategy._finalize = MagicMock(return_value={"content": "ok"})
+
+        with patch(
+            "langchain.agents.create_agent", return_value=fake_agent
+        ):
+            strategy.analyze_topic("test query")
+
+        assert fake_agent.calls == 1, "no retry when subtopic already ran"

@@ -1083,7 +1083,10 @@ class LangGraphAgentStrategy(BaseSearchStrategy):
             "research questions and call research_subtopic with all of them "
             "in a single batch to investigate each in parallel. This is "
             "REQUIRED for any non-trivial query — a single-shot web_search "
-            "without subtopic follow-up is not an acceptable answer.\n"
+            "without subtopic follow-up is not an acceptable answer. "
+            "Calling several web_search tools in parallel does NOT satisfy "
+            "this step: only invoking the research_subtopic tool itself "
+            "counts as decomposition.\n"
             f"{fetch_line}"
             f"{engine_step}"
             # Darkweb-only fetch_content nudge: clearnet runs leave this
@@ -1135,6 +1138,13 @@ class LangGraphAgentStrategy(BaseSearchStrategy):
         # otherwise attempt more sub-researches against an empty
         # collector and waste 30+ seconds before failing).
         no_results_abort = False
+        # 2026-09-13 (research Nury Turkel): despite the REQUIRED
+        # wording below, qwen3.5-opus:9b satisfied itself with batches
+        # of parallel web_search calls and wrote the final report
+        # without ever calling research_subtopic. Track whether the
+        # tool actually ran so the detect-and-retry pass below can
+        # force a decomposition round when it didn't.
+        subtopic_tool_used = False
 
         try:
             for chunk in agent.stream(
@@ -1180,6 +1190,8 @@ class LangGraphAgentStrategy(BaseSearchStrategy):
                     msgs = chunk["tools"].get("messages", [])
                     for msg in msgs:
                         tool_name = getattr(msg, "name", "tool")
+                        if tool_name == "research_subtopic":
+                            subtopic_tool_used = True
                         raw_content = getattr(msg, "content", "")
                         # LangGraph prebuilt 1.1+ may deliver tool
                         # results as either a plain ``str`` or as a
@@ -1298,6 +1310,73 @@ class LangGraphAgentStrategy(BaseSearchStrategy):
                     final_content = self._synthesize_from_collector(query)
                 else:
                     return self._error_result(self._format_agent_error(exc))
+
+        # 2026-09-13 detect-and-retry guard: the REQUIRED prompt wording
+        # is still just a request to the model — qwen3.5-opus:9b was
+        # observed writing a final report from parallel web_search
+        # batches without ever calling research_subtopic (research
+        # Nury Turkel). If the agent produced a final answer without
+        # the tool, collector has material to structure, and the run
+        # wasn't aborted, reject that answer and re-run the agent once
+        # with a corrective message that forces the decomposition
+        # round. One retry max: if the model still refuses, its answer
+        # stands (same pattern as standard_citation_handler's
+        # self-check retry, 9c50e0d9).
+        if (
+            final_content
+            and not subtopic_tool_used
+            and not no_results_abort
+            and getattr(self.collector, "results", None)
+        ):
+            logger.warning(
+                "Agent wrote a final answer without research_subtopic; "
+                "forcing one decomposition retry round"
+            )
+            self._update_progress(
+                "Re-running research with forced subtopic decomposition",
+                60,
+                {"phase": "subtopic_retry", "type": "milestone"},
+            )
+            corrective = (
+                f"Original research topic: {query}\n\n"
+                "Your previous draft was produced WITHOUT calling the "
+                "research_subtopic tool. That is not acceptable. Now:\n"
+                "1. Decompose the topic into 3-5 focused subtopics and "
+                "call research_subtopic with all of them in one batch.\n"
+                "2. After the subtopics return, write the complete final "
+                "report with inline hyperlink citations [[N]](url) for "
+                "every factual claim.\n"
+                "Reusing earlier search results is fine, but the "
+                "research_subtopic call itself is mandatory."
+            )
+            try:
+                for chunk in agent.stream(
+                    {"messages": [{"role": "user", "content": corrective}]},
+                    config,
+                    stream_mode="updates",
+                ):
+                    self.check_termination()
+                    if "agent" in chunk or "model" in chunk:
+                        node_key = "agent" if "agent" in chunk else "model"
+                        for msg in chunk[node_key].get("messages", []):
+                            if isinstance(msg, AIMessage):
+                                agent_messages.append(msg)
+                                if not getattr(msg, "tool_calls", None) and (
+                                    msg.content
+                                ):
+                                    final_content = msg.content
+                    elif "tools" in chunk:
+                        for msg in chunk["tools"].get("messages", []):
+                            if getattr(msg, "name", "") == "research_subtopic":
+                                subtopic_tool_used = True
+            except ResearchTerminatedException:
+                raise
+            except Exception:
+                # Retry is best-effort: on any failure keep the
+                # original final answer instead of failing the run.
+                logger.exception(
+                    "Subtopic retry round failed; keeping original answer"
+                )
 
         if not final_content:
             if self.collector.results:
