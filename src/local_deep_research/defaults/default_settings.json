@@ -1097,6 +1097,20 @@
         "value": 50,
         "visible": true
     },
+    "search.blocked_domains": {
+        "category": "search_parameters",
+        "description": "Domains removed from search results regardless of which backend engine returned them. Matched by registered-domain suffix (baike.baidu.com matches baidu.com). Comma-separated or JSON list.",
+        "editable": true,
+        "max_value": null,
+        "min_value": null,
+        "name": "Blocked Domains",
+        "options": null,
+        "step": null,
+        "type": "SEARCH",
+        "ui_element": "multiselect",
+        "value": ["baidu.com", "zhihu.com", "douyin.com", "qq.com", "weibo.com", "bilibili.com", "toutiao.com", "360.cn"],
+        "visible": true
+    },
     "search.final_max_results": {
         "category": "search_parameters",
         "description": "Maximum unique sources to include in the final research output. Applied once after all search iterations complete, deduplicating and filtering across all accumulated results.",

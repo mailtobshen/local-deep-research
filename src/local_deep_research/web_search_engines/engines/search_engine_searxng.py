@@ -2,12 +2,14 @@ import enum
 import json
 import time
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlparse
 
 import requests
 from langchain_core.language_models import BaseLLM
 from loguru import logger
 
 from ...config import search_config
+from ...config.thread_settings import get_setting_from_snapshot
 from ...security.safe_requests import safe_get
 from ..search_engine_base import BaseSearchEngine
 
@@ -84,6 +86,27 @@ class SearXNGSearchEngine(BaseSearchEngine):
             return False
 
         return True
+
+    def _is_blocked_domain(self, url: str) -> bool:
+        """Return True if *url*'s host falls under a blocked domain.
+
+        Suffix match on the registered domain: ``baidu.com`` blocks
+        ``baidu.com`` itself and every subdomain (``baike.baidu.com``,
+        ``zhidao.baidu.com``), but not ``notbaidu.com``.
+        """
+        if not self.blocked_domains or not url:
+            return False
+        try:
+            host = urlparse(url).hostname or ""
+        except ValueError:
+            return False
+        host = host.lower().rstrip(".")
+        if not host:
+            return False
+        for domain in self.blocked_domains:
+            if host == domain or host.endswith("." + domain):
+                return True
+        return False
 
     def __init__(
         self,
@@ -220,6 +243,41 @@ class SearXNGSearchEngine(BaseSearchEngine):
             self.safe_search = SafeSearchSetting.OFF
         self.time_range = time_range
 
+        # 2026-09-13 (user request): configurable blocked-domain suffix
+        # filter. Results from these registered domains are dropped
+        # regardless of which SearXNG backend engine returned them, so
+        # a blocked domain reached via bing/google is filtered too.
+        # ``_normalize_list`` reuses the JSON-string / comma-separated
+        # decoding already used for ``categories`` so UI-saved string
+        # values work without extra plumbing.
+        raw_blocked = get_setting_from_snapshot(
+            "search.blocked_domains",
+            default=[],
+            settings_snapshot=getattr(self, "settings_snapshot", None),
+        )
+        # ``_normalize_list`` decodes JSON arrays and comma-separated
+        # strings, but a snapshot dict without ``ui_element`` may have
+        # had the list coerced to its Python repr (``"['douyin.com']"``)
+        # by the text-type setting coercion — strip brackets/quotes per
+        # token so that shape yields the same domains.
+        self.blocked_domains = set()
+        for item in self._normalize_list(raw_blocked) or []:
+            if not isinstance(item, str):
+                continue
+            for part in item.split(","):
+                part = (
+                    part.strip()
+                    .lstrip("[")
+                    .rstrip("]")
+                    .strip()
+                    .strip("'\"")
+                    .lstrip(".")
+                    .lower()
+                    .rstrip("/")
+                )
+                if part and "." in part:
+                    self.blocked_domains.add(part)
+
         self.delay_between_requests = float(delay_between_requests)
 
         if self.is_available:
@@ -337,6 +395,7 @@ class SearXNGSearchEngine(BaseSearchEngine):
 
                     soup = BeautifulSoup(response.text, "html.parser")
                     results = []
+                    blocked_count = 0
 
                     result_elements = soup.select(".result-item")
 
@@ -411,7 +470,13 @@ class SearXNGSearchEngine(BaseSearchEngine):
 
                         # Add to results only if it's a valid search result
                         # (not an error page or internal SearXNG page)
-                        if self._is_valid_search_result(url):
+                        # and not from a blocked domain
+                        if self._is_blocked_domain(url):
+                            blocked_count += 1
+                            logger.debug(
+                                f"Blocked-domain result dropped: {url[:80]}"
+                            )
+                        elif self._is_valid_search_result(url):
                             results.append(
                                 {
                                     "title": title,
@@ -437,6 +502,11 @@ class SearXNGSearchEngine(BaseSearchEngine):
                                 f"Filtered invalid SearXNG result: title={title!r}, url={url!r}"
                             )
 
+                    if blocked_count:
+                        logger.info(
+                            f"[DOMAIN-BLOCK] dropped {blocked_count} results "
+                            f"from blocked domains for query: {query[:60]}"
+                        )
                     if results:
                         logger.info(
                             f"SearXNG returned {len(results)} valid results from HTML parsing"

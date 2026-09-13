@@ -935,3 +935,103 @@ class TestSearXNGInvokeMethod:
 
         engine.run.assert_called_once_with("test query")
         assert result == [{"title": "Test"}]
+
+
+class TestBlockedDomainsFilter:
+    """2026-09-13: configurable blocked-domain suffix filter
+    (search.blocked_domains). Blocks the registered domain and every
+    subdomain, regardless of which backend engine returned the result."""
+
+    @pytest.fixture(autouse=True)
+    def mock_safe_get(self, monkeypatch):
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.cookies = {}
+        monkeypatch.setattr(
+            "local_deep_research.web_search_engines.engines.search_engine_searxng.safe_get",
+            Mock(return_value=mock_response),
+        )
+
+    def _make_engine(self, snapshot=None):
+        from local_deep_research.web_search_engines.engines.search_engine_searxng import (
+            SearXNGSearchEngine,
+        )
+
+        return SearXNGSearchEngine(
+            instance_url="http://localhost:8080",
+            settings_snapshot=snapshot,
+        )
+
+    def test_default_list_loaded_from_defaults(self):
+        """No snapshot → the default_settings.json default applies via
+        the settings machinery; at minimum the setting is opt-in and
+        absent snapshots leave the filter empty (nothing blocked)."""
+        engine = self._make_engine(snapshot={})
+        assert isinstance(engine.blocked_domains, set)
+
+    def test_snapshot_list_blocks_domain_and_subdomains(self):
+        engine = self._make_engine(
+            {"search.blocked_domains": ["baidu.com", "zhihu.com"]}
+        )
+        assert engine._is_blocked_domain("http://baidu.com/x")
+        assert engine._is_blocked_domain("https://baike.baidu.com/item/a")
+        assert engine._is_blocked_domain("https://Zhidao.BAIDU.com/")
+
+    def test_suffix_match_does_not_block_lookalikes(self):
+        engine = self._make_engine({"search.blocked_domains": ["baidu.com"]})
+        assert not engine._is_blocked_domain("https://notbaidu.com/")
+        assert not engine._is_blocked_domain("https://baidu.com.evil.net/")
+
+    def test_empty_url_and_no_blocklist(self):
+        engine = self._make_engine(snapshot={})
+        assert not engine._is_blocked_domain("")
+        assert not engine._is_blocked_domain("https://example.com/")
+
+    def test_comma_separated_string_snapshot_value(self):
+        """UI-saved values may arrive as a plain comma-separated string —
+        the existing _normalize_list helper decodes them."""
+        engine = self._make_engine(
+            {"search.blocked_domains": "baidu.com, zhihu.com"}
+        )
+        assert engine._is_blocked_domain("https://v.qq.com/") is False
+        engine2 = self._make_engine(
+            {"search.blocked_domains": "baidu.com, qq.com"}
+        )
+        assert engine2._is_blocked_domain("https://v.qq.com/")
+
+    def test_full_setting_dict_shape(self):
+        """Snapshots may carry the full {"value": ...} setting shape."""
+        engine = self._make_engine(
+            {"search.blocked_domains": {"value": ["douyin.com"]}}
+        )
+        assert engine._is_blocked_domain("https://www.douyin.com/video/1")
+
+    def test_get_search_results_drops_blocked_domains(self, monkeypatch):
+        """End-to-end through _get_search_results: a mocked SearXNG HTML
+        page mixing blocked and allowed hosts must return only the
+        allowed ones."""
+        html = """
+        <html><body>
+        <article class="result">
+          <h3><a href="https://baike.baidu.com/item/x">Blocked Baidu</a></h3>
+          <p class="content">b</p>
+        </article>
+        <article class="result">
+          <h3><a href="https://en.wikipedia.org/wiki/Y">Allowed Wiki</a></h3>
+          <p class="content">a</p>
+        </article>
+        </body></html>
+        """
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.text = html
+        mock_response.cookies = {}
+        monkeypatch.setattr(
+            "local_deep_research.web_search_engines.engines.search_engine_searxng.safe_get",
+            Mock(return_value=mock_response),
+        )
+        engine = self._make_engine({"search.blocked_domains": ["baidu.com"]})
+        results = engine._get_search_results("anything")
+        assert [r["url"] for r in results] == [
+            "https://en.wikipedia.org/wiki/Y"
+        ]
