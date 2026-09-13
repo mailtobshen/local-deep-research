@@ -993,7 +993,8 @@ class TestBlockedDomainsFilter:
         engine = self._make_engine(
             {"search.blocked_domains": "baidu.com, zhihu.com"}
         )
-        assert engine._is_blocked_domain("https://v.qq.com/") is False
+        assert engine._is_blocked_domain("https://baike.baidu.com/")
+        assert not engine._is_blocked_domain("https://v.qq.com/")
         engine2 = self._make_engine(
             {"search.blocked_domains": "baidu.com, qq.com"}
         )

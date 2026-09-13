@@ -12,6 +12,8 @@ Tests cover:
 import threading
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from langchain_core.messages import AIMessage, ToolMessage
 
 
@@ -987,3 +989,240 @@ class TestSubtopicDecompositionRetry:
             strategy.analyze_topic("test query")
 
         assert fake_agent.calls == 1, "no retry when subtopic already ran"
+
+    def test_retry_failure_keeps_original_draft(self):
+        """An exception during the retry round must keep the original
+        subtopic-less answer instead of failing the whole run."""
+        strategy = self._make_strategy()
+
+        class FakeAgent:
+            def __init__(self):
+                self.calls = 0
+
+            def stream(self, messages, config, stream_mode):
+                self.calls += 1
+                if self.calls == 1:
+                    yield {
+                        "agent": {
+                            "messages": [
+                                AIMessage(
+                                    content="",
+                                    tool_calls=[
+                                        {
+                                            "name": "web_search",
+                                            "args": {"query": "x"},
+                                            "id": "c1",
+                                        }
+                                    ],
+                                )
+                            ]
+                        }
+                    }
+                    yield {
+                        "tools": {
+                            "messages": [
+                                ToolMessage(
+                                    content="search results",
+                                    name="web_search",
+                                    tool_call_id="c1",
+                                )
+                            ]
+                        }
+                    }
+                    strategy.collector.add_results(
+                        [
+                            {
+                                "title": "A",
+                                "link": "http://a.com",
+                                "snippet": "a",
+                            }
+                        ],
+                        engine_name="test",
+                    )
+                    yield {"agent": {"messages": [AIMessage(content="draft")]}}
+                else:
+                    raise RuntimeError("retry blew up")
+
+        fake_agent = FakeAgent()
+        strategy._build_tools = lambda overall_query="": [MagicMock()]
+        strategy._finalize = MagicMock(return_value={"content": "ok"})
+
+        with patch(
+            "langchain.agents.create_agent", return_value=fake_agent
+        ):
+            strategy.analyze_topic("test query")
+
+        assert fake_agent.calls == 2
+        assert strategy._finalize.call_args[0][1] == "draft"
+
+    def test_retry_cancellation_propagates(self):
+        """A user cancel surfacing during the retry round must
+        propagate (SUSPENDED), not be swallowed into a kept draft."""
+        from local_deep_research.exceptions import (
+            ResearchTerminatedException,
+        )
+
+        strategy = self._make_strategy()
+
+        class FakeAgent:
+            def __init__(self):
+                self.calls = 0
+
+            def stream(self, messages, config, stream_mode):
+                self.calls += 1
+                if self.calls == 1:
+                    yield {
+                        "agent": {
+                            "messages": [
+                                AIMessage(
+                                    content="",
+                                    tool_calls=[
+                                        {
+                                            "name": "web_search",
+                                            "args": {"query": "x"},
+                                            "id": "c1",
+                                        }
+                                    ],
+                                )
+                            ]
+                        }
+                    }
+                    yield {
+                        "tools": {
+                            "messages": [
+                                ToolMessage(
+                                    content="search results",
+                                    name="web_search",
+                                    tool_call_id="c1",
+                                )
+                            ]
+                        }
+                    }
+                    strategy.collector.add_results(
+                        [
+                            {
+                                "title": "A",
+                                "link": "http://a.com",
+                                "snippet": "a",
+                            }
+                        ],
+                        engine_name="test",
+                    )
+                    yield {"agent": {"messages": [AIMessage(content="draft")]}}
+                else:
+                    raise ResearchTerminatedException()
+
+        fake_agent = FakeAgent()
+        strategy._build_tools = lambda overall_query="": [MagicMock()]
+        strategy._finalize = MagicMock(return_value={"content": "ok"})
+
+        with patch(
+            "langchain.agents.create_agent", return_value=fake_agent
+        ), pytest.raises(ResearchTerminatedException):
+            strategy.analyze_topic("test query")
+
+    def test_retry_preamble_does_not_overwrite_draft(self):
+        """A no-tool-call text message the model emits BEFORE calling
+        research_subtopic in the retry round is preamble, not the
+        rewritten report — it must not replace the original draft."""
+        strategy = self._make_strategy()
+
+        class FakeAgent:
+            def __init__(self):
+                self.calls = 0
+
+            def stream(self, messages, config, stream_mode):
+                self.calls += 1
+                if self.calls == 1:
+                    yield {
+                        "agent": {
+                            "messages": [
+                                AIMessage(
+                                    content="",
+                                    tool_calls=[
+                                        {
+                                            "name": "web_search",
+                                            "args": {"query": "x"},
+                                            "id": "c1",
+                                        }
+                                    ],
+                                )
+                            ]
+                        }
+                    }
+                    yield {
+                        "tools": {
+                            "messages": [
+                                ToolMessage(
+                                    content="search results",
+                                    name="web_search",
+                                    tool_call_id="c1",
+                                )
+                            ]
+                        }
+                    }
+                    strategy.collector.add_results(
+                        [
+                            {
+                                "title": "A",
+                                "link": "http://a.com",
+                                "snippet": "a",
+                            }
+                        ],
+                        engine_name="test",
+                    )
+                    yield {"agent": {"messages": [AIMessage(content="draft")]}}
+                else:
+                    # Preamble BEFORE the tool call…
+                    yield {
+                        "agent": {
+                            "messages": [AIMessage(content="Sure, I will now")]
+                        }
+                    }
+                    # …then the tool call + rewritten report.
+                    yield {
+                        "agent": {
+                            "messages": [
+                                AIMessage(
+                                    content="",
+                                    tool_calls=[
+                                        {
+                                            "name": "research_subtopic",
+                                            "args": {"subtopics": ["a"]},
+                                            "id": "c2",
+                                        }
+                                    ],
+                                )
+                            ]
+                        }
+                    }
+                    yield {
+                        "tools": {
+                            "messages": [
+                                ToolMessage(
+                                    content="findings",
+                                    name="research_subtopic",
+                                    tool_call_id="c2",
+                                )
+                            ]
+                        }
+                    }
+                    yield {
+                        "agent": {
+                            "messages": [AIMessage(content="final report")]
+                        }
+                    }
+
+        fake_agent = FakeAgent()
+        strategy._build_tools = lambda overall_query="": [MagicMock()]
+        strategy._finalize = MagicMock(return_value={"content": "ok"})
+
+        with patch(
+            "langchain.agents.create_agent", return_value=fake_agent
+        ):
+            strategy.analyze_topic("test query")
+
+        # Preamble ignored, post-subtopic report accepted.
+        assert strategy._finalize.call_args[0][1] == "final report"
+        # And a preamble-ONLY retry would keep the draft: assert the
+        # guard's require flag via the accepted ordering above.

@@ -1146,12 +1146,22 @@ class LangGraphAgentStrategy(BaseSearchStrategy):
         # force a decomposition round when it didn't.
         subtopic_tool_used = False
 
-        try:
-            for chunk in agent.stream(
-                {"messages": [{"role": "user", "content": query}]},
-                config,
-                stream_mode="updates",
-            ):
+        def consume_stream(chunks, require_subtopic_for_final: bool = False):
+            """Consume one ``agent.stream(...)`` run, updating the shared
+            loop state (``iteration``, ``final_content``,
+            ``no_results_abort``, ``subtopic_tool_used``).
+
+            Shared by the main research pass and the detect-and-retry
+            pass below so the two cannot drift (2026-09-13 review
+            finding). ``require_subtopic_for_final`` guards the retry
+            pass: a no-tool-call AIMessage emitted BEFORE the retry has
+            actually invoked ``research_subtopic`` is model preamble,
+            not the promised rewritten report — accepting it would let
+            a preamble overwrite the already-acceptable draft.
+            """
+            nonlocal iteration, final_content, no_results_abort
+            nonlocal subtopic_tool_used
+            for chunk in chunks:
                 self.check_termination()
 
                 if "agent" in chunk or "model" in chunk:
@@ -1183,8 +1193,14 @@ class LangGraphAgentStrategy(BaseSearchStrategy):
                                         },
                                     )
                             elif content:
-                                # No tool calls = final answer
-                                final_content = content
+                                # No tool calls = final answer (in the
+                                # retry pass, only once the forced
+                                # subtopic round has actually run)
+                                if (
+                                    not require_subtopic_for_final
+                                    or subtopic_tool_used
+                                ):
+                                    final_content = content
 
                 elif "tools" in chunk:
                     msgs = chunk["tools"].get("messages", [])
@@ -1224,7 +1240,9 @@ class LangGraphAgentStrategy(BaseSearchStrategy):
                             f"Result from {tool_name}: {preview}",
                             min(
                                 85,
-                                10 + int((iteration / effective_max) * 75) + 3,
+                                10
+                                + int((iteration / effective_max) * 75)
+                                + 3,
                             ),
                             {"phase": "observation", "tool": tool_name},
                         )
@@ -1234,6 +1252,15 @@ class LangGraphAgentStrategy(BaseSearchStrategy):
                         # the same convention.
                         if tool_content.startswith(LDR_NO_RESULTS_PREFIX):
                             no_results_abort = True
+
+        try:
+            consume_stream(
+                agent.stream(
+                    {"messages": [{"role": "user", "content": query}]},
+                    config,
+                    stream_mode="updates",
+                )
+            )
 
             # If web_search emitted the no-results sentinel, stop here
             # so we never enter research_subtopic on a dead collector.
@@ -1350,25 +1377,22 @@ class LangGraphAgentStrategy(BaseSearchStrategy):
                 "research_subtopic call itself is mandatory."
             )
             try:
-                for chunk in agent.stream(
-                    {"messages": [{"role": "user", "content": corrective}]},
-                    config,
-                    stream_mode="updates",
-                ):
-                    self.check_termination()
-                    if "agent" in chunk or "model" in chunk:
-                        node_key = "agent" if "agent" in chunk else "model"
-                        for msg in chunk[node_key].get("messages", []):
-                            if isinstance(msg, AIMessage):
-                                agent_messages.append(msg)
-                                if not getattr(msg, "tool_calls", None) and (
-                                    msg.content
-                                ):
-                                    final_content = msg.content
-                    elif "tools" in chunk:
-                        for msg in chunk["tools"].get("messages", []):
-                            if getattr(msg, "name", "") == "research_subtopic":
-                                subtopic_tool_used = True
+                # Re-check the cancel flag so a cancel landing between
+                # the two streams is caught here instead of after the
+                # retry's first round-trip (2026-09-13 review finding).
+                self.check_termination()
+                consume_stream(
+                    agent.stream(
+                        {
+                            "messages": [
+                                {"role": "user", "content": corrective}
+                            ]
+                        },
+                        config,
+                        stream_mode="updates",
+                    ),
+                    require_subtopic_for_final=True,
+                )
             except ResearchTerminatedException:
                 raise
             except Exception:
