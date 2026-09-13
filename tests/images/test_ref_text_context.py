@@ -1,7 +1,7 @@
 """ref_text surface redefinition (2026-09-13, research b7ec824a).
 
 ``ref_text`` used to compare the image alt to its OWN source page's
-passage (``build_url_text_index``), which rubber-stamped any cited
+passage (pre-2026-09-13), which rubber-stamped any cited
 page's images — a CapCut Black-Friday banner cited into a
 "非洲地区办公室" section scored ref_text=0.67 while sec=0.01 and
 query=0.14. The surface now anchors to the report itself:
@@ -148,6 +148,11 @@ def test_b7ec824a_replay_now_drops(monkeypatch, loguru_caplog):
     text = "\n".join(r.getMessage() for r in loguru_caplog.records)
     assert "CANDIDATE_DROPPED" in text
     assert "CANDIDATE_KEPT" not in text
+    detail = [l for l in text.splitlines()
+              if "CANDIDATE_SCORED_DETAIL" in l and "decision=drop" in l]
+    # Drop attribution: no surface cleared its threshold, so the
+    # DETAIL line must NOT name a winning surface.
+    assert detail and "surface=none" in detail[0]
     assert "https://img/ad.jpg" not in out
 
 

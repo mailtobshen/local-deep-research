@@ -1268,12 +1268,10 @@ def enhance_report_with_images(
                     if passing:
                         surface = max(passing, key=passing.get)
                         score = passing[surface]
-                    else:
-                        surface = max(
-                            surface_scores, key=surface_scores.get
-                        )
-                        score = surface_scores[surface]
-                    if passing:
+                        # winning surface = the highest scorer AMONG the
+                        # passing ones, so the keep-path attribution is
+                        # always a surface that actually cleared its own
+                        # threshold.
                         # Per-image trace on the mandatory path. We
                         # carry the four fields the user asks for
                         # verbatim so log parsers (and humans tailing
@@ -1345,6 +1343,14 @@ def enhance_report_with_images(
                         )
                         kept += 1
                     else:
+                        # No surface cleared its own threshold. The
+                        # logged score is the best raw surface score;
+                        # the DETAIL line reports surface=none because
+                        # naming the highest-scoring surface here would
+                        # attribute the drop to a surface that may have
+                        # been judged against a DIFFERENT (lower)
+                        # threshold (per-surface gate, 2026-09-13).
+                        score = max(surface_scores.values())
                         # Same five-key schema as CANDIDATE_KEPT so a
                         # log parser can union the two streams into a
                         # complete per-image decision table. Drops get
@@ -1376,7 +1382,7 @@ def enhance_report_with_images(
                             f"sec={sidx} cite_num={num} ref_url={url} "
                             f"img_alt={(img.alt or '')!r} img_url={img.url} "
                             f"score={score:.2f} decision=drop reason=below_threshold "
-                            f"surface={surface} surfaces={surface_scores}"
+                            f"surface=none surfaces={surface_scores}"
                         )
                         dropped_low += 1
                 logger.info(
