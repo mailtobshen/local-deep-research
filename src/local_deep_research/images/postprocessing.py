@@ -176,6 +176,43 @@ SECTION_IMAGE_CAP = 3  # max images adopted per section, by score (clearnet)
 _ALT_CJK_RE = re.compile(r"[一-鿿]{2,}")
 _ALT_WORD_RE = re.compile(r"[A-Za-z]{3,}")
 _ALT_DIGIT_RUN_RE = re.compile(r"\d{6,}")
+# CJK UI-chatter alts (2026-09-13 replay of c34cb8fa: '【使用帮助】图3'
+# from the johnvocab junk source cleared the CJK branch and then scored
+# 0.61 against a template heading by coincidental CJK genericness).
+# These are page furniture captions, never descriptive of the image
+# content. Whole-alt match after stripping punctuation/whitespace so
+# the rule stays exact — descriptive CJK alts are untouched.
+_ALT_CJK_GENERIC = {
+    "使用帮助",
+    "帮助",
+    "图",
+    "图片",
+    "图像",
+    "图标",
+    "标识",
+    "标志",
+    "徽标",
+    "logo",
+    "图标图片",
+    "首页",
+    "导航",
+    "菜单",
+    "搜索",
+    "登录",
+    "注册",
+    "二维码",
+    "箭头",
+    "按钮",
+    "横幅",
+    "广告",
+    "幻灯片",
+    "轮播",
+}
+_ALT_CJK_GENERIC_RE = re.compile(
+    r"^(?:[【】\[\]()（）\s]*(?:"
+    + "|".join(re.escape(g) for g in _ALT_CJK_GENERIC)
+    + r")[【】\[\]()（）\s\d号张幅个]*)+$"
+)
 
 
 def _is_junk_latin_token(token: str) -> bool:
@@ -191,6 +228,8 @@ def _is_junk_latin_token(token: str) -> bool:
 
 def _alt_has_semantic_content(alt: Optional[str]) -> bool:
     if not alt or not alt.strip():
+        return False
+    if _ALT_CJK_GENERIC_RE.match(alt.strip()):
         return False
     if _ALT_CJK_RE.search(alt):
         return True

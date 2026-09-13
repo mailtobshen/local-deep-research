@@ -39,8 +39,25 @@ class TestAltSemanticContentGate:
             assert _alt_has_semantic_content(alt), alt
 
     def test_cjk_alt_passes(self):
-        assert _alt_has_semantic_content("【使用帮助】图3")
         assert _alt_has_semantic_content("核心业务领域")
+        assert _alt_has_semantic_content("温思罗普·洛克菲勒肖像")
+
+    def test_cjk_ui_chatter_rejected(self):
+        # 2026-09-13 replay residue: '【使用帮助】图3' (johnvocab junk
+        # source) cleared the CJK branch and scored 0.61 vs a template
+        # heading. Page-furniture captions are whole-alt matched.
+        for alt in (
+            "【使用帮助】图3",
+            "使用帮助",
+            "图3",
+            "图 12",
+            "【logo】",
+            "二维码",
+            "箭头图标",
+            "首页轮播 1",
+            "幻灯片3",
+        ):
+            assert not _alt_has_semantic_content(alt), alt
 
     def test_empty_and_trivial_rejected(self):
         for alt in ("", "   ", None, "250px"):
