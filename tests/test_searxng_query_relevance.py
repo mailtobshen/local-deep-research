@@ -76,3 +76,21 @@ def test_empty_query_or_results_noop():
     results = [R("t", "https://a.b/")]
     assert filter_zero_overlap_results("", results) == results
     assert filter_zero_overlap_results("nury turkel", []) == []
+
+
+def test_cjk_separator_subtoken_not_overfiltered():
+    # Spec review (a)1: query uses ·-joined name, result mentions only
+    # one half (transliteration variant) — must NOT be dropped.
+    q = "阿布力克木·图克尔 努里·特克尔 父亲"
+    results = [
+        R("图克尔其人其事", "https://example.org/turkel"),
+        R("Mattress Firm", "https://www.mattressfirm.com/"),
+    ]
+    kept = filter_zero_overlap_results(q, results)
+    assert [r["url"] for r in kept] == ["https://example.org/turkel"]
+
+
+def test_cjk_dot_variant_separator():
+    q = "阿布力克木.图克尔"
+    results = [R("阿布力克木 相关", "https://a.example/x")]
+    assert len(filter_zero_overlap_results(q, results)) == 1

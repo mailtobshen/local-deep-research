@@ -69,3 +69,14 @@ def test_filter_utm_variant_hyperlink_matches_canonical():
     body = "[[4]](https://outlook.cloud.microsoft/?utm_source=x)"
     kept = filter_links_to_cited(LINKS, body)
     assert [l["url"] for l in kept] == ["https://outlook.cloud.microsoft/"]
+
+
+def test_filter_citations_present_but_unmatched_falls_back():
+    # Spec review (c)1: body cites [5] but rows carry no matching
+    # index and no hyperlinked URL — must fall back to the full list
+    # rather than silently emptying the Sources block.
+    links = [
+        {"title": "A", "url": "https://a.example/", "index": ""},
+        {"title": "B", "url": "https://b.example/", "index": ""},
+    ]
+    assert filter_links_to_cited(links, "cites [5]") == links

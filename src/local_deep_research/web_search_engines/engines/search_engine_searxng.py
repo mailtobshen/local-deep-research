@@ -20,6 +20,11 @@ from ..search_engine_base import BaseSearchEngine
 # dropped — they match almost anything and would gut the filter.
 _CJK_CHAR_RE = re.compile(r"[一-鿿぀-ヿ가-힯]")
 _ALNUM_TERM_RE = re.compile(r"[A-Za-z0-9]{2,}")
+# CJK name separators (interpunct variants and full/half-width
+# punctuation). Review fix 2026-09-13: a query like 阿布力克木·图克尔
+# must yield sub-terms so a result mentioning only 图克尔 (separator
+# or transliteration variant) still counts as overlap.
+_CJK_SPLIT_RE = re.compile(r"[·・‧﹒．.、，,/]")
 
 
 def _usable_query_terms(query: str) -> List[str]:
@@ -27,7 +32,8 @@ def _usable_query_terms(query: str) -> List[str]:
 
     Quoted phrases (``"Nury Turkel"``) are kept whole; boolean
     punctuation, stopword-ish single chars, and empty fragments are
-    dropped.
+    dropped. CJK terms are further split on name separators so a
+    half-name match survives the zero-overlap gate.
     """
     if not query:
         return []
@@ -37,8 +43,9 @@ def _usable_query_terms(query: str) -> List[str]:
         if not term:
             continue
         if _CJK_CHAR_RE.search(term):
-            if len(term) >= 2:
-                terms.append(term)
+            for sub in _CJK_SPLIT_RE.split(term):
+                if len(sub) >= 2 and _CJK_CHAR_RE.search(sub):
+                    terms.append(sub)
         elif _ALNUM_TERM_RE.fullmatch(term):
             terms.append(term)
     return terms

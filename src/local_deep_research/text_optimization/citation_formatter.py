@@ -161,6 +161,18 @@ def filter_links_to_cited(
         in canonical_urls
         or str(link.get("index", "")).strip() in {str(n) for n in nums}
     ]
+    # Review fix 2026-09-13: citations exist but no row could be
+    # matched (e.g. rows without an assigned index). Returning []
+    # here would silently empty the Sources block — the exact
+    # regression the empty-references guard exists to prevent — so
+    # fall back to the unfiltered list instead.
+    if links and not kept:
+        logger.info(
+            f"[SOURCES-CITED] bank={len(links)} kept=0 "
+            f"unmatched_fallback=full_bank "
+            f"cited_nums={sorted(nums)} cited_urls={len(canonical_urls)}"
+        )
+        return links
     logger.info(
         f"[SOURCES-CITED] bank={len(links)} kept={len(kept)} "
         f"cited_nums={len(nums)} cited_urls={len(canonical_urls)}"
