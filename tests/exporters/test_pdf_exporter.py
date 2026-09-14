@@ -359,11 +359,13 @@ class TestPDFExporterQueryOption:
 
         def spy_markdown_to_pdf(
             self, markdown_content, title=None, metadata=None,
-            custom_css=None, query=None,
+            custom_css=None, query=None, base_url=None,
+            trusted_hosts=None,
         ):
             captured["query"] = query
             captured["title"] = title
             captured["markdown_content"] = markdown_content
+            captured["base_url"] = base_url
             return b"%PDF-1.4\n%fake"
 
         monkeypatch.setattr(
@@ -387,9 +389,11 @@ class TestPDFExporterQueryOption:
 
         def spy_markdown_to_pdf(
             self, markdown_content, title=None, metadata=None,
-            custom_css=None, query=None,
+            custom_css=None, query=None, base_url=None,
+            trusted_hosts=None,
         ):
             captured["query"] = query
+            captured["base_url"] = base_url
             return b"%PDF-1.4\n%fake"
 
         monkeypatch.setattr(
@@ -417,11 +421,13 @@ class TestPDFExporterQueryOption:
 
         def spy_markdown_to_pdf(
             self, markdown_content, title=None, metadata=None,
-            custom_css=None, query=None,
+            custom_css=None, query=None, base_url=None,
+            trusted_hosts=None,
         ):
             # The markdown that reaches PDFService must NOT start with
             # "# Some Title" (which would be the base-class prepend).
             captured["first_line"] = markdown_content.split("\n", 1)[0]
+            captured["base_url"] = base_url
             return b"%PDF-1.4\n%fake"
 
         monkeypatch.setattr(
@@ -436,3 +442,68 @@ class TestPDFExporterQueryOption:
             "title line rendered by PDFService would otherwise compete "
             "with it on the first page"
         )
+
+
+    @needs_weasyprint
+    def test_base_url_is_forwarded_to_pdf_service(
+        self, exporter, simple_markdown, monkeypatch
+    ):
+        """``base_url`` must reach ``markdown_to_pdf`` so WeasyPrint can
+        resolve the report's local ``/images/...`` routes. Without
+        this, every image fetch is rejected by the SSRF guard and the
+        exported PDF silently has no images.
+        """
+        from local_deep_research.exporters import ExportOptions
+        from local_deep_research.web.services import pdf_service as pdf_mod
+
+        captured = {}
+
+        def spy_markdown_to_pdf(
+            self, markdown_content, title=None, metadata=None,
+            custom_css=None, query=None, base_url=None,
+            trusted_hosts=None,
+        ):
+            captured["base_url"] = base_url
+            return b"%PDF-1.4\nfake"
+
+        monkeypatch.setattr(
+            pdf_mod.PDFService, "markdown_to_pdf", spy_markdown_to_pdf
+        )
+
+        options = ExportOptions(
+            title="t", query="q", base_url="http://example.com/"
+        )
+        exporter.export(simple_markdown, options)
+
+        assert captured["base_url"] == "http://example.com/"
+
+    @needs_weasyprint
+    def test_base_url_none_when_not_provided(
+        self, exporter, simple_markdown, monkeypatch
+    ):
+        """When the caller doesn't pass a base_url, PDFService falls
+        back to its DEFAULT_BASE_URL — we just need to make sure the
+        value flows through unchanged.
+        """
+        from local_deep_research.exporters import ExportOptions
+        from local_deep_research.web.services import pdf_service as pdf_mod
+
+        captured = {}
+
+        def spy_markdown_to_pdf(
+            self, markdown_content, title=None, metadata=None,
+            custom_css=None, query=None, base_url=None,
+            trusted_hosts=None,
+        ):
+            captured["base_url"] = base_url
+            return b"%PDF-1.4\nfake"
+
+        monkeypatch.setattr(
+            pdf_mod.PDFService, "markdown_to_pdf", spy_markdown_to_pdf
+        )
+
+        # ExportOptions default for base_url is None.
+        options = ExportOptions(title="t", query="q")
+        exporter.export(simple_markdown, options)
+
+        assert captured["base_url"] is None

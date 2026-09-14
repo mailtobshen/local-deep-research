@@ -176,6 +176,8 @@ def export_report_to_memory(
     format: str,
     title: str | None = None,
     query: str | None = None,
+    base_url: str | None = None,
+    trusted_hosts: tuple | None = None,
 ):
     """
     Export a markdown report to different formats in memory.
@@ -190,6 +192,9 @@ def export_report_to_memory(
         query: Optional original research query — PDF uses this to
             render the centred "关于{query}的研究报告" title line
             (二号 黑体 居中). Other exporters ignore it.
+        base_url: Origin URL the PDF exporter forwards to WeasyPrint so
+            relative image routes (e.g. ``/images/<research_id>/<filename>``)
+            resolve to the Flask app. Other exporters ignore it.
 
     Returns:
         Tuple of (content_bytes, filename, mimetype)
@@ -213,7 +218,12 @@ def export_report_to_memory(
     # PDF and ODT exporters prepend titles; RIS and other formats ignore them
 
     # Create options
-    options = ExportOptions(title=title, query=query)
+    options = ExportOptions(
+        title=title,
+        query=query,
+        base_url=base_url,
+        trusted_hosts=trusted_hosts,
+    )
 
     # Export
     result = exporter.export(markdown_content, options)

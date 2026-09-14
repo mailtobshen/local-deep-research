@@ -535,7 +535,7 @@ class TestPDFServiceUrlFetcher:
 
         monkeypatch.setattr(module, "_URL_FETCHER", HangingFetcher())
 
-        result = module._safe_url_fetcher(
+        result = module._make_safe_url_fetcher()(
             "https://1.1.1.1/figure.png"
         )
 
@@ -561,7 +561,7 @@ class TestPDFServiceUrlFetcher:
 
         monkeypatch.setattr(module, "_URL_FETCHER", BrokenFetcher())
 
-        result = module._safe_url_fetcher(
+        result = module._make_safe_url_fetcher()(
             "https://1.1.1.1/x.jpg"
         )
         assert result["mime_type"] == "image/png"
@@ -582,7 +582,7 @@ class TestPDFServiceUrlFetcher:
         monkeypatch.setattr(module, "_URL_FETCHER", BrokenFetcher())
 
         with pytest.raises(OSError):
-            module._safe_url_fetcher(
+            module._make_safe_url_fetcher()(
                 "https://1.1.1.1/theme.css"
             )
 
@@ -605,7 +605,7 @@ class TestPDFServiceUrlFetcher:
 
         monkeypatch.setattr(module, "_URL_FETCHER", PassThroughFetcher())
 
-        result = module._safe_url_fetcher("https://1.1.1.1/x.png")
+        result = module._make_safe_url_fetcher()("https://1.1.1.1/x.png")
         assert result is sentinel
 
     def test_unsafe_url_still_blocked(self, module, monkeypatch):
@@ -627,7 +627,7 @@ class TestPDFServiceUrlFetcher:
         monkeypatch.setattr(module, "_URL_FETCHER", SpyFetcher())
 
         with pytest.raises(UnsafePDFResourceURLError):
-            module._safe_url_fetcher("http://169.254.169.254/latest/meta-data")
+            module._make_safe_url_fetcher()("http://169.254.169.254/latest/meta-data")
         assert called["v"] is False, "fetcher must not be reached for unsafe URLs"
 
 
@@ -675,3 +675,164 @@ class TestPDFServiceQueryParam:
         )
         # Optional default — must be None when not supplied.
         assert params["query"].default is None
+
+
+class TestPDFServiceBaseUrl:
+    """Relative image URLs in research reports (e.g. /images/<id>/<fn>)
+    must resolve to the Flask app's host so WeasyPrint can fetch them.
+    The previous code shipped no <base href> and didn't pass base_url to
+    weasyprint.HTML, so every local image silently failed the SSRF
+    check and was swapped for a 1×1 placeholder — the user-visible
+    "PDF has no images" bug.
+    """
+
+    @pytest.fixture
+    def service(self):
+        from local_deep_research.web.services.pdf_service import PDFService
+        return PDFService()
+
+    def test_base_url_is_passed_to_weasyprint_html(self, service, monkeypatch):
+        """The HTML(...) call must receive ``base_url`` so relative URLs
+        like ``/images/<id>/<fn>`` resolve to the Flask app's origin.
+        Without this, WeasyPrint cannot fetch local image routes.
+        """
+        from local_deep_research.web.services import pdf_service as mod
+
+        if not mod.WEASYPRINT_AVAILABLE:
+            pytest.skip("WeasyPrint not available")
+
+        captured = {}
+
+        class SpyHTML:
+            def __init__(self, string, url_fetcher=None, base_url=None):
+                captured["base_url"] = base_url
+                captured["url_fetcher"] = url_fetcher
+
+            def write_pdf(self, target, stylesheets=None):
+                # Minimal write so markdown_to_pdf returns a byte string
+                # without actually rendering. We are only testing the
+                # constructor wiring.
+                if hasattr(target, "write"):
+                    target.write(b"%PDF-1.4\n%spy\n")
+                return None
+
+        monkeypatch.setattr(mod, "HTML", SpyHTML)
+
+        result = service.markdown_to_pdf(
+            "# hi",
+            title="t",
+            query="q",
+            base_url="http://localhost:5000/",
+        )
+        assert captured["base_url"] == "http://localhost:5000/", (
+            "WeasyPrint HTML must receive base_url so relative image "
+            "routes can be fetched from the Flask app"
+        )
+
+    def test_default_base_url_is_localhost_5000(self, service, monkeypatch):
+        """If no base_url is supplied, default to the dev origin so the
+        common case (running locally on :5000) works out of the box.
+        """
+        from local_deep_research.web.services import pdf_service as mod
+
+        if not mod.WEASYPRINT_AVAILABLE:
+            pytest.skip("WeasyPrint not available")
+
+        captured = {}
+
+        class SpyHTML:
+            def __init__(self, string, url_fetcher=None, base_url=None):
+                captured["base_url"] = base_url
+
+            def write_pdf(self, target, stylesheets=None):
+                if hasattr(target, "write"):
+                    target.write(b"%PDF-1.4\n%spy\n")
+                return None
+
+        monkeypatch.setattr(mod, "HTML", SpyHTML)
+
+        service.markdown_to_pdf("# hi")
+        assert captured["base_url"] == "http://localhost:5000/"
+
+
+class TestPDFServiceLocalhostUrlAllowed:
+    """The url_fetcher must allow requests to the local Flask app.
+    ``validate_url`` defaults to ``allow_localhost=False`` to block
+    SSRF — but in this specific code path we're rendering a report
+    that came from our own database, where every image URL has already
+    been rewritten to a local ``/images/...`` route by
+    ``images.store.rewrite_markdown``. The cloud-metadata IPs
+    (``ALWAYS_BLOCKED_METADATA_IPS``) stay blocked regardless.
+    """
+
+    @pytest.fixture
+    def module(self):
+        from local_deep_research.web.services import pdf_service
+        return pdf_service
+
+    def test_localhost_url_is_allowed(self, module, monkeypatch):
+        """Loopback fetches must succeed — they hit our own Flask app."""
+        if not module.WEASYPRINT_AVAILABLE:
+            pytest.skip("WeasyPrint not available")
+
+        class PassThrough:
+            def fetch(self, url):
+                return {"string": b"img-bytes", "mime_type": "image/jpeg"}
+
+        monkeypatch.setattr(module, "_URL_FETCHER", PassThrough())
+
+        result = module._make_safe_url_fetcher()(
+            "http://localhost:5000/images/abc/xyz.jpg"
+        )
+        assert result == {"string": b"img-bytes", "mime_type": "image/jpeg"}
+
+    def test_127_0_0_1_url_is_allowed(self, module, monkeypatch):
+        """Same as localhost but the IPv4 form."""
+        if not module.WEASYPRINT_AVAILABLE:
+            pytest.skip("WeasyPrint not available")
+
+        class PassThrough:
+            def fetch(self, url):
+                return {"string": b"x", "mime_type": "image/jpeg"}
+
+        monkeypatch.setattr(module, "_URL_FETCHER", PassThrough())
+
+        result = module._make_safe_url_fetcher()(
+            "http://127.0.0.1:5000/images/abc/xyz.jpg"
+        )
+        assert result == {"string": b"x", "mime_type": "image/jpeg"}
+
+    def test_cloud_metadata_ip_still_blocked(self, module):
+        """Even with localhost allowed, cloud metadata IPs remain
+        blocked — defence in depth against the LLM-injected-URL risk.
+        """
+        from local_deep_research.web.services.pdf_service import (
+            UnsafePDFResourceURLError,
+        )
+
+        with pytest.raises(UnsafePDFResourceURLError):
+            module._make_safe_url_fetcher()(
+                "http://169.254.169.254/latest/meta-data/iam/security-credentials/"
+            )
+
+    def test_external_public_ip_still_goes_through_normal_path(
+        self, module, monkeypatch
+    ):
+        """External public IPs are still SSRF-checked the same way
+        they were before — only localhost was opened up.
+        """
+        if not module.WEASYPRINT_AVAILABLE:
+            pytest.skip("WeasyPrint not available")
+
+        seen = {"ok": False}
+
+        class PassThrough:
+            def fetch(self, url):
+                seen["ok"] = True
+                return {"string": b"x", "mime_type": "image/png"}
+
+        monkeypatch.setattr(module, "_URL_FETCHER", PassThrough())
+
+        # 1.1.1.1 is a public IP — not in any blocked range.
+        result = module._make_safe_url_fetcher()("https://1.1.1.1/img.png")
+        assert seen["ok"] is True

@@ -90,54 +90,65 @@ def _placeholder_image_response() -> Dict[str, Any]:
     return {"string": _PLACEHOLDER_PNG_BYTES, "mime_type": "image/png"}
 
 
-def _safe_url_fetcher(url):
-    """WeasyPrint url_fetcher that:
+def _make_safe_url_fetcher(trusted_hosts=None):
+    """Return a url_fetcher bound to a trusted-host suffix set.
 
-    1. Blocks SSRF targets via ``validate_url`` (GHSA-fj2m-qvh9-jq4q).
-    2. Bounds every external fetch at :data:`_PDF_RESOURCE_FETCH_TIMEOUT_S`
-       so a hung CDN cannot freeze the whole PDF render — parity with
-       the client-side ``loadImageForPdf`` helper.
-    3. On fetch failure for image URLs, returns the 1×1 transparent PNG
-       placeholder so the rendered PDF has an invisible gap instead of
-       a missing-image gap. For non-image resources (CSS / JS / fonts)
-       the failure propagates so WeasyPrint logs the missing resource
-       and bundling / configuration bugs are not silently masked.
+    Loopback is always allowed (so ``/images/<id>/<fn>`` rewritten by
+    ``images.store.rewrite_markdown`` can be fetched from this same
+    Flask app); caller-supplied ``trusted_hosts`` add private-network
+    origins (e.g. the Flask ``request.host`` for LAN deployments).
+    Cloud-metadata IPs (``ALWAYS_BLOCKED_METADATA_IPS``) stay blocked.
     """
-    if not validate_url(url):
-        logger.warning(f"Blocked unsafe URL in PDF rendering: {url}")
-        raise UnsafePDFResourceURLError(
-            f"Blocked unsafe URL in PDF rendering: {url}"
-        )
+    if trusted_hosts is None:
+        trusted_hosts = ()
 
-    is_image = _looks_like_image_url(url)
+    def _safe_url_fetcher(url):
+        """WeasyPrint url_fetcher (closure over ``trusted_hosts``).
 
-    # A fresh executor per call is intentional — a one-shot timeout must
-    # release its thread once the result (or timeout) is settled. The
-    # underlying WeasyPrint URLFetcher is thread-safe.
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
-        future = ex.submit(_URL_FETCHER.fetch, url)
-        try:
-            return future.result(timeout=_PDF_RESOURCE_FETCH_TIMEOUT_S)
-        except concurrent.futures.TimeoutError:
-            if is_image:
-                logger.warning(
-                    f"PDF image fetch timed out after "
-                    f"{_PDF_RESOURCE_FETCH_TIMEOUT_S}s, using placeholder: {url}"
-                )
-                return _placeholder_image_response()
-            logger.warning(
-                f"PDF resource fetch timed out after "
-                f"{_PDF_RESOURCE_FETCH_TIMEOUT_S}s: {url}"
+        1. Blocks SSRF targets via ``validate_url`` (GHSA-fj2m-qvh9-jq4q),
+           with loopback + trusted_hosts allowed.
+        2. Bounds every external fetch at :data:`_PDF_RESOURCE_FETCH_TIMEOUT_S``
+           so a hung CDN cannot freeze the whole PDF render.
+        3. On fetch failure for image URLs, returns the 1×1 transparent PNG
+           placeholder; non-image resources still propagate failure.
+        """
+        if not validate_url(
+            url,
+            allow_localhost=True,
+            trusted_host_suffixes=tuple(trusted_hosts) if trusted_hosts else None,
+        ):
+            logger.warning(f"Blocked unsafe URL in PDF rendering: {url}")
+            raise UnsafePDFResourceURLError(
+                f"Blocked unsafe URL in PDF rendering: {url}"
             )
-            raise
-        except Exception:
-            if is_image:
-                logger.warning(
-                    f"PDF image fetch failed, using placeholder: {url}"
-                )
-                return _placeholder_image_response()
-            raise
 
+        is_image = _looks_like_image_url(url)
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+            future = ex.submit(_URL_FETCHER.fetch, url)
+            try:
+                return future.result(timeout=_PDF_RESOURCE_FETCH_TIMEOUT_S)
+            except concurrent.futures.TimeoutError:
+                if is_image:
+                    logger.warning(
+                        f"PDF image fetch timed out after "
+                        f"{_PDF_RESOURCE_FETCH_TIMEOUT_S}s, using placeholder: {url}"
+                    )
+                    return _placeholder_image_response()
+                logger.warning(
+                    f"PDF resource fetch timed out after "
+                    f"{_PDF_RESOURCE_FETCH_TIMEOUT_S}s: {url}"
+                )
+                raise
+            except Exception:
+                if is_image:
+                    logger.warning(
+                        f"PDF image fetch failed, using placeholder: {url}"
+                    )
+                    return _placeholder_image_response()
+                raise
+
+    return _safe_url_fetcher
 
 class MissingPDFDependencyError(RuntimeError):
     """Raised when WeasyPrint system libraries are unavailable.
@@ -280,6 +291,14 @@ class PDFService:
         # fonts-noto-cjk) to actually be installed.
         self.minimal_css = CSS(string=_MINIMAL_CSS_BODY)
 
+    #: Default base URL for relative image routes served by this app.
+    #: Reports rewritten by ``images.store.rewrite_markdown`` embed
+    #: ``/images/<research_id>/<filename>`` URLs which WeasyPrint must
+    #: resolve against an origin to fetch. ``http://localhost:5000``
+    #: matches the LDR dev container; production deployments should
+    #: override via the ``base_url`` kwarg below.
+    DEFAULT_BASE_URL = "http://localhost:5000/"
+
     def markdown_to_pdf(
         self,
         markdown_content: str,
@@ -287,6 +306,8 @@ class PDFService:
         metadata: Optional[Dict[str, Any]] = None,
         custom_css: Optional[str] = None,
         query: Optional[str] = None,
+        base_url: Optional[str] = None,
+        trusted_hosts: Optional[tuple] = None,
     ) -> bytes:
         """
         Convert markdown content to PDF.
@@ -301,6 +322,17 @@ class PDFService:
                 of the document. Distinct from ``title`` (which only
                 populates ``<title>``); the title line is rendered with
                 the .ldr-pdf-title CSS rule (二号 黑体 居中).
+            base_url: Origin URL WeasyPrint uses to resolve relative
+                image routes embedded in the report (e.g.
+                ``/images/<research_id>/<filename>``). Defaults to
+                ``http://localhost:5000/`` which matches the LDR dev
+                container; production deployments should pass
+                ``request.host_url`` from the Flask request.
+            trusted_hosts: Extra host suffixes the url_fetcher should
+                trust beyond the default loopback allowance — e.g. the
+                Flask ``request.host`` for private-network (LAN)
+                deployments. Cloud-metadata IPs are always blocked
+                regardless of this set.
 
         Returns:
             PDF file as bytes
@@ -318,8 +350,24 @@ class PDFService:
                 markdown_content, title, metadata, query
             )
 
-            # url_fetcher blocks SSRF targets reachable via body/citation URLs.
-            html_doc = HTML(string=html_content, url_fetcher=_safe_url_fetcher)
+            # Resolve relative image URLs against the Flask app's origin.
+            # Without base_url, ``/images/<id>/<fn>`` resolves to about:blank
+            # and the local image routes fail the SSRF check, silently
+            # producing a PDF with no images.
+            effective_base_url = base_url or self.DEFAULT_BASE_URL
+
+            # Build a url_fetcher bound to the caller's trusted-host set.
+            # The Flask route passes ``request.host`` so the fetcher trusts
+            # the same origin that owns the report's rewritten local image
+            # routes — same-app fetches are safe; cloud-metadata IPs are
+            # still blocked by ALWAYS_BLOCKED_METADATA_IPS.
+            url_fetcher = _make_safe_url_fetcher(trusted_hosts)
+
+            html_doc = HTML(
+                string=html_content,
+                url_fetcher=url_fetcher,
+                base_url=effective_base_url,
+            )
 
             # Apply CSS (custom or minimal default)
             css_list = []

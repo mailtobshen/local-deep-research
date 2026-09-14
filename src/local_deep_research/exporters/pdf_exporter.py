@@ -90,6 +90,8 @@ class PDFExporter(BaseExporter):
                 metadata=options.metadata,
                 custom_css=custom_css,
                 query=options.query,
+                base_url=options.base_url,
+                trusted_hosts=options.trusted_hosts,
             )
 
             filename = self._generate_safe_filename(options.title)

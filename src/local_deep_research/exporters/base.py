@@ -28,12 +28,25 @@ class ExportOptions:
         query: Optional original research query used by PDF export to
             render the centred "关于{query}的研究报告" title line
             (二号 黑体 居中). Ignored by exporters that don't need it.
+        base_url: Origin URL the PDF exporter forwards to WeasyPrint so
+            relative image routes (e.g. ``/images/<research_id>/<filename>``
+            after ``images.store.rewrite_markdown``) resolve to the
+            Flask app. Without this, those fetches fail the SSRF
+            check and the PDF silently drops every image. Defaults
+            inside PDFService.DEFAULT_BASE_URL when None.
+        trusted_hosts: Extra host suffixes the PDF url_fetcher should
+            trust beyond loopback — e.g. the Flask ``request.host``
+            for a private-network deployment where the WebUI is
+            reached via a LAN IP. Cloud-metadata IPs are always
+            blocked regardless.
         metadata: Optional metadata dict (author, date, etc.)
         custom_options: Format-specific options (e.g., custom_css for PDF)
     """
 
     title: Optional[str] = None
     query: Optional[str] = None
+    base_url: Optional[str] = None
+    trusted_hosts: Optional[tuple] = None
     metadata: Optional[Dict[str, Any]] = None
     custom_options: Optional[Dict[str, Any]] = field(default_factory=dict)
 

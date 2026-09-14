@@ -1628,6 +1628,16 @@ def export_research_report(research_id, format):
                     # original query because that is what "query原文"
                     # in the UX spec refers to.
                     pdf_query = research.query
+                    # WeasyPrint needs an origin to fetch the report's
+                    # rewritten local image routes (``/images/<id>/<fn>``)
+                    # against — otherwise the SSRF check rejects every
+                    # fetch and the exported PDF silently has no images.
+                    pdf_base_url = request.host_url.rstrip("/") + "/"
+                    # Private-network deployments (e.g. LAN NAS at
+                    # ``http://192.168.x.x:5000``) need the request host
+                    # trusted beyond the default loopback allowance so
+                    # the same-origin image fetch is allowed.
+                    pdf_trusted_hosts = (request.host,) if request.host else None
 
                     # Generate export content in memory
                     export_content, filename, mimetype = (
@@ -1636,6 +1646,8 @@ def export_research_report(research_id, format):
                             format,
                             title=pdf_title,
                             query=pdf_query,
+                            base_url=pdf_base_url,
+                            trusted_hosts=pdf_trusted_hosts,
                         )
                     )
 
