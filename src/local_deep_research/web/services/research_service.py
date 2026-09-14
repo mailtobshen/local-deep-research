@@ -172,7 +172,10 @@ def get_citation_formatter():
 
 
 def export_report_to_memory(
-    markdown_content: str, format: str, title: str | None = None
+    markdown_content: str,
+    format: str,
+    title: str | None = None,
+    query: str | None = None,
 ):
     """
     Export a markdown report to different formats in memory.
@@ -184,6 +187,9 @@ def export_report_to_memory(
         markdown_content: The markdown content to export
         format: Export format (e.g., 'pdf', 'odt', 'latex', 'quarto', 'ris')
         title: Optional title for the document
+        query: Optional original research query — PDF uses this to
+            render the centred "关于{query}的研究报告" title line
+            (二号 黑体 居中). Other exporters ignore it.
 
     Returns:
         Tuple of (content_bytes, filename, mimetype)
@@ -207,7 +213,7 @@ def export_report_to_memory(
     # PDF and ODT exporters prepend titles; RIS and other formats ignore them
 
     # Create options
-    options = ExportOptions(title=title)
+    options = ExportOptions(title=title, query=query)
 
     # Export
     result = exporter.export(markdown_content, options)

@@ -70,10 +70,13 @@ class PDFExporter(BaseExporter):
 
             options = options or ExportOptions()
 
-            # Prepend title if needed (for document formats like PDF)
-            markdown_content = self._prepend_title_if_needed(
-                markdown_content, options.title
-            )
+            # Intentionally skip the base-class H1 prepend for PDF:
+            # PDFService._markdown_to_html builds its own centred
+            # "关于{query}的研究报告" title line from ``options.query``,
+            # which would compete with the generic H1 that
+            # _prepend_title_if_needed would otherwise insert. Other
+            # exporters (ODT) still get the H1 prepend because they do
+            # not render a custom title.
 
             # Extract custom_css if provided
             custom_css = None
@@ -86,6 +89,7 @@ class PDFExporter(BaseExporter):
                 title=options.title,
                 metadata=options.metadata,
                 custom_css=custom_css,
+                query=options.query,
             )
 
             filename = self._generate_safe_filename(options.title)

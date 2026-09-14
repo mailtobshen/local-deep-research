@@ -8,6 +8,7 @@
 // Stub the backend-injected constants before loading the module
 window.RESEARCH_STATUS = {
     IN_PROGRESS: 'in_progress',
+    PARTIAL_SUCCESS: 'partial_success',
     COMPLETED: 'completed',
     FAILED: 'failed',
     SUSPENDED: 'suspended',

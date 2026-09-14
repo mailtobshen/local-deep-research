@@ -8,6 +8,7 @@
 // Stub ResearchStates (used by formatStatus)
 window.RESEARCH_STATUS = {
     IN_PROGRESS: 'in_progress',
+    PARTIAL_SUCCESS: 'partial_success',
     COMPLETED: 'completed',
     FAILED: 'failed',
     SUSPENDED: 'suspended',

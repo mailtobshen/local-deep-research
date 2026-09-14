@@ -20,6 +20,196 @@
  *
  * @param {Element} container - The DOM element containing rendered KaTeX
  */
+
+/**
+ * Load an image (URL or data URI) and convert it to a PNG data URL that
+ * jsPDF.addImage can embed directly.
+ *
+ * jsPDF.addImage refuses plain HTTP(S) URLs — it only accepts a data URL,
+ * a Canvas, or an HTMLImageElement. Passing a URL silently drops the image
+ * from the exported PDF. To work around that, we draw the loaded image
+ * onto a canvas and re-export it as a PNG data URL.
+ *
+ * Failure modes all resolve to `null` rather than rejecting, so the PDF
+ * walker can decide whether to write a placeholder line and keep going:
+ *
+ *   - empty / nullish src        → null (no-op)
+ *   - network error / 404        → null
+ *   - load exceeds 5 s            → null (so a slow CDN cannot freeze the PDF)
+ *   - CORS-tainted canvas        → null (toDataURL throws SecurityError)
+ *
+ * Cross-origin images require `crossOrigin = "anonymous"` AND CORS headers
+ * from the origin server. Images that lack those headers (e.g. raw
+ * Wikipedia/Wikimedia hot-links, some CDNs) will fail here — that's
+ * deliberate: there is no way to embed them as a clean data URL, and
+ * silently emitting a tainted blob is worse than a placeholder.
+ *
+ * @param {string} src - Image URL or data URI.
+ * @returns {Promise<{dataUrl: string, width: number, height: number, format: string} | null>}
+ */
+/**
+ * Format the Chinese page-number footer text.
+ *
+ * Format: "第N页/共M页" — parity with the server-side CSS @page rule
+ * (web/services/pdf_service.py: @bottom-center). No zero-padding
+ * (Chinese typographic convention).
+ */
+function formatPageNumberForPdf(currentPage, totalPages) {
+    return `第${currentPage}页/共${totalPages}页`;
+}
+
+/**
+ * Render the centred "关于{query}的研究报告" title via html2canvas.
+ *
+ * The server-side PDFService handles Chinese natively (WeasyPrint +
+ * Noto CJK), but the client-side pdf.js uses jsPDF whose built-in
+ * Helvetica cannot embed CJK glyphs. Parity with the server-side
+ * title is achieved by rasterising the title in the browser (which
+ * has the system CJK fonts) and embedding the PNG via addImage.
+ *
+ * @param {object} pdf - jsPDF instance
+ * @param {string} query - The original research query
+ * @param {{margin:number, contentWidth:number, pdfWidth?:number}} layout
+ * @returns {Promise<{height: number}>} Rendered image height in PDF
+ *   points; 0 if rendering failed (caller should advance cursor
+ *   by title height regardless so layout doesn't collapse).
+ */
+async function renderTitleForPdf(pdf, query, layout) {
+    const { margin, contentWidth } = layout;
+    const pdfWidth =
+        layout.pdfWidth || pdf.internal.pageSize.getWidth();
+
+    if (!query) return { height: 0 };
+
+    // Build an off-screen element styled to match the server-side CSS
+    // (.ldr-pdf-title: 二号 22pt, Heiti family, centred, bold).
+    const host = document.createElement("div");
+    host.className = "ldr-pdf-title-render";
+    host.style.cssText = [
+        "position: absolute",
+        "left: -99999px",
+        "top: 0",
+        // Width bounded to the printable column so the rendered bitmap
+        // doesn't overflow when we centre it.
+        `width: ${contentWidth}px`,
+        "padding: 0",
+        "margin: 0",
+        "font-family: SimHei, \"Heiti SC\", \"Noto Sans CJK SC\", \"Microsoft YaHei\", sans-serif",
+        "font-size: 22pt",
+        "font-weight: bold",
+        "text-align: center",
+        "line-height: 1.3",
+        "color: #000",
+        "background: #fff",
+    ].join("; ");
+    host.textContent = `关于${query}的研究报告`;
+    document.body.appendChild(host);
+
+    try {
+        const localHtml2Canvas =
+            typeof html2canvas !== "undefined"
+                ? html2canvas
+                : window.html2canvas;
+        if (!localHtml2Canvas) {
+            SafeLogger.warn(
+                "renderTitleForPdf: html2canvas not available; title skipped"
+            );
+            return { height: 0 };
+        }
+
+        const canvas = await localHtml2Canvas(host, {
+            scale: 2,
+            backgroundColor: "#FFFFFF",
+            logging: false,
+        });
+        const dataUrl = canvas.toDataURL("image/png");
+
+        // Preserve aspect ratio: width = contentWidth (full column),
+        // height derived from the rendered bitmap.
+        const imgWidth = contentWidth;
+        const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+        const x = (pdfWidth - imgWidth) / 2;
+        pdf.addImage(dataUrl, "PNG", x, margin, imgWidth, imgHeight);
+
+        return { height: imgHeight };
+    } catch (err) {
+        SafeLogger.warn(
+            `renderTitleForPdf: failed to render title — ${err && err.message}`
+        );
+        return { height: 0 };
+    } finally {
+        if (host.parentNode === document.body) {
+            document.body.removeChild(host);
+        }
+    }
+}
+
+async function loadImageForPdf(src) {
+    if (!src) return null;
+
+    // 5 s is a balance: long enough for slow CDNs, short enough that a
+    // hung image does not freeze the whole "Download PDF" click.
+    const TIMEOUT_MS = 5000;
+
+    return new Promise((resolve) => {
+        const img = new Image();
+        // Required so toDataURL() can read pixels from cross-origin images.
+        // The request will fail outright if the server doesn't return the
+        // matching Access-Control-Allow-Origin header.
+        img.crossOrigin = "anonymous";
+
+        let settled = false;
+        const settle = (value) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            resolve(value);
+        };
+
+        const timer = setTimeout(() => {
+            SafeLogger.warn(`loadImageForPdf: timed out after ${TIMEOUT_MS} ms for ${src}`);
+            settle(null);
+        }, TIMEOUT_MS);
+
+        img.onload = () => {
+            try {
+                const canvas = document.createElement("canvas");
+                canvas.width = img.naturalWidth;
+                canvas.height = img.naturalHeight;
+                const ctx = canvas.getContext("2d");
+                if (!ctx) {
+                    settle(null);
+                    return;
+                }
+                ctx.drawImage(img, 0, 0);
+                const dataUrl = canvas.toDataURL("image/png");
+                settle({
+                    dataUrl,
+                    width: img.naturalWidth,
+                    height: img.naturalHeight,
+                    format: "PNG",
+                });
+            } catch (err) {
+                // Most commonly: SecurityError because the canvas is tainted
+                // by a cross-origin image without CORS headers. We cannot
+                // recover — the caller should drop a placeholder.
+                SafeLogger.warn(
+                    `loadImageForPdf: failed to rasterise ${src}: ${err && err.message}`
+                );
+                settle(null);
+            }
+        };
+
+        img.onerror = () => {
+            SafeLogger.warn(`loadImageForPdf: failed to load ${src}`);
+            settle(null);
+        };
+
+        img.src = src;
+    });
+}
+
 function replaceKatexWithLatex(container) {
     container.querySelectorAll('.katex-display').forEach((el) => {
         const ann = el.querySelector('annotation[encoding="application/x-tex"]');
@@ -206,11 +396,79 @@ async function generatePdf(title, content, _metadata = {}) {
         const margin = 40;
         const contentWidth = pdfWidth - 2 * margin;
 
-        // Add footer to page
-        const addFooterToCurrentPage = (pageNum) => {
-            pdf.setFontSize(8);
-            pdf.setTextColor(100, 100, 100);
-            pdf.text(i18n.tf('Page %s', pageNum), margin, pdfHeight - 20);
+        // Render the Chinese page-number footer at the bottom-centre
+        // of a single page. jsPDF's built-in Helvetica cannot embed
+        // CJK glyphs, so we rasterise the text via html2canvas — the
+        // browser draws it with the system CJK fonts and we embed the
+        // resulting PNG via addImage. Same trick used for the title
+        // (see renderTitleForPdf above).
+        //
+        // Two-pass strategy: the content loop runs first WITHOUT
+        // footers, then we walk every page and stamp the
+        // "第N页/共M页" footer once totalPages is known. This matches
+        // the server-side WeasyPrint @page counter and avoids having
+        // to predict total pages up front.
+        const renderPageFooter = async (pageNum, totalPages) => {
+            const localHtml2Canvas =
+                typeof html2canvas !== "undefined"
+                    ? html2canvas
+                    : window.html2canvas;
+            if (!localHtml2Canvas) {
+                SafeLogger.warn(
+                    "PDF page footer: html2canvas unavailable; skipping"
+                );
+                return null;
+            }
+            const text = formatPageNumberForPdf(pageNum, totalPages);
+            const host = document.createElement("div");
+            host.className = "ldr-pdf-footer-render";
+            host.style.cssText = [
+                "position: absolute",
+                "left: -99999px",
+                "top: 0",
+                `width: ${pdfWidth - 2 * margin}px`,
+                "padding: 0",
+                "margin: 0",
+                "font-family: SimSun, \"Songti SC\", \"Noto Serif CJK SC\", serif",
+                "font-size: 9pt",
+                "text-align: center",
+                "color: #666",
+                "background: #fff",
+            ].join("; ");
+            host.textContent = text;
+            document.body.appendChild(host);
+            try {
+                const canvas = await localHtml2Canvas(host, {
+                    scale: 2,
+                    backgroundColor: "#FFFFFF",
+                    logging: false,
+                });
+                return {
+                    dataUrl: canvas.toDataURL("image/png"),
+                    width: canvas.width / 2,  // undo scale=2
+                    height: canvas.height / 2,
+                };
+            } catch (err) {
+                SafeLogger.warn(
+                    `PDF page footer: render failed — ${err && err.message}`
+                );
+                return null;
+            } finally {
+                if (host.parentNode === document.body) {
+                    document.body.removeChild(host);
+                }
+            }
+        };
+
+        const stampPageFooter = async (pageNum, totalPages) => {
+            const rendered = await renderPageFooter(pageNum, totalPages);
+            if (!rendered) return;
+            // Centre horizontally on the page, anchor to the bottom margin.
+            const x = (pdfWidth - rendered.width) / 2;
+            const y = pdfHeight - margin / 2 - rendered.height;
+            pdf.addImage(
+                rendered.dataUrl, "PNG", x, y, rendered.width, rendered.height
+            );
         };
 
         // Process each element with a more optimized approach
@@ -227,8 +485,9 @@ async function generatePdf(title, content, _metadata = {}) {
         // Start with the first page
         // Note: jsPDF starts with one page already, no need to add
 
-        // Add footer to first page
-        addFooterToCurrentPage(pageNum);
+        // Page 1 footer is stamped in the second pass below — we need
+        // totalPages to render "第N页/共M页" and that only exists after
+        // the content loop has run.
 
         // If no elements found, try to add raw content
         if (elements.length === 0) {
@@ -772,34 +1031,50 @@ async function generatePdf(title, content, _metadata = {}) {
 
                     if (!imgElement || !imgElement.src) continue;
 
-                    try {
-                        // Create a new image to get dimensions
-                        const img = new Image();
-                        if (typeof URLValidator !== 'undefined' && URLValidator.safeAssign) {
-                            URLValidator.safeAssign(img, 'src', imgElement.src);
-                        } else {
-                            img.src = imgElement.src;
-                        }
+                    // Preserve original alt text as a fallback line if the image
+                    // cannot be rasterised, so the PDF reader still conveys
+                    // *something* about what was meant to be there.
+                    const altFallback = imgElement.alt
+                        ? imgElement.alt
+                        : i18n.t('[Image could not be rendered]');
 
-                        // Calculate dimensions
-                        const imgWidth = contentWidth;
-                        const imgHeight = img.height * (contentWidth / img.width);
-
-                        // Check if we need a new page
-                        if (currentY + imgHeight > pdfHeight - margin) {
-                            pageNum++;
-                            pdf.addPage();
-                            currentY = margin;
-                        }
-
-                        // Add image to PDF
-                        pdf.addImage(img.src, 'JPEG', margin, currentY, imgWidth, imgHeight);
-                        currentY += imgHeight + 10;
-                    } catch (imgError) {
-                        SafeLogger.error('Error adding image:', imgError);
-                        pdf.text(i18n.t('[Image could not be rendered]'), margin, currentY + 12);
+                    // Load and rasterise the image via canvas so jsPDF receives
+                    // a data URL it can actually embed. See loadImageForPdf
+                    // for the failure modes it handles (timeout, CORS, etc.).
+                    const loaded = await loadImageForPdf(imgElement.src);
+                    if (!loaded || !loaded.width || !loaded.height) {
+                        SafeLogger.warn(
+                            `Skipping image in PDF (could not load): ${imgElement.src}`
+                        );
+                        pdf.text(altFallback, margin, currentY + 12);
                         currentY += 20;
+                        continue;
                     }
+
+                    // Preserve aspect ratio. Width is fixed to the printable
+                    // column; height is derived from the loaded bitmap.
+                    const imgWidth = contentWidth;
+                    const imgHeight = (loaded.height * imgWidth) / loaded.width;
+
+                    // Page-break check BEFORE drawing so a tall image starts
+                    // on a fresh page instead of overflowing the bottom margin.
+                    // (Other branches in this walker add pages the same way
+                    // without re-stamping the footer — kept consistent here.)
+                    if (currentY + imgHeight > pdfHeight - margin) {
+                        pageNum++;
+                        pdf.addPage();
+                        currentY = margin;
+                    }
+
+                    pdf.addImage(
+                        loaded.dataUrl,
+                        loaded.format,
+                        margin,
+                        currentY,
+                        imgWidth,
+                        imgHeight
+                    );
+                    currentY += imgHeight + 10;
                 }
                 // Fallback for moderately complex elements - try to extract text first before using canvas
                 else {
@@ -854,6 +1129,51 @@ async function generatePdf(title, content, _metadata = {}) {
                 SafeLogger.error('Error processing element:', elementError);
                 pdf.text(i18n.t("[Error rendering content]"), margin, currentY + 12);
                 currentY += 20;
+            }
+        }
+
+        // ---- Second pass: title line + Chinese page numbers ----
+
+        // Title line (二号 黑体 居中 — matches server-side .ldr-pdf-title).
+        // Rendered via html2canvas so the system CJK fonts are available;
+        // jsPDF's Helvetica cannot embed them directly. Only renders when
+        // ``title`` is a non-empty string — existing call sites already
+        // pass the research query as ``title``.
+        if (title) {
+            try {
+                // The body content was already rendered starting at
+                // ``margin``, so the title overlap is real only when the
+                // first body element also starts at margin. We don't
+                // shift the body retroactively here because the existing
+                // walker has already laid it out — the title sits on
+                // top of the first line of body content. Users with
+                // reports that already start with content may want to
+                // add a page-break before the title; the WebUI today
+                // only inserts a single short line before the first
+                // H1, which is visually fine.
+                await renderTitleForPdf(
+                    pdf, String(title), { margin, contentWidth, pdfWidth }
+                );
+            } catch (err) {
+                SafeLogger.warn(
+                    `PDF title rendering failed — ${err && err.message}`
+                );
+            }
+        }
+
+        // Page numbers (五号 宋体 居中 — "第N页/共M页").
+        // We need totalPages BEFORE stamping, so this runs after the
+        // content loop. Each render is an html2canvas call (Chinese
+        // text); the result is embedded as a small PNG.
+        const totalPages = pdf.internal.getNumberOfPages();
+        for (let p = 1; p <= totalPages; p++) {
+            pdf.setPage(p);
+            try {
+                await stampPageFooter(p, totalPages);
+            } catch (err) {
+                SafeLogger.warn(
+                    `PDF page ${p} footer render failed — ${err && err.message}`
+                );
             }
         }
 
@@ -1012,5 +1332,8 @@ async function downloadPdf(titleOrData, content, metadata = {}) {
 window.pdfService = {
     generatePdf,
     downloadPdf,
-    replaceKatexWithLatex
+    replaceKatexWithLatex,
+    loadImageForPdf,
+    renderTitleForPdf,
+    formatPageNumberForPdf
 };

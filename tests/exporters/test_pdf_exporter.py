@@ -121,7 +121,7 @@ class TestPDFExporterExport:
         self, exporter, sample_markdown
     ):
         """Test handling of markdown with tables, code, lists."""
-        result = exporter.export(sample_markdown)
+        result = exporter.export(simple_markdown)
 
         assert result.content.startswith(b"%PDF")
 
@@ -328,3 +328,111 @@ class TestPDFExporterFilenameTruncation:
 
         assert "Short_Title" in result.filename
         assert result.filename.endswith(".pdf")
+
+
+class TestPDFExporterQueryOption:
+    """The ``query`` option routes the original research question to
+    PDFService for the centred "关于{query}的研究报告" title line.
+    PDFExporter is also responsible for NOT prepending the generic H1
+    that ``_prepend_title_if_needed`` would otherwise insert — those
+    two title surfaces would otherwise compete on the first page.
+    """
+
+    @pytest.fixture
+    def exporter(self):
+        from local_deep_research.exporters.pdf_exporter import PDFExporter
+        return PDFExporter()
+
+    @needs_weasyprint
+    def test_query_is_forwarded_to_pdf_service(
+        self, exporter, simple_markdown, monkeypatch
+    ):
+        """The ``query`` field on ExportOptions must reach the
+        ``markdown_to_pdf`` call so PDFService can render the title
+        line. We assert this without parsing the rendered PDF by
+        intercepting the call.
+        """
+        from local_deep_research.exporters import ExportOptions
+        from local_deep_research.web.services import pdf_service as pdf_mod
+
+        captured = {}
+
+        def spy_markdown_to_pdf(
+            self, markdown_content, title=None, metadata=None,
+            custom_css=None, query=None,
+        ):
+            captured["query"] = query
+            captured["title"] = title
+            captured["markdown_content"] = markdown_content
+            return b"%PDF-1.4\n%fake"
+
+        monkeypatch.setattr(
+            pdf_mod.PDFService, "markdown_to_pdf", spy_markdown_to_pdf
+        )
+
+        options = ExportOptions(title="Some Title", query="量子计算简介")
+        exporter.export(simple_markdown, options)
+
+        assert captured["query"] == "量子计算简介"
+
+    @needs_weasyprint
+    def test_query_none_omits_title_line(self, exporter, simple_markdown, monkeypatch):
+        """If the route does not pass a query (e.g. legacy callers),
+        the PDF path still works — no title line is rendered.
+        """
+        from local_deep_research.exporters import ExportOptions
+        from local_deep_research.web.services import pdf_service as pdf_mod
+
+        captured = {}
+
+        def spy_markdown_to_pdf(
+            self, markdown_content, title=None, metadata=None,
+            custom_css=None, query=None,
+        ):
+            captured["query"] = query
+            return b"%PDF-1.4\n%fake"
+
+        monkeypatch.setattr(
+            pdf_mod.PDFService, "markdown_to_pdf", spy_markdown_to_pdf
+        )
+
+        options = ExportOptions(title="Some Title")  # no query
+        exporter.export(simple_markdown, options)
+
+        assert captured["query"] is None
+
+    @needs_weasyprint
+    def test_does_not_prepend_h1(
+        self, exporter, sample_markdown, monkeypatch
+    ):
+        """PDFExporter must skip the base-class H1 prepend so the
+        custom title line rendered by PDFService has no H1 competitor.
+        Other exporters (ODT) still get the H1 — this is a PDF-only
+        decision because only PDF renders the centred Chinese title.
+        """
+        from local_deep_research.exporters import ExportOptions
+        from local_deep_research.web.services import pdf_service as pdf_mod
+
+        captured = {}
+
+        def spy_markdown_to_pdf(
+            self, markdown_content, title=None, metadata=None,
+            custom_css=None, query=None,
+        ):
+            # The markdown that reaches PDFService must NOT start with
+            # "# Some Title" (which would be the base-class prepend).
+            captured["first_line"] = markdown_content.split("\n", 1)[0]
+            return b"%PDF-1.4\n%fake"
+
+        monkeypatch.setattr(
+            pdf_mod.PDFService, "markdown_to_pdf", spy_markdown_to_pdf
+        )
+
+        options = ExportOptions(title="Some Title", query="x")
+        exporter.export(sample_markdown, options)
+
+        assert not captured["first_line"].startswith("# Some Title"), (
+            "PDFExporter must NOT prepend the H1 title — the custom "
+            "title line rendered by PDFService would otherwise compete "
+            "with it on the first page"
+        )

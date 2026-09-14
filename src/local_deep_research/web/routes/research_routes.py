@@ -1618,13 +1618,24 @@ def export_research_report(research_id, format):
 
                 # Export to requested format (all in memory)
                 try:
-                    # Use title or query for the PDF title
+                    # Use title or query for the PDF <title> tag.
                     pdf_title = research.title or research.query
+                    # ``research.query`` is the ORIGINAL user-supplied
+                    # research question — that is the value PDFService
+                    # uses to build the centred "关于{query}的研究报告"
+                    # title line (二号 黑体 居中). If the user later
+                    # edited ``research.title`` we keep using the
+                    # original query because that is what "query原文"
+                    # in the UX spec refers to.
+                    pdf_query = research.query
 
                     # Generate export content in memory
                     export_content, filename, mimetype = (
                         export_report_to_memory(
-                            report_content, format, title=pdf_title
+                            report_content,
+                            format,
+                            title=pdf_title,
+                            query=pdf_query,
                         )
                     )
 

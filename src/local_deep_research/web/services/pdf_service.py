@@ -9,6 +9,8 @@ production Flask applications due to:
 - Good paged media features
 """
 
+import base64
+import concurrent.futures
 import io
 import platform
 from html import escape
@@ -49,15 +51,92 @@ _URL_FETCHER = (
     URLFetcher(allow_redirects=False) if WEASYPRINT_AVAILABLE else None
 )
 
+# 5 s matches the client-side loadImageForPdf timeout (pdf.js). Long enough
+# for slow CDNs, short enough that a hung image cannot freeze the whole
+# "Download PDF" click. Only the WeasyPrint worker thread is impacted —
+# the Flask request itself stays responsive because the timeout is enforced
+# in a single-shot executor that returns a placeholder on expiry.
+_PDF_RESOURCE_FETCH_TIMEOUT_S = 5
+
+# 1×1 transparent PNG. WeasyPrint embeds this wherever an image failed to
+# load, so the PDF reader sees an invisible 1×1 instead of a missing-image
+# gap. Bytes produced by Pillow — verified to round-trip via Image.open
+# + base64.b64decode (the previous hand-written bytes were rejected by
+# Pillow as "Truncated File Read" because the IDAT chunk was malformed).
+_PLACEHOLDER_PNG_BYTES = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4"
+    "nGNgYGBgAAAABQABpfZFQAAAAABJRU5ErkJggg=="
+)
+
+_IMAGE_EXTS = (
+    ".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".bmp", ".ico",
+)
+
+
+def _looks_like_image_url(url: str) -> bool:
+    """Best-effort URL-extension check.
+
+    True when the URL (sans query / fragment) ends in a known image
+    extension. Used to decide whether a fetch failure should fall back
+    to the placeholder PNG (images) or propagate the error (CSS / JS /
+    fonts — we do not want to silently swallow bundling bugs).
+    """
+    path = url.split("?", 1)[0].split("#", 1)[0].lower()
+    return any(path.endswith(ext) for ext in _IMAGE_EXTS)
+
+
+def _placeholder_image_response() -> Dict[str, Any]:
+    """Return a WeasyPrint url_fetcher-shaped mapping for the 1×1 PNG."""
+    return {"string": _PLACEHOLDER_PNG_BYTES, "mime_type": "image/png"}
+
 
 def _safe_url_fetcher(url):
-    """WeasyPrint url_fetcher that blocks SSRF targets (GHSA-fj2m-qvh9-jq4q)."""
+    """WeasyPrint url_fetcher that:
+
+    1. Blocks SSRF targets via ``validate_url`` (GHSA-fj2m-qvh9-jq4q).
+    2. Bounds every external fetch at :data:`_PDF_RESOURCE_FETCH_TIMEOUT_S`
+       so a hung CDN cannot freeze the whole PDF render — parity with
+       the client-side ``loadImageForPdf`` helper.
+    3. On fetch failure for image URLs, returns the 1×1 transparent PNG
+       placeholder so the rendered PDF has an invisible gap instead of
+       a missing-image gap. For non-image resources (CSS / JS / fonts)
+       the failure propagates so WeasyPrint logs the missing resource
+       and bundling / configuration bugs are not silently masked.
+    """
     if not validate_url(url):
         logger.warning(f"Blocked unsafe URL in PDF rendering: {url}")
         raise UnsafePDFResourceURLError(
             f"Blocked unsafe URL in PDF rendering: {url}"
         )
-    return _URL_FETCHER.fetch(url)
+
+    is_image = _looks_like_image_url(url)
+
+    # A fresh executor per call is intentional — a one-shot timeout must
+    # release its thread once the result (or timeout) is settled. The
+    # underlying WeasyPrint URLFetcher is thread-safe.
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+        future = ex.submit(_URL_FETCHER.fetch, url)
+        try:
+            return future.result(timeout=_PDF_RESOURCE_FETCH_TIMEOUT_S)
+        except concurrent.futures.TimeoutError:
+            if is_image:
+                logger.warning(
+                    f"PDF image fetch timed out after "
+                    f"{_PDF_RESOURCE_FETCH_TIMEOUT_S}s, using placeholder: {url}"
+                )
+                return _placeholder_image_response()
+            logger.warning(
+                f"PDF resource fetch timed out after "
+                f"{_PDF_RESOURCE_FETCH_TIMEOUT_S}s: {url}"
+            )
+            raise
+        except Exception:
+            if is_image:
+                logger.warning(
+                    f"PDF image fetch failed, using placeholder: {url}"
+                )
+                return _placeholder_image_response()
+            raise
 
 
 class MissingPDFDependencyError(RuntimeError):
@@ -94,22 +173,34 @@ def get_weasyprint_install_instructions() -> str:
     )
 
 
-class PDFService:
-    """Service for converting markdown to PDF using WeasyPrint."""
-
-    def __init__(self):
-        """Initialize PDF service with minimal CSS for readability."""
-        # CJK families are listed as fallbacks so WeasyPrint substitutes a
-        # glyph-bearing font when the primary stack lacks coverage. Without
-        # this, Chinese/Japanese/Korean text disappears silently from the
-        # PDF even though it renders fine in the HTML view (issue #4055).
-        # Glyphs still require the corresponding system font (e.g.
-        # fonts-noto-cjk) to actually be installed.
-        self.minimal_css = CSS(
-            string="""
+# Default CSS body kept as a module-level constant so tests can
+# introspect the rules (WeasyPrint's CSS object strips the source string
+# after parsing). The PDFService constructor feeds this same constant
+# into weasyprint.CSS below, so they stay in lock-step.
+_MINIMAL_CSS_BODY = """
             @page {
                 size: A4;
                 margin: 1.5cm;
+                /* 五号 宋体 居中页码 — renders on every page via WeasyPrint. */
+                @bottom-center {
+                    content: "第" counter(page) "页/共" counter(pages) "页";
+                    font-family: "SimSun", "Songti SC", "Noto Serif CJK SC",
+                        "Source Han Serif SC", serif;
+                    font-size: 9pt;
+                    color: #666;
+                }
+            }
+
+            /* 二号 黑体 居中 — prepended by _markdown_to_html when the
+               caller passes the original research query. */
+            .ldr-pdf-title {
+                font-family: SimHei, "Heiti SC", "Noto Sans CJK SC",
+                    "Source Han Sans SC", "Microsoft YaHei", sans-serif;
+                font-size: 22pt;
+                font-weight: bold;
+                text-align: center;
+                margin: 1.5em 0 1em 0;
+                line-height: 1.3;
             }
 
             body {
@@ -169,7 +260,25 @@ class PDFService:
                 text-decoration: none;
             }
         """
-        )
+
+
+class PDFService:
+    """Service for converting markdown to PDF using WeasyPrint."""
+
+    #: Raw source of the default CSS. Mirrors ``_MINIMAL_CSS_BODY`` so
+    #: tests can introspect rules without depending on WeasyPrint
+    #: internals. Keep in sync with the constructor below.
+    MINIMAL_CSS_SOURCE = _MINIMAL_CSS_BODY
+
+    def __init__(self):
+        """Initialize PDF service with minimal CSS for readability."""
+        # CJK families are listed as fallbacks so WeasyPrint substitutes a
+        # glyph-bearing font when the primary stack lacks coverage. Without
+        # this, Chinese/Japanese/Korean text disappears silently from the
+        # PDF even though it renders fine in the HTML view (issue #4055).
+        # Glyphs still require the corresponding system font (e.g.
+        # fonts-noto-cjk) to actually be installed.
+        self.minimal_css = CSS(string=_MINIMAL_CSS_BODY)
 
     def markdown_to_pdf(
         self,
@@ -177,6 +286,7 @@ class PDFService:
         title: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
         custom_css: Optional[str] = None,
+        query: Optional[str] = None,
     ) -> bytes:
         """
         Convert markdown content to PDF.
@@ -186,6 +296,11 @@ class PDFService:
             title: Optional title for the document
             metadata: Optional metadata dict (author, date, etc.)
             custom_css: Optional CSS string to override defaults
+            query: Optional original research query used to build the
+                centred "关于{query}的研究报告" title line at the top
+                of the document. Distinct from ``title`` (which only
+                populates ``<title>``); the title line is rendered with
+                the .ldr-pdf-title CSS rule (二号 黑体 居中).
 
         Returns:
             PDF file as bytes
@@ -200,7 +315,7 @@ class PDFService:
         try:
             # Convert markdown to HTML
             html_content = self._markdown_to_html(
-                markdown_content, title, metadata
+                markdown_content, title, metadata, query
             )
 
             # url_fetcher blocks SSRF targets reachable via body/citation URLs.
@@ -234,6 +349,7 @@ class PDFService:
         markdown_content: str,
         title: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        query: Optional[str] = None,
     ) -> str:
         """
         Convert markdown to HTML with proper structure.
@@ -243,6 +359,13 @@ class PDFService:
         - Fenced code blocks
         - Table of contents
         - Footnotes
+
+        If ``query`` is provided, prepends a centred title div
+        ``<div class="ldr-pdf-title">关于{query}的研究报告</div>`` to
+        the body, BEFORE any TOC / chapter heading. Styled by the
+        .ldr-pdf-title CSS rule (二号 黑体 居中). The query text is
+        HTML-escaped — defence in depth, even though this string comes
+        from our own database.
         """
         # Parse markdown with extensions
         md = markdown.Markdown(
@@ -274,15 +397,20 @@ class PDFService:
 
         html_parts.append("</head><body>")
 
+        # Insert the centred title line BEFORE the markdown body so it
+        # sits ahead of any TOC / chapter heading produced by the report.
+        if query:
+            html_parts.append(
+                f'<div class="ldr-pdf-title">关于{escape(query)}的研究报告</div>'
+            )
+
         # Add the markdown content directly without any extra title or metadata
         html_parts.append(html_body)
 
-        # Add footer with LDR attribution
-        html_parts.append("""
-            <div style="margin-top: 2em; padding-top: 1em; border-top: 1px solid #ddd; font-size: 9pt; color: #666; text-align: center;">
-                Generated by <a href="https://github.com/LearningCircuit/local-deep-research" style="color: #0066cc;">LDR - Local Deep Research</a> | Open Source AI Research Assistant
-            </div>
-        """)
+        # (No body footer — the page-number footer is rendered via the
+        # @page rule in minimal_css. The previous "Generated by LDR..."
+        # block was removed because it duplicated project branding inside
+        # the report itself.)
 
         html_parts.append("</body></html>")
 

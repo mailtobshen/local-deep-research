@@ -24,12 +24,16 @@ class ExportOptions:
     """Common options for all exporters.
 
     Attributes:
-        title: Optional document title
+        title: Optional document title (used as <title> and possibly H1)
+        query: Optional original research query used by PDF export to
+            render the centred "关于{query}的研究报告" title line
+            (二号 黑体 居中). Ignored by exporters that don't need it.
         metadata: Optional metadata dict (author, date, etc.)
         custom_options: Format-specific options (e.g., custom_css for PDF)
     """
 
     title: Optional[str] = None
+    query: Optional[str] = None
     metadata: Optional[Dict[str, Any]] = None
     custom_options: Optional[Dict[str, Any]] = field(default_factory=dict)
 
