@@ -1,4 +1,4 @@
-**Added `restart-ldr.sh` at the repo root for the local dev container.**
+**Added `scripts/dev/restart-ldr.sh` for the local dev container.**
 
 A one-shot bash wrapper around `docker restart ldr-local` that also
 verifies (1) container became healthy within 30s, (2) the in-container
