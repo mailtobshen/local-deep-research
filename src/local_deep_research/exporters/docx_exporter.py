@@ -149,6 +149,8 @@ class DOCXExporter(BaseExporter):
             src_m = re.search(r'src="([^"]+)"', tag)
             alt_m = re.search(r'alt="([^"]*)"', tag)
             cap_m = re.search(r"<figcaption[^>]*>(.*?)</figcaption>", block, re.DOTALL)
+            width_m = re.search(r'width="([^"]+)"', tag)
+            height_m = re.search(r'height="([^"]+)"', tag)
             if not src_m:
                 return block
             alt = (alt_m.group(1) if alt_m and alt_m.group(1) else "")
@@ -156,7 +158,23 @@ class DOCXExporter(BaseExporter):
                 # Strip any nested HTML inside the caption for clean
                 # alt text.
                 alt = re.sub(r"<[^>]+>", "", cap_m.group(1)).strip()
-            return f"![{alt}]({src_m.group(1)})"
+            # Forward explicit width/height to Pandoc as link-attribute
+            # syntax so the image is embedded at its natural aspect
+            # ratio instead of being stretched to fill the page column.
+            # Values are kept in CSS pixels (``px``) — Pandoc accepts
+            # that unit and the resulting <wp:extent> EMUs come out
+            # right.
+            dims = ""
+            if width_m and height_m:
+                dims = (
+                    f'{{width="{width_m.group(1)}px" '
+                    f'height="{height_m.group(1)}px"}}'
+                )
+            elif width_m:
+                dims = f'{{width="{width_m.group(1)}px"}}'
+            elif height_m:
+                dims = f'{{height="{height_m.group(1)}px"}}'
+            return f"![{alt}]({src_m.group(1)}){dims}"
 
         md = re.sub(
             r"<figure[^>]*>.*?</figure>",
@@ -222,6 +240,30 @@ class DOCXExporter(BaseExporter):
             r"(?m)^(?P<indent>[ ]{3,3})\d+\.\d+\s+(?P<body>.+)$",
             lambda m: f"  - {m.group('body')}",
             md,
+        )
+
+        # 5) Demote every body H1 to H2 (and every H2 to H3) so the
+        #    only H1 in the rendered document is the user-requested
+        #    ``关于X的研究报告`` title that the post-processor injects
+        #    at the very top of <w:body>. The report generator emits
+        #    ``# 目录`` and ``# 研究摘要`` as H1s, and LLM-generated
+        #    chapter content sometimes opens with a ``# <topic>`` H1
+        #    too — all of these would otherwise render as a second
+        #    "title" in Word next to the injected one. Demoting them
+        #    keeps the visual hierarchy (everything is a sub-heading
+        #    of the report title) without losing the heading
+        #    distinction in the document.
+        md = re.sub(
+            r"(?m)^#### (.+)$", r"##### \1", md,
+        )
+        md = re.sub(
+            r"(?m)^### (.+)$", r"#### \1", md,
+        )
+        md = re.sub(
+            r"(?m)^## (.+)$", r"### \1", md,
+        )
+        md = re.sub(
+            r"(?m)^# (.+)$", r"## \1", md,
         )
 
         return md
@@ -410,31 +452,49 @@ class DOCXExporter(BaseExporter):
                 # Pandoc did not emit a style block for this heading
                 # level — nothing to patch.
                 continue
-            block = m.group(1)
-            # If the rPr already has an rFonts, replace it; otherwise
-            # insert a new one at the end of the rPr (creating rPr if
-            # the style has none — unusual but defensive).
+            original_block = m.group(1)
+            block = original_block
+            # Ensure rPr exists so we can attach rFonts + colour. If
+            # the style has none yet, create one just before </w:style>.
+            if "<w:rPr>" not in block:
+                block = block.replace(
+                    "</w:style>",
+                    "<w:rPr></w:rPr></w:style>",
+                    1,
+                )
+            # Set 楷体 (KaiTi) font — replaces any existing rFonts
+            # (theme-based or otherwise) so Word/LibreOffice does not
+            # fall back to a Latin theme font for CJK characters.
             if "<w:rFonts" in block:
-                new_block = re.sub(
+                block = re.sub(
                     r"<w:rFonts[^/]*/>",
                     f'<w:rFonts {kaiti_rfonts}/>',
                     block,
                     count=1,
                 )
             else:
-                if "<w:rPr>" in block:
-                    new_block = block.replace(
-                        "<w:rPr>",
-                        f"<w:rPr><w:rFonts {kaiti_rfonts}/>",
-                        1,
-                    )
-                else:
-                    new_block = block.replace(
-                        "</w:style>",
-                        f"<w:rPr><w:rFonts {kaiti_rfonts}/></w:rPr></w:style>",
-                        1,
-                    )
-            styles_xml = styles_xml.replace(block, new_block, 1)
+                block = block.replace(
+                    "<w:rPr>",
+                    f"<w:rPr><w:rFonts {kaiti_rfonts}/>",
+                    1,
+                )
+            # Force the heading text colour to pure black. Pandoc's
+            # default DOCX template ships headings with a tinted dark
+            # blue (``2E74B5``) which the user does not want.
+            if re.search(r"<w:color\s", block):
+                block = re.sub(
+                    r'<w:color\s[^/]*/>',
+                    '<w:color w:val="000000"/>',
+                    block,
+                    count=1,
+                )
+            else:
+                block = block.replace(
+                    "<w:rPr>",
+                    '<w:rPr><w:color w:val="000000"/>',
+                    1,
+                )
+            styles_xml = styles_xml.replace(original_block, block, 1)
 
         names_to_data[styles_path] = styles_xml.encode("utf-8")
         return names_to_data

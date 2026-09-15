@@ -165,12 +165,15 @@ class TestDOCXTitleInjection:
     def test_markdown_body_unchanged_when_query_given(self):
         from local_deep_research.exporters.docx_exporter import DOCXExporter
         original = "# 目录\n\n正文"
-        # No H1 is prepended at the markdown level.
+        # The custom "关于…的研究报告" title is NOT prepended at the
+        # markdown level — the post-processor injects it via OOXML so
+        # only one H1 survives in the rendered document.
         out = DOCXExporter._prepare_markdown(original, query="量子", base_url=None)
-        assert out == original
         assert "# 关于" not in out
-        # The existing ``# 目录`` heading is preserved verbatim.
-        assert "目录" in out
+        # ``# 目录`` is preserved as text but gets demoted to H2 so the
+        # only H1 in the final document is the user's title.
+        assert "## 目录" in out
+        assert "正文" in out
 
     def test_inject_title_paragraph_has_correct_styling(self):
         from local_deep_research.exporters.docx_exporter import DOCXExporter
@@ -746,3 +749,130 @@ class TestDOCXPandocArgs:
         # The export flow hardcodes ``-t docx``; this is a regression
         # guard so a stray refactor back to ``-t odt`` fails fast.
         assert DOCXExporter().format_name == "docx"
+
+
+class TestDOCXDemoteBodyH1:
+    @pytest.fixture
+    def prep(self):
+        from local_deep_research.exporters.docx_exporter import DOCXExporter
+        return DOCXExporter._prepare_markdown
+
+    """The body's H1s (``# 目录``, ``# 研究摘要``, LLM chapter titles)
+    render as a second "title" in Word next to the user's
+    ``关于X的研究报告`` post-processed title. Demote every body H1
+    to H2 so the injected title is the only H1 in the document.
+
+    The ``# 目录`` heading the report generator emits becomes a normal
+    section heading under the title, and the LLM-generated chapter
+    titles (which sometimes come back as the query text itself) stop
+    masquerading as a second title.
+    """
+
+    def test_demotes_report_toc_h1_to_h2(self, prep):
+        md = "# 目录\n\ncontent"
+        out = prep(md, query=None, base_url=None)
+        # The body H1 is demoted to H2.
+        assert "## 目录" in out
+        # No body H1 remains.
+        import re
+        h1s = re.findall(r"(?m)^# (.+)$", out)
+        assert h1s == [], f"body H1s should be demoted, found: {h1s}"
+
+    def test_demotes_llm_chapter_h1_to_h2(self, prep):
+        """The LLM-generated body content often starts with a ``#``
+        chapter heading. Demote it to ``##`` so the document only
+        has one H1 (the user's title)."""
+        md = (
+            "# 目录\n\ntoc\n\n"
+            "## 研究摘要\n\nsummary\n\n"
+            "---\n\n"
+            "# 量子计算简介\n\nchapter 1 body\n\n"
+            "## 子标题\n\nsubbody\n"
+        )
+        out = prep(md, query=None, base_url=None)
+        # The LLM chapter H1 is now H2.
+        assert "## 量子计算简介" in out
+        # The H2 subheading is now H3 (cascade).
+        assert "### 子标题" in out
+
+
+class TestDOCXFigureDimensionsPassThrough:
+    @pytest.fixture
+    def prep(self):
+        from local_deep_research.exporters.docx_exporter import DOCXExporter
+        return DOCXExporter._prepare_markdown
+
+    """Pandoc embeds images at the size dictated by the markdown
+    image syntax. When the original ``<img>`` carries explicit
+    ``width``/``height`` (in CSS pixels) we forward them to Pandoc as
+    the ``{width=... height=...}`` link-attribute syntax so the
+    embedded image keeps the natural aspect ratio and does not get
+    stretched to fill the page column."""
+
+    def test_figure_with_dimensions_emits_link_attributes(self, prep):
+        md = (
+            '<figure class="ldr-img">'
+            '<img src="/images/abc/figure.png" width="200" height="150"'
+            ' alt="示例图"/>'
+            "</figure>"
+        )
+        out = prep(
+            md, query=None, base_url="http://127.0.0.1:5000/"
+        )
+        # The markdown image carries dimensions so Pandoc does not
+        # default to the page column width.
+        assert "width=" in out
+        assert "height=" in out
+        # URL is still rewritten to absolute under base_url.
+        assert "http://127.0.0.1:5000/images/abc/figure.png" in out
+
+    def test_figure_without_dimensions_still_rewrites_url(self, prep):
+        """A figure without explicit dimensions still gets the URL
+        rewrite — Pandoc will use the image's natural intrinsic
+        size on embed (no stretching) when no dimensions are given."""
+        md = (
+            '<figure class="ldr-img">'
+            '<img src="/images/abc/figure.png" alt="示例图"/>'
+            "</figure>"
+        )
+        out = prep(
+            md, query=None, base_url="http://127.0.0.1:5000/"
+        )
+        # No dimensions appended.
+        assert "width=" not in out
+        # But URL is rewritten.
+        assert "http://127.0.0.1:5000/images/abc/figure.png" in out
+
+
+class TestDOCXHeadingColorBlack:
+    """The user wants the chapter title text rendered in pure black.
+    Word's default heading colour can be a tinted dark grey; the
+    kaiti patcher must also clear / set ``<w:color>`` to black on
+    every heading style so the rendered text matches the request."""
+
+    def test_heading_style_rpr_has_black_color(self):
+        from local_deep_research.exporters.docx_exporter import DOCXExporter
+        fake_styles = (
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+            '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"/>'
+            '<w:style w:type="paragraph" w:styleId="Heading1">'
+            '<w:name w:val="heading 1"/>'
+            '<w:rPr>'
+            '<w:rFonts w:asciiTheme="majorHAnsi" w:eastAsiaTheme="majorEastAsia"/>'
+            '<w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/>'
+            '<w:color w:val="2E74B5"/>'
+            '</w:rPr></w:style>'
+            "</w:styles>"
+        )
+        out = DOCXExporter._patch_styles_xml_kaiti_headings(
+            {"word/styles.xml": fake_styles.encode()}, headings=("Heading1",)
+        )
+        styles = out["word/styles.xml"].decode()
+        # The 2E74B5 colour is replaced with pure black (000000).
+        assert "2E74B5" not in styles
+        # Either the explicit black override OR no colour element at all
+        # is acceptable — both produce black on render.
+        assert 'w:color w:val="000000"' in styles or "<w:color" not in styles
+        # And the 楷体 font is still there.
+        assert "KaiTi" in styles
