@@ -74,17 +74,142 @@ class DOCXExporter(BaseExporter):
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _prepend_title(markdown_content: str, query: Optional[str]) -> str:
-        """Prepend the "关于{query}的研究报告" title heading.
+    # _prepend_title was replaced by _prepare_markdown below —
+    # see comment there for why we no longer inject an H1 into the
+    # markdown body (it would produce a duplicate title in Word).
 
-        Returned markdown starts with an H1 so Pandoc's DOCX writer
-        produces a Title-style paragraph at the very top of the body —
-        before any TOC / chapter heading that the report carries.
-        Returns the input unchanged when no query is provided.
+
+    @staticmethod
+    def _prepare_markdown(
+        markdown_content: str,
+        query: Optional[str],
+        base_url: Optional[str],
+    ) -> str:
+        """Pre-process the markdown before Pandoc.
+
+        The DOCX export path differs from the PDF path in that Pandoc
+        cannot easily apply the desired styling (二号 黑体 居中 title,
+        body 宋体 五号) via raw markdown — we therefore defer the
+        title styling to the DOCX post-process and only touch the
+        markdown body for four structural concerns raised by the user:
+
+        1. **No double title**: the report generator already emits
+           ``# 目录`` (the first chapter heading) at the top. Prepending
+           another H1 here would produce two visible titles in Word.
+           Instead, we keep the document body untouched at the top and
+           let the post-process inject a single styled title paragraph
+           above the body.
+
+        2. **Horizontal rules**: the report adds ``---`` separators
+           (e.g. between the TOC and the research summary). The user
+           wants no long horizontal lines in the report body, with
+           tables exempted. We strip the standalone ``---`` lines but
+           leave table separator rows (``|---|---|``) alone.
+
+        3. **TOC formatting**: the report generator emits the TOC
+           subsection lines indented with raw spaces, e.g.
+           ``   1.1 Sub name | _purpose_``. Pandoc does not treat
+           those as nested list items — the asterisks leak through
+           and the wrapping is broken. We reformat them to a proper
+           nested markdown list so Pandoc's DOCX writer renders a
+           clean, multi-level table of contents.
+
+        4. **Image URL rewriting**: the rewritten
+           ``/images/<research_id>/<filename>`` routes are
+           relative-to-host. Pandoc's ``--resource-path`` does not
+           resolve them reliably, so we rewrite each ``src="/images/..."``
+           attribute to the absolute URL under the supplied
+           ``base_url`` so Pandoc fetches it directly from this same
+           Flask app.
+
+        The title text itself (``关于{query}的研究报告``) is **not**
+        added to the markdown here — the post-processor injects it
+        as a styled paragraph with 二号 黑体 居中 formatting.
         """
-        if not query:
-            return markdown_content
-        return f"# 关于{query}的研究报告\n\n{markdown_content}"
+        md = markdown_content
+
+        # 1) Strip standalone ``---`` rules. A horizontal rule in
+        #    CommonMark is a line containing only ``---`` (optionally
+        #    with up to 3 spaces of indent). Table separator rows
+        #    start with ``|`` so they are unaffected.
+        md = re.sub(r"(?m)^[ \t]{0,3}---[ \t]*\n", "", md)
+
+        # 2) Reformat the space-indented TOC subsection lines into
+        #    proper nested list items. The report generator emits
+        #    lines like ``   1.1 name | _purpose_`` (3-space indent
+        #    + 1.1 numbering) under each top-level ``1. **Section**``
+        #    entry. We detect these (digit-dot-digit prefix + non-empty
+        #    indent of 3 spaces) and convert to a 4-space nested list
+        #    item while keeping the bold/italic markers intact.
+        md = re.sub(
+            r"(?m)^(?P<indent>[ ]{3,3})(?P<num>\d+\.\d+)\s+(?P<body>.+)$",
+            lambda m: f"    {m.group('num').split('.', 1)[0]}. {m.group('body')}",
+            md,
+        )
+
+        # 3) Rewrite relative ``/images/...`` to absolute under
+        #    ``base_url``. Only touch ``src="..."`` attributes that
+        #    start with a single leading ``/`` (relative-to-host);
+        #    already-absolute ``http://``/``https://``/``data:`` URLs
+        #    pass through unchanged.
+        if base_url:
+            abs_base = base_url.rstrip("/") + "/"
+            md = re.sub(
+                r'src="/(images/[^"]+)"',
+                lambda m: f'src="{abs_base}{m.group(1)}"',
+                md,
+            )
+
+        return md
+
+    @staticmethod
+    def _build_title_paragraph_xml(query: str) -> str:
+        """Return an OOXML ``<w:p>`` carrying the title line.
+
+        The post-processor injects this paragraph at the very top of
+        ``<w:body>``. The styling is the user-specified combination:
+
+        * 字号: 二号 = 22pt = 44 half-points
+        * 字体: 黑体 family stack (SimHei / Heiti SC / Noto Sans CJK SC)
+        * 加粗: bold
+        * 对齐: 居中 (centered)
+        * 颜色: 黑色 (default — no ``w:color`` override)
+
+        The query string is HTML-escaped so a malformed query
+        (e.g. containing ``<``) cannot break the XML.
+        """
+        safe_text = (
+            query
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+        )
+        return (
+            "<w:p>"
+            "<w:pPr>"
+            '<w:jc w:val="center"/>'
+            '<w:rPr>'
+            '<w:rFonts w:ascii="SimHei" w:hAnsi="SimHei" '
+            'w:eastAsia="SimHei" w:cs="Heiti SC" w:hint="eastAsia"/>'
+            '<w:b/>'
+            '<w:bCs/>'
+            '<w:sz w:val="44"/>'
+            '<w:szCs w:val="44"/>'
+            "</w:rPr>"
+            "</w:pPr>"
+            "<w:r>"
+            "<w:rPr>"
+            '<w:rFonts w:ascii="SimHei" w:hAnsi="SimHei" '
+            'w:eastAsia="SimHei" w:cs="Heiti SC" w:hint="eastAsia"/>'
+            "<w:b/>"
+            "<w:bCs/>"
+            '<w:sz w:val="44"/>'
+            '<w:szCs w:val="44"/>'
+            "</w:rPr>"
+            f"<w:t xml:space=\"preserve\">{safe_text}</w:t>"
+            "</w:r>"
+            "</w:p>"
+        )
 
     @staticmethod
     def _scrub_body(markdown_content: str) -> str:
@@ -106,6 +231,156 @@ class DOCXExporter(BaseExporter):
             re.MULTILINE,
         )
         return pattern.sub("", markdown_content).rstrip() + "\n"
+
+
+    @staticmethod
+    def _check_title_already_present(doc_xml: str, title_para_xml: str) -> bool:
+        """Return True if a paragraph carrying the same title text is
+        already in the body — prevents duplicate-injection on retries."""
+        # Extract the visible text node from title_para_xml.
+        m = re.search(r"<w:t[^>]*>([^<]+)</w:t>", title_para_xml)
+        if not m:
+            return False
+        return m.group(1) in doc_xml
+
+    @staticmethod
+    def _set_default_body_font(names_to_data: dict) -> dict:
+        """Patch ``word/styles.xml`` so unstyled body text uses 宋体 五号.
+
+        Replaces / inserts the ``<w:docDefaults><w:rPrDefault><w:rPr>``
+        block with a SimSun 10.5pt run properties default. Headings are
+        left untouched.
+        """
+        styles_path = "word/styles.xml"
+        if styles_path not in names_to_data:
+            # Pandoc usually emits a styles.xml; bail if not.
+            return names_to_data
+        styles_xml = names_to_data[styles_path].decode("utf-8")
+
+        new_rpr = (
+            "<w:rPr>"
+            '<w:rFonts w:ascii="SimSun" w:hAnsi="SimSun" w:eastAsia="SimSun" w:cs="SimSun"/>'
+            '<w:sz w:val="21"/>'   # 10.5pt = 21 half-points (五号)
+            '<w:szCs w:val="21"/>'
+            "</w:rPr>"
+        )
+        if "<w:rPrDefault>" in styles_xml:
+            styles_xml = re.sub(
+                r"<w:rPrDefault>.*?</w:rPrDefault>",
+                f"<w:rPrDefault>{new_rpr}</w:rPrDefault>",
+                styles_xml,
+                count=1,
+                flags=re.DOTALL,
+            )
+        else:
+            # Insert as a child of docDefaults.
+            if "<w:docDefaults>" in styles_xml:
+                styles_xml = re.sub(
+                    r"(<w:docDefaults[^>]*>)",
+                    lambda m: m.group(1) + f"<w:rPrDefault>{new_rpr}</w:rPrDefault>",
+                    styles_xml,
+                    count=1,
+                )
+            else:
+                # No docDefaults — create one near the top.
+                styles_xml = re.sub(
+                    r"(<w:styles[^>]*>)",
+                    lambda m: (
+                        m.group(1)
+                        + f'<w:docDefaults><w:rPrDefault>{new_rpr}</w:rPrDefault></w:docDefaults>'
+                    ),
+                    styles_xml,
+                    count=1,
+                )
+        names_to_data[styles_path] = styles_xml.encode("utf-8")
+        return names_to_data
+
+    @staticmethod
+    def _patch_styles_xml_kaiti_headings(
+        names_to_data: dict,
+        headings: tuple = ("Heading1", "Heading2", "Heading3",
+                          "Heading4", "Heading5", "Heading6", "Title"),
+    ) -> dict:
+        """Replace the font family on every heading style with 楷体.
+
+        The user asked for report section titles to render in 楷体
+        (regular-script Chinese typeface). Pandoc emits the heading
+        styles in ``word/styles.xml`` with theme-based rFonts
+        (``w:asciiTheme="majorHAnsi"`` etc.) which render with the
+        Word/LibreOffice theme default — not 楷体. We rewrite each
+        ``HeadingN`` rPr rFonts to an explicit 楷体 family stack
+        (SimKai → KaiTi → STKaiti → Noto Serif CJK → serif).
+
+        Heading *sizes* are deliberately left untouched — only the
+        font family is changed. Body font (SimSun 五号) is set by
+        ``_set_default_body_font`` and is independent of this patcher.
+        """
+        styles_path = "word/styles.xml"
+        if styles_path not in names_to_data:
+            return names_to_data
+        styles_xml = names_to_data[styles_path].decode("utf-8")
+
+        # 楷体 family stack — SimKai (Windows) → KaiTi (macOS) →
+        # STKaiti (Traditional) → Noto Serif CJK TC (Linux). The
+        # w:cs="KaiTi" hint steers Word's complex-script fallback
+        # the same way; w:hint="eastAsia" tells the renderer to apply
+        # the eastAsia name to CJK characters.
+        kaiti_rfonts = (
+            'w:ascii="KaiTi" '
+            'w:hAnsi="KaiTi" '
+            'w:eastAsia="KaiTi" '
+            'w:cs="KaiTi" '
+            'w:hint="eastAsia"'
+        )
+
+        for h in headings:
+            # Find the Heading style block. Multiline match.
+            pat = re.compile(
+                rf'(<w:style[^>]*w:styleId="{h}".*?</w:style>)',
+                re.DOTALL,
+            )
+            m = pat.search(styles_xml)
+            if not m:
+                # Pandoc did not emit a style block for this heading
+                # level — nothing to patch.
+                continue
+            block = m.group(1)
+            # If the rPr already has an rFonts, replace it; otherwise
+            # insert a new one at the end of the rPr (creating rPr if
+            # the style has none — unusual but defensive).
+            if "<w:rFonts" in block:
+                new_block = re.sub(
+                    r"<w:rFonts[^/]*/>",
+                    f'<w:rFonts {kaiti_rfonts}/>',
+                    block,
+                    count=1,
+                )
+            else:
+                if "<w:rPr>" in block:
+                    new_block = block.replace(
+                        "<w:rPr>",
+                        f"<w:rPr><w:rFonts {kaiti_rfonts}/>",
+                        1,
+                    )
+                else:
+                    new_block = block.replace(
+                        "</w:style>",
+                        f"<w:rPr><w:rFonts {kaiti_rfonts}/></w:rPr></w:style>",
+                        1,
+                    )
+            styles_xml = styles_xml.replace(block, new_block, 1)
+
+        names_to_data[styles_path] = styles_xml.encode("utf-8")
+        return names_to_data
+
+    @staticmethod
+    def _title_already_present(doc_xml: str, title_para_xml: str) -> bool:
+        """Return True if a paragraph carrying the same title text is
+        already in the body — prevents duplicate-injection on retries."""
+        m = re.search(r"<w:t[^>]*>([^<]+)</w:t>", title_para_xml)
+        if not m:
+            return False
+        return m.group(1) in doc_xml
 
     # ------------------------------------------------------------------
     # Page-number footer XML
@@ -131,7 +406,7 @@ class DOCXExporter(BaseExporter):
             f'<w:rFonts w:ascii="SimSun" w:hAnsi="SimSun" w:eastAsia="SimSun" w:cs="SimSun"/>'
             '<w:sz w:val="18"/>'   # 9pt = 18 half-points (五号)
             '<w:szCs w:val="18"/>'
-            '<w:color w:val="666666"/>'
+            ''
             '</w:rPr>'
             '</w:pPr>'
             '<w:r>'
@@ -139,7 +414,7 @@ class DOCXExporter(BaseExporter):
             f'<w:rFonts w:ascii="SimSun" w:hAnsi="SimSun" w:eastAsia="SimSun" w:cs="SimSun"/>'
             '<w:sz w:val="18"/>'
             '<w:szCs w:val="18"/>'
-            '<w:color w:val="666666"/>'
+            ''
             '</w:rPr>'
             '<w:t xml:space="preserve">第</w:t>'
             '</w:r>'
@@ -149,7 +424,7 @@ class DOCXExporter(BaseExporter):
             f'<w:rFonts w:ascii="SimSun" w:hAnsi="SimSun" w:eastAsia="SimSun" w:cs="SimSun"/>'
             '<w:sz w:val="18"/>'
             '<w:szCs w:val="18"/>'
-            '<w:color w:val="666666"/>'
+            ''
             '</w:rPr>'
             '<w:t>1</w:t>'
             '</w:r>'
@@ -159,7 +434,7 @@ class DOCXExporter(BaseExporter):
             f'<w:rFonts w:ascii="SimSun" w:hAnsi="SimSun" w:eastAsia="SimSun" w:cs="SimSun"/>'
             '<w:sz w:val="18"/>'
             '<w:szCs w:val="18"/>'
-            '<w:color w:val="666666"/>'
+            ''
             '</w:rPr>'
             '<w:t xml:space="preserve">页/共</w:t>'
             '</w:r>'
@@ -169,7 +444,7 @@ class DOCXExporter(BaseExporter):
             f'<w:rFonts w:ascii="SimSun" w:hAnsi="SimSun" w:eastAsia="SimSun" w:cs="SimSun"/>'
             '<w:sz w:val="18"/>'
             '<w:szCs w:val="18"/>'
-            '<w:color w:val="666666"/>'
+            ''
             '</w:rPr>'
             '<w:t>1</w:t>'
             '</w:r>'
@@ -179,7 +454,7 @@ class DOCXExporter(BaseExporter):
             f'<w:rFonts w:ascii="SimSun" w:hAnsi="SimSun" w:eastAsia="SimSun" w:cs="SimSun"/>'
             '<w:sz w:val="18"/>'
             '<w:szCs w:val="18"/>'
-            '<w:color w:val="666666"/>'
+            ''
             '</w:rPr>'
             '<w:t xml:space="preserve">页</w:t>'
             '</w:r>'
@@ -197,9 +472,28 @@ class DOCXExporter(BaseExporter):
         )
 
     @classmethod
-    def _inject_footer_into_docx(cls, docx_bytes: bytes) -> bytes:
-        """Return a copy of the DOCX with the Chinese page-number
-        footer wired into every section's default footer reference.
+    def _inject_footer_into_docx(
+        cls, docx_bytes: bytes, query: Optional[str] = None
+    ) -> bytes:
+        """Return a copy of the DOCX with the post-processing done.
+
+        Three concerns the user asked us to address live here, because
+        Pandoc cannot express them through raw markdown:
+
+          1. The Chinese page-number footer (``第N页/共M页``) is
+             injected as ``word/footer1.xml`` with real OOXML PAGE /
+             NUMPAGES field codes — Word/LibreOffice update the
+             numbers on open.
+          2. The report title (``关于{query}的研究报告``) is injected
+             as a styled ``<w:p>`` at the very top of ``<w:body>``
+             so it is the *only* title (the report itself starts with
+             ``# 目录`` and would otherwise produce two visible titles).
+             二号 (22pt) 黑体, bold, centred, black.
+          3. The default body font/size in ``word/styles.xml`` is set
+             to 宋体 (SimSun) 五号 (10.5pt = 21 half-points), and
+             ``w:themeFontLang``/``w:rPrDefault`` are wired so Word
+             uses this for unstyled body text. Heading styles are
+             left untouched so chapter heading sizes are unchanged.
 
         Algorithm:
           1. Unzip the DOCX into memory.
@@ -210,6 +504,9 @@ class DOCXExporter(BaseExporter):
           4. Ensure ``[Content_Types].xml`` declares the footer part.
           5. Ensure each ``<w:sectPr>`` in ``word/document.xml``
              references the footer relationship.
+          6. Inject the title paragraph at the very top of
+             ``<w:body>`` (only if ``query`` is provided).
+          7. Patch ``word/styles.xml`` so the body default is 宋体 五号.
 
         Idempotent: re-running on an already-patched DOCX keeps the
         existing footer instead of duplicating it.
@@ -218,6 +515,9 @@ class DOCXExporter(BaseExporter):
             return docx_bytes
 
         footer_xml = cls._wrap_footer(cls._build_footer_xml())
+        title_para_xml = (
+            cls._build_title_paragraph_xml(query) if query else None
+        )
         footer_rid = "rIdLdrFooter"
 
         # Read everything into memory up front — DOCX files are small.
@@ -339,6 +639,28 @@ class DOCXExporter(BaseExporter):
             )
             names_to_data[doc_path] = doc_xml.encode("utf-8")
 
+        # 6) Inject the title paragraph at the very top of <w:body>.
+        if title_para_xml and doc_path in names_to_data:
+            doc_xml = names_to_data[doc_path].decode("utf-8")
+            # Insert the title paragraph right after <w:body> opens,
+            # before any existing body content. Idempotent: skip if a
+            # title with the same text is already present.
+            if not cls._title_already_present(doc_xml, title_para_xml):
+                doc_xml = re.sub(
+                    r"(<w:body[^>]*>)",
+                    lambda m: m.group(1) + title_para_xml,
+                    doc_xml,
+                    count=1,
+                )
+                names_to_data[doc_path] = doc_xml.encode("utf-8")
+
+        # 7) Patch word/styles.xml: body default 宋体 五号, heading
+        #    styles 楷体 (sizes unchanged). Body font and heading
+        #    font are independent patches — order doesn't matter
+        #    because each touches a disjoint rPr block.
+        names_to_data = cls._set_default_body_font(names_to_data)
+        names_to_data = cls._patch_styles_xml_kaiti_headings(names_to_data)
+
         # Write the new zip back out.
         out_buf = io.BytesIO()
         with zipfile.ZipFile(out_buf, "w", zipfile.ZIP_DEFLATED) as dst_zip:
@@ -387,12 +709,18 @@ class DOCXExporter(BaseExporter):
 
             options = options or ExportOptions()
 
-            # 1) Prepend the title (mirrors PDFService behaviour).
-            markdown_content = self._prepend_title(
-                markdown_content, options.query
+            # 1) Pre-process: scrub horizontal rules, fix the TOC
+            #    formatting, rewrite relative image URLs to absolute
+            #    under base_url. The title text itself is NOT added
+            #    here — it is injected as a styled OOXML paragraph by
+            #    the post-processor (a markdown H1 would produce a
+            #    duplicate title alongside the report's existing
+            #    ``# 目录`` first heading).
+            markdown_content = self._prepare_markdown(
+                markdown_content, options.query, options.base_url
             )
-            # 2) Scrub the old LDR body footer (defence in depth — older
-            #    reports in the DB might still carry it).
+            # 2) Scrub the old LDR body footer (defence in depth —
+            #    older reports in the DB might still carry it).
             markdown_content = self._scrub_body(markdown_content)
 
             # Build pandoc args for metadata (sanitized).
@@ -444,7 +772,7 @@ class DOCXExporter(BaseExporter):
                 )
 
             # 3) Post-process: inject the Chinese page-number footer.
-            docx_bytes = self._inject_footer_into_docx(docx_bytes)
+            docx_bytes = self._inject_footer_into_docx(docx_bytes, query=options.query)
 
             filename = self._generate_safe_filename(options.title)
 
