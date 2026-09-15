@@ -187,7 +187,7 @@ def export_report_to_memory(
 
     Args:
         markdown_content: The markdown content to export
-        format: Export format (e.g., 'pdf', 'odt', 'latex', 'quarto', 'ris')
+        format: Export format (e.g., 'pdf', 'docx', 'latex', 'quarto', 'ris')
         title: Optional title for the document
         query: Optional original research query — PDF uses this to
             render the centred "关于{query}的研究报告" title line
@@ -215,7 +215,7 @@ def export_report_to_memory(
         )
 
     # Title prepending is now handled by each exporter via _prepend_title_if_needed()
-    # PDF and ODT exporters prepend titles; RIS and other formats ignore them
+    # PDF and DOCX exporters prepend titles; RIS and other formats ignore them
 
     # Create options
     options = ExportOptions(

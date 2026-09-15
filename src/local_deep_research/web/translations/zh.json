@@ -1276,6 +1276,7 @@
   "Number of search engines being tracked for rate limiting": "正在追踪速率限制的搜索引擎数量",
   "Number of times search engines were rate limiting": "搜索引擎被速率限制的次数",
   "ODT (LibreOffice)": "ODT（LibreOffice）",
+  ".docx (Ms Office)": ".docx（Ms Office）",
   "OK": "确定",
   "OVERFLOW": "溢出",
   "Ollama (Local)": "Ollama (本地)",

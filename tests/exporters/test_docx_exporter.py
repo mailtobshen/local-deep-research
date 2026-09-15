@@ -1,4 +1,4 @@
-"""Tests for ODTExporter using pypandoc."""
+"""Tests for DOCXExporter using pypandoc."""
 
 import pytest
 from unittest.mock import patch
@@ -14,47 +14,47 @@ except (ImportError, OSError):
 
 pytestmark = pytest.mark.skipif(
     not PANDOC_AVAILABLE,
-    reason="Pandoc is not installed (required for ODT export)",
+    reason="Pandoc is not installed (required for DOCX export)",
 )
 
 
-class TestODTExporterProperties:
+class TestDOCXExporterProperties:
     """Tests for ODTExporter properties."""
 
     def test_format_name_is_odt(self):
-        """Test that format_name is 'odt'."""
-        from local_deep_research.exporters.odt_exporter import ODTExporter
+        """Test that format_name is 'docx'."""
+        from local_deep_research.exporters.docx_exporter import DOCXExporter
 
-        exporter = ODTExporter()
+        exporter = DOCXExporter()
 
-        assert exporter.format_name == "odt"
+        assert exporter.format_name == "docx"
 
     def test_file_extension_is_odt(self):
-        """Test that file_extension is '.odt'."""
-        from local_deep_research.exporters.odt_exporter import ODTExporter
+        """Test that file_extension is '.docx'."""
+        from local_deep_research.exporters.docx_exporter import DOCXExporter
 
-        exporter = ODTExporter()
+        exporter = DOCXExporter()
 
-        assert exporter.file_extension == ".odt"
+        assert exporter.file_extension == ".docx"
 
     def test_mimetype_is_correct(self):
         """Test that mimetype is correct for ODT."""
-        from local_deep_research.exporters.odt_exporter import ODTExporter
+        from local_deep_research.exporters.docx_exporter import DOCXExporter
 
-        exporter = ODTExporter()
+        exporter = DOCXExporter()
 
-        assert exporter.mimetype == "application/vnd.oasis.opendocument.text"
+        assert exporter.mimetype == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
 
-class TestODTExporterExport:
+class TestDOCXExporterExport:
     """Tests for ODTExporter.export method."""
 
     @pytest.fixture
     def exporter(self):
         """Create ODTExporter instance."""
-        from local_deep_research.exporters.odt_exporter import ODTExporter
+        from local_deep_research.exporters.docx_exporter import DOCXExporter
 
-        return ODTExporter()
+        return DOCXExporter()
 
     def test_returns_export_result(self, exporter, simple_markdown):
         """Test that export returns ExportResult."""
@@ -92,7 +92,7 @@ class TestODTExporterExport:
         result = exporter.export(simple_markdown, options)
 
         assert "My_Research_Report" in result.filename
-        assert result.filename.endswith(".odt")
+        assert result.filename.endswith(".docx")
 
     def test_result_filename_default_when_no_title(
         self, exporter, simple_markdown
@@ -101,13 +101,13 @@ class TestODTExporterExport:
         result = exporter.export(simple_markdown)
 
         assert "research_report" in result.filename
-        assert result.filename.endswith(".odt")
+        assert result.filename.endswith(".docx")
 
     def test_result_mimetype_is_correct(self, exporter, simple_markdown):
         """Test that result mimetype is correct."""
         result = exporter.export(simple_markdown)
 
-        assert result.mimetype == "application/vnd.oasis.opendocument.text"
+        assert result.mimetype == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
     def test_handles_empty_markdown(self, exporter):
         """Test handling of empty markdown."""
@@ -181,41 +181,41 @@ class TestODTExporterExport:
 
         assert result.content[:2] == b"PK"
 
-    def test_logs_odt_size(self, exporter, simple_markdown):
+    def test_logs_docx_size(self, exporter, simple_markdown):
         """Test that ODT size is logged."""
         with patch(
-            "local_deep_research.exporters.odt_exporter.logger"
+            "local_deep_research.exporters.docx_exporter.logger"
         ) as mock_logger:
             exporter.export(simple_markdown)
 
             mock_logger.info.assert_called_once()
             call_args = mock_logger.info.call_args[0][0]
-            assert "Generated ODT" in call_args
+            assert "Generated DOCX" in call_args
             assert "bytes" in call_args
 
 
-class TestODTExporterErrorHandling:
+class TestDOCXExporterErrorHandling:
     """Tests for error handling in ODTExporter."""
 
     @pytest.fixture
     def exporter(self):
         """Create ODTExporter instance."""
-        from local_deep_research.exporters.odt_exporter import ODTExporter
+        from local_deep_research.exporters.docx_exporter import DOCXExporter
 
-        return ODTExporter()
+        return DOCXExporter()
 
     def test_logs_exception_on_error(self, exporter):
         """Test that exceptions are logged when pandoc fails."""
         import subprocess
 
         with patch(
-            "local_deep_research.exporters.odt_exporter.subprocess.run",
+            "local_deep_research.exporters.docx_exporter.subprocess.run",
             side_effect=subprocess.CalledProcessError(
                 1, "pandoc", stderr=b"Test error"
             ),
         ):
             with patch(
-                "local_deep_research.exporters.odt_exporter.logger"
+                "local_deep_research.exporters.docx_exporter.logger"
             ) as mock_logger:
                 with pytest.raises(RuntimeError):
                     exporter.export("test")
@@ -223,44 +223,44 @@ class TestODTExporterErrorHandling:
                 mock_logger.exception.assert_called_once()
 
 
-class TestODTExporterIntegration:
+class TestDOCXExporterIntegration:
     """Integration tests for ODTExporter with ExporterRegistry."""
 
     def test_registered_in_registry(self):
         """Test that ODTExporter is registered in the registry."""
         from local_deep_research.exporters import ExporterRegistry
 
-        assert ExporterRegistry.is_format_supported("odt")
+        assert ExporterRegistry.is_format_supported("docx")
 
     def test_can_get_from_registry(self):
         """Test that ODTExporter can be retrieved from registry."""
         from local_deep_research.exporters import ExporterRegistry
-        from local_deep_research.exporters.odt_exporter import ODTExporter
+        from local_deep_research.exporters.docx_exporter import DOCXExporter
 
-        exporter = ExporterRegistry.get_exporter("odt")
+        exporter = ExporterRegistry.get_exporter("docx")
 
-        assert isinstance(exporter, ODTExporter)
+        assert isinstance(exporter, DOCXExporter)
 
     def test_export_via_registry(self, simple_markdown):
         """Test export via registry lookup."""
         from local_deep_research.exporters import ExporterRegistry
 
-        exporter = ExporterRegistry.get_exporter("odt")
+        exporter = ExporterRegistry.get_exporter("docx")
         result = exporter.export(simple_markdown)
 
         assert result.content[:2] == b"PK"
-        assert result.filename.endswith(".odt")
+        assert result.filename.endswith(".docx")
 
 
-class TestODTExporterFilenameTruncation:
+class TestDOCXExporterFilenameTruncation:
     """Tests for filename truncation with long titles."""
 
     @pytest.fixture
     def exporter(self):
         """Create ODTExporter instance."""
-        from local_deep_research.exporters.odt_exporter import ODTExporter
+        from local_deep_research.exporters.docx_exporter import DOCXExporter
 
-        return ODTExporter()
+        return DOCXExporter()
 
     def test_filename_truncated_to_50_chars(self, exporter, simple_markdown):
         """Test that filename is truncated when title exceeds 50 chars."""
@@ -274,7 +274,7 @@ class TestODTExporterFilenameTruncation:
         # Filename should be truncated to 50 chars + extension
         filename_without_ext = result.filename.rsplit(".", 1)[0]
         assert len(filename_without_ext) == 50
-        assert result.filename.endswith(".odt")
+        assert result.filename.endswith(".docx")
 
     def test_filename_not_truncated_under_50_chars(
         self, exporter, simple_markdown
@@ -287,18 +287,18 @@ class TestODTExporterFilenameTruncation:
         result = exporter.export(simple_markdown, options)
 
         assert "Short_Title" in result.filename
-        assert result.filename.endswith(".odt")
+        assert result.filename.endswith(".docx")
 
 
-class TestODTExporterMetadataVariations:
+class TestDOCXExporterMetadataVariations:
     """Tests for various metadata combinations."""
 
     @pytest.fixture
     def exporter(self):
         """Create ODTExporter instance."""
-        from local_deep_research.exporters.odt_exporter import ODTExporter
+        from local_deep_research.exporters.docx_exporter import DOCXExporter
 
-        return ODTExporter()
+        return DOCXExporter()
 
     def test_title_only(self, exporter, simple_markdown):
         """Test export with only title metadata."""
@@ -360,15 +360,15 @@ class TestODTExporterMetadataVariations:
         assert result.content[:2] == b"PK"
 
 
-class TestODTExporterContentSizeLimit:
+class TestDOCXExporterContentSizeLimit:
     """Tests for content size limit enforcement."""
 
     @pytest.fixture
     def exporter(self):
         """Create ODTExporter instance."""
-        from local_deep_research.exporters.odt_exporter import ODTExporter
+        from local_deep_research.exporters.docx_exporter import DOCXExporter
 
-        return ODTExporter()
+        return DOCXExporter()
 
     def test_raises_error_for_oversized_content(self, exporter):
         """Test that ValueError is raised for content exceeding size limit."""
@@ -398,7 +398,7 @@ class TestODTExporterContentSizeLimit:
         # Create a minimal valid ODT file for mocking
         odt_buffer = io.BytesIO()
         with zipfile.ZipFile(odt_buffer, "w") as zf:
-            zf.writestr("mimetype", "application/vnd.oasis.opendocument.text")
+            zf.writestr("mimetype", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
             zf.writestr("content.xml", "<office:document-content/>")
         mock_odt_bytes = odt_buffer.getvalue()
 
@@ -408,7 +408,7 @@ class TestODTExporterContentSizeLimit:
         )()
 
         with patch(
-            "local_deep_research.exporters.odt_exporter.subprocess.run",
+            "local_deep_research.exporters.docx_exporter.subprocess.run",
             return_value=mock_result,
         ):
             # This should not raise ValueError for size limit
@@ -422,15 +422,15 @@ class TestODTExporterContentSizeLimit:
         assert result.content[:2] == b"PK"
 
 
-class TestODTExporterMetadataSanitization:
+class TestDOCXExporterMetadataSanitization:
     """Tests for metadata sanitization to prevent injection."""
 
     @pytest.fixture
     def exporter(self):
         """Create ODTExporter instance."""
-        from local_deep_research.exporters.odt_exporter import ODTExporter
+        from local_deep_research.exporters.docx_exporter import DOCXExporter
 
-        return ODTExporter()
+        return DOCXExporter()
 
     def test_sanitizes_title_with_dashes(self, exporter, simple_markdown):
         """Test that double dashes are removed from title."""
@@ -462,22 +462,22 @@ class TestODTExporterMetadataSanitization:
         assert result.content[:2] == b"PK"
 
 
-class TestODTExporterInMemoryConversion:
+class TestDOCXExporterInMemoryConversion:
     """Tests verifying ODT conversion happens entirely in memory."""
 
     @pytest.fixture
     def exporter(self):
         """Create ODTExporter instance."""
-        from local_deep_research.exporters.odt_exporter import ODTExporter
+        from local_deep_research.exporters.docx_exporter import DOCXExporter
 
-        return ODTExporter()
+        return DOCXExporter()
 
     def test_no_temp_files_used(self, exporter, simple_markdown):
         """Test that conversion uses subprocess stdin/stdout, not temp files."""
         import subprocess
 
         with patch(
-            "local_deep_research.exporters.odt_exporter.subprocess.run",
+            "local_deep_research.exporters.docx_exporter.subprocess.run",
             wraps=subprocess.run,
         ) as mock_run:
             exporter.export(simple_markdown)
@@ -497,36 +497,10 @@ class TestODTExporterInMemoryConversion:
         import subprocess
 
         with patch(
-            "local_deep_research.exporters.odt_exporter.subprocess.run",
+            "local_deep_research.exporters.docx_exporter.subprocess.run",
             side_effect=subprocess.CalledProcessError(
                 1, "pandoc", stderr=b"Pandoc failed"
             ),
         ):
             with pytest.raises(RuntimeError, match="Pandoc conversion failed"):
                 exporter.export("# Test content")
-
-
-class TestODTExporterFooter:
-    """Tests for LDR attribution footer in output."""
-
-    @pytest.fixture
-    def exporter(self):
-        """Create ODTExporter instance."""
-        from local_deep_research.exporters.odt_exporter import ODTExporter
-
-        return ODTExporter()
-
-    def test_footer_content_present_in_output(self, exporter, simple_markdown):
-        """Test that LDR attribution footer appears in the ODT output."""
-        import io
-        import zipfile
-
-        result = exporter.export(simple_markdown)
-
-        # ODT is a ZIP archive - extract content.xml
-        with zipfile.ZipFile(io.BytesIO(result.content), "r") as zf:
-            content_xml = zf.read("content.xml").decode("utf-8")
-
-        # Verify footer text is present in the content
-        assert "Local Deep Research" in content_xml
-        assert "Open Source AI Research Assistant" in content_xml

@@ -59,7 +59,7 @@ class ExporterRegistry:
         Uses singleton pattern - returns cached instance if available.
 
         Args:
-            format_name: The format identifier (e.g., 'pdf', 'odt')
+            format_name: The format identifier (e.g., 'pdf', 'docx')
 
         Returns:
             An exporter instance, or None if format not supported
@@ -84,7 +84,7 @@ class ExporterRegistry:
         """Get list of available export formats.
 
         Returns:
-            List of format identifiers (e.g., ['pdf', 'odt', 'latex'])
+            List of format identifiers (e.g., ['pdf', 'docx', 'latex'])
         """
         return list(cls._exporters.keys())
 

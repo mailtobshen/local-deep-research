@@ -82,7 +82,7 @@ class BaseExporter(ABC):
     @property
     @abstractmethod
     def format_name(self) -> str:
-        """Return the format identifier (e.g., 'pdf', 'odt', 'latex').
+        """Return the format identifier (e.g., 'pdf', 'docx', 'latex').
 
         This is used to look up the exporter in the registry.
         """
@@ -91,7 +91,7 @@ class BaseExporter(ABC):
     @property
     @abstractmethod
     def file_extension(self) -> str:
-        """Return the file extension including the dot (e.g., '.pdf', '.odt')."""
+        """Return the file extension including the dot (e.g., '.pdf', '.docx')."""
         pass
 
     @property
@@ -155,7 +155,7 @@ class BaseExporter(ABC):
         """Prepend title as H1 heading if content doesn't already have one.
 
         This method is used by exporters that render markdown documents
-        (like PDF and ODT) to ensure the title appears in the output.
+        (like PDF and DOCX) to ensure the title appears in the output.
         Exporters that don't render documents (like RIS) should not use this.
 
         Args:

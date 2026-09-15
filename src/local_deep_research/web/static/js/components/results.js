@@ -103,12 +103,12 @@
             });
         }
 
-        // ODT export button
-        const odtBtn = document.getElementById('export-odt-btn');
-        if (odtBtn) {
-            odtBtn.addEventListener('click', (e) => {
+        // DOCX export button
+        const docxBtn = document.getElementById('export-docx-btn');
+        if (docxBtn) {
+            docxBtn.addEventListener('click', (e) => {
                 e.preventDefault();
-                handleFormatExport('odt');
+                handleFormatExport('docx');
             });
         }
 
@@ -805,7 +805,7 @@
 
             const formatName = format === 'latex' ? 'LaTeX' :
                                format === 'quarto' ? i18n.t('Quarto') :
-                               format === 'odt' ? 'ODT' : 'RIS';
+                               format === 'docx' ? 'DOCX' : 'RIS';
             SafeLogger.log(`Exporting to ${formatName}...`);
 
             // Get CSRF token
@@ -830,7 +830,7 @@
             // Determine file extension
             const extension = format === 'latex' ? 'tex' :
                               format === 'quarto' ? 'qmd' :
-                              format === 'odt' ? 'odt' : 'ris';
+                              format === 'docx' ? 'docx' : 'ris';
 
             // Create download link
             const link = document.createElement('a');

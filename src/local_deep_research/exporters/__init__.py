@@ -30,7 +30,7 @@ from .registry import ExporterRegistry
 # Import all exporters to trigger registration
 # These imports must come after the base and registry imports
 from . import latex_exporter  # noqa: F401
-from . import odt_exporter  # noqa: F401
+from . import docx_exporter  # noqa: F401
 
 try:
     from . import pdf_exporter  # noqa: F401
