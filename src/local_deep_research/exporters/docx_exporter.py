@@ -342,16 +342,6 @@ class DOCXExporter(BaseExporter):
 
 
     @staticmethod
-    def _check_title_already_present(doc_xml: str, title_para_xml: str) -> bool:
-        """Return True if a paragraph carrying the same title text is
-        already in the body — prevents duplicate-injection on retries."""
-        # Extract the visible text node from title_para_xml.
-        m = re.search(r"<w:t[^>]*>([^<]+)</w:t>", title_para_xml)
-        if not m:
-            return False
-        return m.group(1) in doc_xml
-
-    @staticmethod
     def _set_default_body_font(names_to_data: dict) -> dict:
         """Patch ``word/styles.xml`` so unstyled body text uses 宋体 五号.
 
@@ -407,8 +397,8 @@ class DOCXExporter(BaseExporter):
     def _strip_query_heading_style(
         names_to_data: dict, query: Optional[str]
     ) -> dict:
-        """Remove the heading style from any body paragraph whose text
-        contains the query.
+        """Delete any body paragraph whose visible text **equals** the
+        query AND whose pStyle references a heading.
 
         LLM-generated report content sometimes opens a chapter with
         ``# <query>`` (the LLM reuses the research question as the
@@ -421,13 +411,16 @@ class DOCXExporter(BaseExporter):
         The fix: for every ``<w:p>`` in ``word/document.xml`` that has
         a ``<w:pStyle>`` referencing a heading style (``Heading1``
         through ``Heading9``, ``Title``), check if the visible text
-        contains the query. If so, strip the ``<w:pStyle>`` element
-        so the paragraph falls back to the default ``Normal`` style
-        and reads as ordinary body text.
+        equals the query (whitespace-stripped). If so, delete the
+        *entire* paragraph so the duplicate title text is gone from
+        the body. Legitimate section headings that merely *contain*
+        the query as a substring of a longer title (e.g.
+        "量子计算的发展历程" with query "量子计算") are preserved
+        because the match is exact.
 
-        Only the heading style is removed — the heading text is
-        kept in place so the LLM's wording still appears in the
-        document, just without the title-size visual prominence.
+        The match is whitespace-stripped on both sides so a
+        paragraph with leading/trailing spaces inside its ``<w:t>``
+        still matches the query.
         """
         if not query:
             return names_to_data
@@ -458,10 +451,15 @@ class DOCXExporter(BaseExporter):
             if not style_m:
                 return block
             # The visible text of a <w:p> is the concatenation of its
-            # <w:t> children. Concatenate them and check for the query.
+            # <w:t> children. We require an *exact* match against the
+            # query (whitespace-stripped) so that legitimate section
+            # headings like "量子计算的发展历程" — which merely
+            # *contain* the query "量子计算" as a substring — are
+            # not wiped out. Substring-match here was the bug the
+            # review caught.
             texts = re.findall(r"<w:t[^>]*>([^<]*)</w:t>", block)
-            visible = "".join(texts)
-            if query not in visible:
+            visible = "".join(texts).strip()
+            if visible != query.strip():
                 return block
             # Delete the entire paragraph — the user wants the
             # duplicate-title text gone from the body, not just
@@ -969,11 +967,18 @@ class DOCXExporter(BaseExporter):
             cmd = [pandoc_path, "-f", "markdown", "-t", "docx", "-o", "-"]
             cmd.extend(extra_args)
 
+            # 30 s timeout matches the PDFService guidance. A slow
+            # network image fetch inside the DOCX post-process path
+            # (``--resource-path`` triggers HTTP GETs for every image
+            # reference) can otherwise pin the export worker
+            # indefinitely; the user gets a clear PandocTimeout
+            # error instead of a hang.
             result = subprocess.run(
                 cmd,
                 input=markdown_content.encode("utf-8"),
                 capture_output=True,
                 check=True,
+                timeout=30,
             )
 
             docx_bytes = result.stdout

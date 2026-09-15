@@ -992,3 +992,28 @@ class TestDOCXRemoveQueryHeading:
         doc = out["word/document.xml"].decode("utf-8")
         # All headings stay put when query is None.
         assert 'pStyle w:val="Heading1"/>' in doc
+
+    def test_heading_whose_text_only_contains_query_substring_survives(self):
+        """A heading that contains the query as a *substring* of a
+        longer phrase must NOT be removed — only the exact duplicate
+        title gets stripped.
+
+        Before this guard the strip used ``query not in visible``
+        (substring match), which would wipe every section heading
+        that mentioned the query topic. With exact-match, only the
+        pure-duplicate ``## <query>`` paragraph is removed.
+        """
+        from local_deep_research.exporters.docx_exporter import DOCXExporter
+        # The query is the short topic; the heading is a *different*
+        # subsection that contains the topic as a substring.
+        names = self._fake_doc_with_heading(
+            "Heading2", "量子计算的发展历程", "本节回顾历史。"
+        )
+        out = DOCXExporter._strip_query_heading_style(
+            names, query="量子计算"
+        )
+        doc = out["word/document.xml"].decode("utf-8")
+        # The legitimate subsection heading survives.
+        assert "量子计算的发展历程" in doc
+        # And it still has its Heading2 style (it is a real heading).
+        assert 'pStyle w:val="Heading2"/>' in doc
