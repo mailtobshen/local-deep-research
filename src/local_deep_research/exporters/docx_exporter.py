@@ -463,16 +463,11 @@ class DOCXExporter(BaseExporter):
             visible = "".join(texts)
             if query not in visible:
                 return block
-            # Drop the heading pStyle so the paragraph renders as
-            # the default Normal style. Remove the pStyle line
-            # entirely; pPr may end up empty but that's harmless.
-            new_block = re.sub(
-                rf'\s*<w:pStyle\s+w:val="({heading_alt})"\s*/>',
-                "",
-                block,
-                count=1,
-            )
-            return new_block
+            # Delete the entire paragraph — the user wants the
+            # duplicate-title text gone from the body, not just
+            # demoted to a regular paragraph. Returning "" makes
+            # re.sub erase the matched <w:p>...</w:p> block.
+            return ""
 
         doc_xml = re.sub(
             r"<w:p\b[^>]*>.*?</w:p>",

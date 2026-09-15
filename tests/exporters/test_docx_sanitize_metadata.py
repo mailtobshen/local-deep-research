@@ -947,7 +947,11 @@ class TestDOCXRemoveQueryHeading:
             ),
         }
 
-    def test_h2_paragraph_containing_query_loses_its_heading_style(self):
+    def test_paragraph_containing_query_is_removed_entirely(self):
+        """The user wants the LLM's duplicate ``## <query>`` heading
+        text gone from the body — not just demoted to a regular
+        paragraph. Drop the entire ``<w:p>`` block whose visible
+        text contains the query."""
         from local_deep_research.exporters.docx_exporter import DOCXExporter
         names = self._fake_doc_with_heading(
             "Heading2", "量子计算基础", "这是章节内容。"
@@ -956,16 +960,13 @@ class TestDOCXRemoveQueryHeading:
             names, query="量子计算基础"
         )
         doc = out["word/document.xml"].decode("utf-8")
-        # The heading paragraph no longer carries pStyle=Heading2.
         import re
-        h_blocks = re.findall(
-            r'<w:p>(?:(?!</w:p>).)*量子计算基础(?:(?!</w:p>).)*</w:p>',
-            doc,
+        # The heading paragraph containing the query is gone.
+        assert "量子计算基础" not in doc, (
+            "Heading paragraph containing query must be deleted, not "
+            "demoted"
         )
-        assert len(h_blocks) >= 1
-        for block in h_blocks:
-            assert 'pStyle w:val="Heading2"' not in block
-        # The body paragraph is untouched.
+        # The body paragraph (next sibling) is preserved.
         assert "这是章节内容。" in doc
 
     def test_h2_paragraph_without_query_keeps_its_heading_style(self):
