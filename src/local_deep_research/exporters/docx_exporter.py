@@ -333,6 +333,48 @@ class DOCXExporter(BaseExporter):
             md,
         )
 
+
+        # 4c) Merge each LDR subsection with the preceding section
+        #     title into a single bold line ``**Title N.X content**``.
+        #     Without this, the restructure step produced one long
+        #     paragraph where Pandoc collapsed the single-newline
+        #     separators into soft breaks; the user saw everything on
+        #     one line and called it ``没有正确换行`` plus asked for
+        #     subsections to merge into the section title.
+        #
+        #     Process line by line: track the most recent standalone
+        #     section title (``**X**``) and prepend ``X `` to each
+        #     subsequent numbered subsection line, dropping the
+        #     standalone title row entirely (its content is now folded
+        #     into each subsection). On a blank line or another title
+        #     we reset the tracker.
+        lines = md.split("\n")
+        merged: list[str] = []
+        current_title: str | None = None
+        section_sub: str | None = None  # inner regex group capture
+        for line in lines:
+            # Standalone bold title line: ``**X**`` (no other content).
+            stripped = line.strip()
+            sec_m = re.match(r"^\*\*([^\*\n]+)\*\*$", stripped)
+            if sec_m and not re.match(r"^\d+\.\d+", stripped):
+                # Capture the title text; don't emit the line itself.
+                section_sub = sec_m.group(1).strip()
+                current_title = section_sub
+                continue
+            # Reset on blank lines.
+            if not stripped:
+                current_title = None
+                section_sub = None
+            # Numbered subsection line: prepend the current title.
+            sub_m = re.match(r"^(\d+\.\d+)\s+(.*)$", stripped)
+            if sub_m and current_title is not None:
+                merged.append(
+                    f"**{current_title} {sub_m.group(1)} {sub_m.group(2).strip()}**"
+                )
+                continue
+            merged.append(line)
+        md = "\n".join(merged)
+
         # 5) Demote every body H1 to H2 (and every H2 to H3) so the
         #    only H1 in the rendered document is the user-requested
         #    ``关于X的研究报告`` title that the post-processor injects

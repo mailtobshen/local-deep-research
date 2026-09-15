@@ -1230,15 +1230,17 @@ class TestDOCXRealisticLDRTOCStructure:
         from local_deep_research.exporters.docx_exporter import DOCXExporter
         return DOCXExporter._prepare_markdown
 
-    def test_realistic_section_split_into_own_line(self, prep):
-        """The ``****<Name>****`` section marker must be split off the
-        same line so the bullet conversion can match it as its own
-        line."""
+    def test_realistic_section_absorbed_into_subsection(self, prep):
+        """After the merge fix the section header no longer stays on its
+        own line — its text is prepended to the first subsection line
+        so the section name and subsection number end up on the same
+        rendered paragraph."""
         md = "****人物背景介绍**** 1.1 身份 | 介绍身份"
         out = prep(md, query=None, base_url=None)
-        # The section header is on its own line, not glued to the
-        # first subsection.
-        assert "\n**人物背景介绍**\n" in out or out.startswith("**人物背景介绍**\n")
+        # The section name was absorbed into the subsection line.
+        assert "**人物背景介绍 1.1 身份 — 介绍身份**" in out
+        # No standalone ``**人物背景介绍**`` line left.
+        assert chr(10) + "**人物背景介绍**" + chr(10) not in out
         # The 4-asterisk markdown form was normalised to 2-asterisk.
         assert "****" not in out
 
@@ -1264,8 +1266,8 @@ class TestDOCXRealisticLDRTOCStructure:
     def test_full_realistic_toc_round_trip(self, prep):
         """End-to-end: take a paragraph that looks exactly like what
         LDR emits in your exports, run it through prep, and verify
-        the output has no literal ``****``, has every subsection
-        on its own bullet line, and uses em-dashes for separators."""
+        the output merges the section title into each subsection
+        (numbered lines prefixed with the section name, bold format)."""
         # Pattern copied verbatim from the paragraph 2 of your
         # exported file.
         para = (
@@ -1279,11 +1281,15 @@ class TestDOCXRealisticLDRTOCStructure:
         assert "****" not in out
         # No literal pipe between name and description.
         assert " | " not in out
-        # Three subsections, each on its own line.
-        assert out.count("1.1 ") + out.count("1.2 ") + out.count("1.3 ") >= 3
-        # Section heading is on its own line and uses ``**...**``
-        # (the 4-asterisk form was rewritten).
-        assert "**人物背景介绍**" in out
+        # Three subsections, each on its own merged bold line with
+        # the section name prepended.
+        assert "**人物背景介绍 1.1 身份与基本概况 — 介绍努里·特克尔的基本身份信息**" in out
+        assert "**人物背景介绍 1.2 出生与早期经历 — 记录其在中国喀什的出生背景**" in out
+        assert "**人物背景介绍 1.3 家庭基本情况 — 说明其直系亲属关系**" in out
+        # No bullet wrapper anywhere.
+        assert "  - " not in out
+        # No standalone section header line left (it was absorbed).
+        assert chr(10) + "**人物背景介绍**" + chr(10) not in out
         # Subsection texts survive.
         assert "身份与基本概况" in out
         assert "介绍努里·特克尔的基本身份信息" in out
@@ -1515,13 +1521,13 @@ class TestDOCXNoBulletWrapOnNumberedSubsections:
         assert "1.1 身份与基本概况 — 介绍努里·特克尔" in out
         assert "1.2 出生与早期经历 — 记录其在中国喀什" in out
 
-    def test_section_header_kept_as_text_no_bullet(self, prep):
-        """The ``****X****`` header also went through a bullet wrap
-        previously. Keep it as plain bold text on its own line."""
+    def test_section_header_absorbed_no_standalone_line(self, prep):
+        """The ``****X****`` header is no longer kept on its own line
+        — its text is absorbed into each subsection's merged line."""
         md = "****人物背景介绍**** 1.1 身份 | 介绍"
         out = prep(md, query=None, base_url=None)
-        # Section header is plain bold, no ``- `` bullet.
-        assert "**人物背景介绍**" in out
+        # Header text shows up inside the subsection line.
+        assert "**人物背景介绍 1.1 身份 — 介绍**" in out
         # No bullet anywhere in the output.
         assert "  - " not in out
 
@@ -1546,3 +1552,166 @@ class TestDOCXNoBulletWrapOnNumberedSubsections:
             assert line in out, (
                 f"expected {line!r} in prepped output; got:\n{out!r}"
             )
+
+
+class TestDOCXSubsectionsMergeIntoSectionHeading:
+    """After my previous fix the LDR TOC looked like::
+
+        **人物背景介绍**
+        1.1 身份与基本概况 — 介绍...
+        1.2 出生与早期经历 — 记录...
+        1.3 家庭基本情况 — 说明...
+
+    The user wants each numbered subsection **merged** into the
+    section's title line — i.e. the section header ``**人物背景介绍**``
+    and each subsection text collapse onto a single bold line::
+
+        **人物背景介绍 1.1 身份与基本概况 — 介绍...**
+        **人物背景介绍 1.2 出生与早期经历 — 记录...**
+        **人物背景介绍 1.3 家庭基本情况 — 说明...**
+
+    The result is one merged bold line per subsection, with the
+    section name prepended. Pandoc renders each as a heading-style
+    paragraph; no bullet markers, no split runs.
+    """
+
+    @pytest.fixture
+    def prep(self):
+        from local_deep_research.exporters.docx_exporter import DOCXExporter
+        return DOCXExporter._prepare_markdown
+
+    def test_section_header_absorbed_into_each_subsection(self, prep):
+        """The previous ``**人物背景介绍**`` standalone line is
+        gone; its text is prepended (with one space) to each of
+        its subsections, and the whole combined line is wrapped in
+        ``**`` so Pandoc renders it as bold heading."""
+        md = (
+            "**人物背景介绍**\n"
+            "1.1 身份与基本概况 — 介绍努里\n"
+            "1.2 出生与早期经历 — 记录其在中国喀什\n"
+        )
+        out = prep(md, query=None, base_url=None)
+        # Standalone section header line is gone — it was absorbed.
+        assert "\n**人物背景介绍**\n" not in out
+        assert "**人物背景介绍**\n1.1" not in out
+        # Each subsection is now bold and prefixed with the section
+        # name.
+        assert "**人物背景介绍 1.1 身份与基本概况 — 介绍努里**" in out
+        assert "**人物背景介绍 1.2 出生与早期经历 — 记录其在中国喀什**" in out
+
+    def test_realistic_full_paragraph_merges_correctly(self, prep):
+        """Use the exact paragraph copied from your exported file:
+        after prep the three subsections should each be wrapped in
+        their own bold line with the section name prepended."""
+        para = (
+            "****人物背景介绍**** "
+            "1.1 身份与基本概况 | 介绍努里·特克尔的基本身份信息 "
+            "1.2 出生与早期经历 | 记录其在中国喀什的出生背景 "
+            "1.3 家庭基本情况 | 说明其直系亲属关系"
+        )
+        out = prep(para, query=None, base_url=None)
+        # No standalone ``**人物背景介绍**`` line anymore.
+        assert "**人物背景介绍**\n" not in out
+        # Three bold subsections, each prefixed with the section name.
+        for line in (
+            "**人物背景介绍 1.1 身份与基本概况 — 介绍努里·特克尔的基本身份信息**",
+            "**人物背景介绍 1.2 出生与早期经历 — 记录其在中国喀什的出生背景**",
+            "**人物背景介绍 1.3 家庭基本情况 — 说明其直系亲属关系**",
+        ):
+            assert line in out, f"expected merged line {line!r}; got:\n{out!r}"
+        # No bullet wrapper, no pipe literal.
+        assert "  - " not in out
+        assert " | " not in out
+
+    def test_no_blank_line_between_section_and_merged_subs(self, prep):
+        """The merge must not leave a blank line where the standalone
+        section heading used to be — Pandoc would otherwise render it
+        as an empty paragraph between heading and body."""
+        md = (
+            "**人物背景介绍**\n"
+            "1.1 身份 | 介绍\n"
+            "1.2 出生 | 记录\n"
+        )
+        out = prep(md, query=None, base_url=None)
+        # The merged lines should be consecutive — no empty paragraph
+        # between them.
+        assert "\n\n" not in out, f"unexpected blank line in:\n{out!r}"
+
+    def test_preserves_latin_section_name_too(self, prep):
+        """The merge is not CJK-specific — works for any section name
+        that wraps with ``**``."""
+        md = (
+            "**Section 1**\n"
+            "1.1 alpha | description one\n"
+            "1.2 beta | description two\n"
+        )
+        out = prep(md, query=None, base_url=None)
+        assert "**Section 1 1.1 alpha — description one**" in out
+        assert "**Section 1 1.2 beta — description two**" in out
+
+
+class TestDOCXMergeAndLineBreaks:
+    """Combined regression guard for the two related fixes:
+
+    1. The previous restructure step produced subsections on separate
+       *lines* but Pandoc collapses single-newline separators into
+       soft breaks inside the same paragraph. The actual rendered
+       DOCX showed everything on one line, which is the user's
+       "没有正确换行" complaint.
+
+    2. The user separately asked for subsections to be merged into
+       the section title (``**Title 1.1 content**``).
+
+    Both are fixed together: collapse the subsection line with the
+    section title into a single bold paragraph, and ensure the title
+    line itself is consumed (not left as a stray empty heading).
+    """
+
+    @pytest.fixture
+    def prep(self):
+        from local_deep_research.exporters.docx_exporter import DOCXExporter
+        return DOCXExporter._prepare_markdown
+
+    def test_realistic_paragraph_renders_as_separate_paragraphs(self, prep):
+        import re, io, tempfile, os, zipfile
+        import sys; sys.path.insert(0, "src")
+        try:
+            import pypandoc  # type: ignore[import-untyped]
+        except ImportError:
+            return  # skip if pypandoc not available
+        para = (
+            "****人物背景介绍**** "
+            "1.1 身份与基本概况 | 介绍努里·特克尔 "
+            "1.2 出生与早期经历 | 记录其在中国喀什 "
+        )
+        prepped = prep(para, query=None, base_url=None)
+        # Run real Pandoc and verify each merged subsection becomes
+        # its own paragraph (NOT jammed together).
+        with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as f:
+            out_path = f.name
+        pypandoc.convert_text(prepped, "docx", format="md", outputfile=out_path)
+        with open(out_path, "rb") as f:
+            docx_bytes = f.read()
+        os.unlink(out_path)
+        z = zipfile.ZipFile(io.BytesIO(docx_bytes))
+        doc = z.read("word/document.xml").decode()
+        # Each merged subsection should be its own <w:p>...</w:p>
+        # paragraph, NOT lumped together with the others.
+        # We expect three paragraphs:
+        #   0. injected title  关于Nury Turkel ... (from post-processor)
+        #   1. merged 1.1
+        #   2. merged 1.2
+        #   3. Heading2 '目录'  (from real Pandoc on the original
+        #                       ``# 目录`` heading the prep demoted)
+        # The user's complaint was that all three subsections sat in
+        # ONE paragraph. After the fix each is its own.
+        bodies_with_1_1 = re.findall(r"<w:p[^>]*>(?:(?!</w:p>).)*1\.1(?:(?!</w:p>).)*</w:p>", doc, re.DOTALL)
+        bodies_with_1_2 = re.findall(r"<w:p[^>]*>(?:(?!</w:p>).)*1\.2(?:(?!</w:p>).)*</w:p>", doc, re.DOTALL)
+        assert len(bodies_with_1_1) == 1, (
+            "1.1 must be in its own <w:p>; "
+            f"found {len(bodies_with_1_1)} matches"
+        )
+        assert len(bodies_with_1_2) == 1, (
+            "1.2 must be in its own <w:p>; "
+            f"found {len(bodies_with_1_2)} matches"
+        )
