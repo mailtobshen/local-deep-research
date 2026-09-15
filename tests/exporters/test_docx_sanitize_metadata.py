@@ -1154,3 +1154,211 @@ class TestDOCXTOCBulletEndToEndPandoc:
                 f"Pandoc left literal '|' in text run {text!r} — "
                 f"the pipe-split bug is not actually fixed."
             )
+
+
+
+
+class TestDOCXCJKUnderscoreEscape:
+    """CJK-adjacent ``_word_`` is the real-world symptom.
+
+    Pandoc's underscore-emphasis rule requires non-word characters on
+    both sides; CJK characters ARE word characters in CommonMark, so
+    ``正文_斜体_否则`` keeps the ``_`` literal even though the
+    user wrote it as italic. The user has been seeing these literal
+    underscores in the body and (combined with LLM-emitted
+    unbalanced ``****`` runs) calling it "**** 没转义".
+
+    The fix: in ``_prepare_markdown`` rewrite CJK-adjacent
+    ``_word_`` to ``**word**`` (asterisks have no word-boundary
+    requirement, so they consume cleanly). CJK-adjacent means
+    either side of the ``_`` is a CJK char / a non-ASCII letter.
+    """
+
+    @pytest.fixture
+    def prep(self):
+        from local_deep_research.exporters.docx_exporter import DOCXExporter
+        return DOCXExporter._prepare_markdown
+
+    def test_cjk_underscore_emphasis_rewritten_to_asterisks(self, prep):
+        md = "正文_斜体_否则显示字面字符。"
+        out = prep(md, query=None, base_url=None)
+        # The CJK-adjacent _word_ is now **word** — asterisks have
+        # no word-boundary requirement so Pandoc consumes them.
+        assert "_斜体_" not in out
+        assert "**斜体**" in out
+
+    def test_latin_underscore_emphasis_left_alone(self, prep):
+        """ASCII-word ``_italic_`` already satisfies Pandoc's
+        boundary rule; rewriting would only add noise."""
+        md = "Some plain English _italic_ word."
+        out = prep(md, query=None, base_url=None)
+        # Latin underscore emphasis is preserved.
+        assert "_italic_" in out
+
+    def test_cjk_inside_underscore_does_not_break_latin(self, prep):
+        """CJK-adjacent underscore-emphasis that wraps a body without
+        internal underscores — the LDR-body content looks like
+        ``正文_斜体_否则`` (no underscore inside ``斜体``) and the
+        fix must rewrite it to ``正文**斜体**否则``."""
+        md = "正文" + "_" + "斜体" + "_" + "否则。"
+        out = prep(md, query=None, base_url=None)
+        # The CJK-adjacent emphasis is rewritten.
+        assert "_斜体_" not in out
+        assert "**斜体**" in out
+
+    def test_paired_asterisks_not_stripped(self, prep):
+        """``**bold**`` adjacent to CJK is already a valid Pandoc
+        emphasis and must NOT be rewritten — only ``_word_`` has
+        the CJK-boundary problem."""
+        md = "正文**粗体**否则。"
+        out = prep(md, query=None, base_url=None)
+        # The double-asterisk form is left alone — it's not the bug.
+        assert "**粗体**" in out
+
+
+class TestDOCXRealisticLDRTOCStructure:
+    """The LDR report_generator actually emits the entire TOC as ONE
+    paragraph per section, with the pattern::
+
+        ````****<Section Name>**** 1.1 sub1 | desc1 1.2 sub2 | desc2````
+
+    — the section heading has 4 asterisks (NOT ``1. **Section**``)
+    and the subsections are concatenated on the same line. The
+    previous fix was written against a synthetic ``1. **Section**``
+    input that does not match real LDR output, so the user kept
+    seeing literal ``****`` characters in their .docx exports.
+    """
+
+    @pytest.fixture
+    def prep(self):
+        from local_deep_research.exporters.docx_exporter import DOCXExporter
+        return DOCXExporter._prepare_markdown
+
+    def test_realistic_section_split_into_own_line(self, prep):
+        """The ``****<Name>****`` section marker must be split off the
+        same line so the bullet conversion can match it as its own
+        line."""
+        md = "****人物背景介绍**** 1.1 身份 | 介绍身份"
+        out = prep(md, query=None, base_url=None)
+        # The section header is on its own line, not glued to the
+        # first subsection.
+        assert "\n**人物背景介绍**\n" in out or out.startswith("**人物背景介绍**\n")
+        # The 4-asterisk markdown form was normalised to 2-asterisk.
+        assert "****" not in out
+
+    def test_realistic_subsections_get_newlines_between(self, prep):
+        """Multiple ``1.1 ... 1.2 ...`` in the same paragraph must
+        be split onto separate lines so the bullet conversion
+        treats each as its own bullet item."""
+        md = "****A**** 1.1 one | d1 1.2 two | d2 1.3 three | d3"
+        out = prep(md, query=None, base_url=None)
+        # Three subsections each on their own bullet line.
+        assert out.count("  - ") == 3
+        # And the original one-line run is gone.
+        assert " 1.1 one | d1 1.2" not in out
+
+    def test_realistic_pipe_replaced_with_emdash(self, prep):
+        """The pipe-to-emdash fix still applies once the lines are
+        split."""
+        md = "****A**** 1.1 one | desc"
+        out = prep(md, query=None, base_url=None)
+        assert " | " not in out
+        assert " — " in out
+
+    def test_full_realistic_toc_round_trip(self, prep):
+        """End-to-end: take a paragraph that looks exactly like what
+        LDR emits in your exports, run it through prep, and verify
+        the output has no literal ``****``, has every subsection
+        on its own bullet line, and uses em-dashes for separators."""
+        # Pattern copied verbatim from the paragraph 2 of your
+        # exported file.
+        para = (
+            "****人物背景介绍**** "
+            "1.1 身份与基本概况 | 介绍努里·特克尔的基本身份信息 "
+            "1.2 出生与早期经历 | 记录其在中国喀什的出生背景 "
+            "1.3 家庭基本情况 | 说明其直系亲属关系"
+        )
+        out = prep(para, query=None, base_url=None)
+        # No literal ``****``.
+        assert "****" not in out
+        # No literal pipe between name and description.
+        assert " | " not in out
+        # Three subsections, each on its own bullet line.
+        assert out.count("  - ") == 3
+        # Section heading is on its own line and uses ``**...**``
+        # (the 4-asterisk form was rewritten).
+        assert "**人物背景介绍**" in out
+        # Subsection texts survive.
+        assert "身份与基本概况" in out
+        assert "介绍努里·特克尔的基本身份信息" in out
+        assert "出生与早期经历" in out
+        assert "家庭基本情况" in out
+
+
+class TestDOCXRealReportEndToEnd:
+    """Final regression guard: take the EXACT TOC paragraph from your
+    exported file (paragraph index 2, copied verbatim), run it through
+    the full prep + real Pandoc pipeline, and assert the rendered
+    DOCX has no literal ``****`` and no pipe-split text runs.
+
+    This is the test I should have written in the first place — it
+    uses the real LDR-generated content rather than a synthetic
+    fixture that doesn't match what LDR actually emits."""
+
+    @staticmethod
+    def _render_paras_to_docx_texts(md: str):
+        """Run prep + real Pandoc; return list of (style, text) tuples
+        for every paragraph in the rendered document.xml."""
+        import sys, io, tempfile, os, zipfile, re
+        sys.path.insert(0, "src")
+        import pypandoc  # type: ignore[import-untyped]
+
+        from local_deep_research.exporters.docx_exporter import DOCXExporter
+
+        prepped = DOCXExporter._prepare_markdown(md, query=None, base_url=None)
+        with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as f:
+            out_path = f.name
+        pypandoc.convert_text(prepped, "docx", format="md", outputfile=out_path)
+        with open(out_path, "rb") as f:
+            docx_bytes = f.read()
+        os.unlink(out_path)
+        z = zipfile.ZipFile(io.BytesIO(docx_bytes))
+        doc = z.read("word/document.xml").decode()
+        paras = re.findall(r"<w:p\b[^>]*>.*?</w:p>", doc, re.DOTALL)
+        result = []
+        for p in paras:
+            style_m = re.search(r'<w:pStyle\s+w:val="([^"]+)"', p)
+            style = style_m.group(1) if style_m else ""
+            text = "".join(re.findall(r"<w:t[^>]*>([^<]*)</w:t>", p))
+            if text.strip() or style:
+                result.append((style, text))
+        return result, prepped
+
+    def test_real_ldr_paragraph_renders_cleanly(self):
+        # Paragraph 2 copied verbatim from your exported file:
+        #   research_59c60e30-f457-4d7e-a83b-dc622423ee2e.docx
+        para = (
+            "****人物背景介绍**** "
+            "1.1 身份与基本概况 | 介绍努里·特克尔的基本身份信息、职业角色及社会定位 "
+            "1.2 出生与早期经历 | 记录其在中国喀什的出生背景及成长环境 "
+            "1.3 家庭基本情况 | 说明其直系亲属关系及家庭成员状况"
+        )
+        results, prepped = self._render_paras_to_docx_texts(para)
+        # Reconstruct the body text and verify NO literal '****' or '|'
+        # survives.
+        all_text = "".join(t for _, t in results)
+        assert "****" not in all_text, (
+            f"Literal '****' survived Pandoc — the prep step did not "
+            f"handle the LDR-realistic TOC structure. prepped was:\n"
+            f"{prepped}"
+        )
+        assert "|" not in all_text, (
+            f"Literal '|' survived Pandoc — the pipe-to-em-dash step "
+            f"did not handle un-indented subsections after the "
+            f"restructure step."
+        )
+        # The visible section heading must be present.
+        assert "人物背景介绍" in all_text
+        # The subsection names must all be present.
+        for sub in ("身份与基本概况", "出生与早期经历", "家庭基本情况"):
+            assert sub in all_text, f"missing subsection: {sub}"

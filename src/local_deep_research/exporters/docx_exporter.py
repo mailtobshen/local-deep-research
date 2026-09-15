@@ -213,6 +213,33 @@ class DOCXExporter(BaseExporter):
                 md,
             )
 
+        # 2.5) Restructure the LDR-generated TOC, which is a
+        #      single paragraph per section in the form::
+
+        #          ****<Section Name>**** 1.1 sub1 | desc1 1.2 sub2 |
+        #          desc2 1.3 sub3 | desc3
+
+        #      The previous TOC fix only handled the cleaner
+        #      synthetic ``1. **Section**`` form, which the
+        #      report_generator never actually emits — the user's
+        #      real exports kept showing literal ``****`` characters.
+        #      We:
+        #        a) Rewrite ``****<Name>****`` as ``**\n<Name>**\n``
+        #           so the section heading sits on its own line.
+        #        b) Split each ``<n>.<m> ...`` run onto its own line
+        #           so the existing bullet conversion can pick them
+        #           up as nested-bullet candidates.
+        md = re.sub(
+            r"\*{4,}(?P<sec>[^*\n]+?)\*{4,}",
+            lambda m: f"\n**{m.group('sec').strip()}**\n",
+            md,
+        )
+        md = re.sub(
+            r"(?<=\S)\s+(?=\d+\.\d+\s+\S)",
+            "\n",
+            md,
+        )
+
         # 3) Strip standalone ``---`` rules. A horizontal rule in
         #    CommonMark is a line containing only ``---`` (optionally
         #    with up to 3 spaces of indent). Table separator rows
@@ -237,12 +264,68 @@ class DOCXExporter(BaseExporter):
             md,
         )
         md = re.sub(
-            r"(?m)^(?P<indent>[ ]{3,3})\d+\.\d+\s+(?P<body>.+?)\r?$",
-            # Strip a trailing ``\r`` first — Windows CRLF reports
-            # would otherwise carry it through into the bullet body
-            # and break Pandoc's parser. The ``(?P<body>.+?)`` is
-            # non-greedy so we don't accidentally eat the whole file.
+            r"(?m)^(?P<indent>[ ]{0,3})\d+\.\d+\s+(?P<body>.+?)\r?$",
+            # Match 0 to 3 leading spaces — the LDR report_generator
+            # emits the entire TOC as ONE paragraph per section, so
+            # after the restructure step the subsection lines start
+            # at column 0. Capture the leading spaces only as part of
+            # the match group (we ignore it in the replacement) so the
+            # 2-space indent we add is consistent regardless of what
+            # was there originally.
+            #
+            # Also strip a trailing ``\r`` first — Windows CRLF
+            # reports would otherwise carry it through into the bullet
+            # body and break Pandoc's parser. The ``(?P<body>.+?)``
+            # is non-greedy so we don't accidentally eat the whole file.
             lambda m: f"  - {m.group('body').rstrip(chr(13)).replace('|', ' — ')}",
+            md,
+        )
+
+        # 4.5) Rewrite CJK-adjacent ``_word_`` emphasis as
+        #      ``**word**``. Pandoc's underscore-emphasis rule
+        #      requires non-word characters on both sides; CJK
+        #      characters are word characters in CommonMark, so
+        #      ``正文_斜体_否则`` keeps the ``_`` literal even
+        #      though the LLM wrote it as italic. Asterisks have
+        #      no word-boundary requirement so the same content
+        #      consumes cleanly under ``**bold**``. This is the most
+        #      common form of the user's reported "目录章节 ****
+        #      没转义" complaint — the LLM is generating
+        #      ``_word_`` for emphasis that Pandoc can't consume
+        #      next to CJK characters, so the literal underscores
+        #      show up in the rendered DOCX.
+        #
+        #      We rewrite ``_X_`` → ``**X**`` only when at least
+        #      one side of the underscores is a CJK character (or
+        #      Hiragana/Katakana) — pure-ASCII ``_italic_`` is left
+        #      alone because Pandoc handles it correctly already.
+        cjk_class = (
+            "[\u4e00-\u9fff\u3040-\u30ff]"
+        )  # CJK Unified + Hiragana + Katakana
+        # CJK on both sides (the most common LLM pattern).
+        cjk_both = re.compile(
+            rf"(?P<left>{cjk_class})_(?P<body>[^_\n]+?)_(?P<right>{cjk_class})"
+        )
+        md = cjk_both.sub(
+            lambda m: f"{m.group('left')}**{m.group('body')}**{m.group('right')}",
+            md,
+        )
+        # CJK on the left, punctuation/whitespace on the right
+        # (end of sentence, etc.).
+        cjk_left_punct = re.compile(
+            rf"(?P<left>{cjk_class})_(?P<body>[^_\n]+?)_(?P<right>[。!?\uff0c,;:.\s])"
+        )
+        md = cjk_left_punct.sub(
+            lambda m: f"{m.group('left')}**{m.group('body')}**{m.group('right')}",
+            md,
+        )
+        # ASCII/punctuation on the left, CJK on the right (sentence
+        # start of a CJK term).
+        cjk_right_punct = re.compile(
+            rf"(?P<left>[\s.!?,;:])_(?P<body>[^_\n]+?)_(?P<right>{cjk_class})"
+        )
+        md = cjk_right_punct.sub(
+            lambda m: f"{m.group('left')}**{m.group('body')}**{m.group('right')}",
             md,
         )
 
