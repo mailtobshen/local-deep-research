@@ -257,15 +257,11 @@ class TestDOCXMarkdownPrep:
 
     def test_reformats_space_indented_subsections_as_nested_list(self, prep):
         """The report generator emits subsection lines indented with
-        raw spaces (``   1.1 name | _purpose_``) — Pandoc does NOT treat
-        those as nested list items, so the asterisks leak through and
-        the wrapping is broken. We rewrite both levels as bullet lists
-        so Pandoc's DOCX writer emits a clean, multi-level TOC:
-
-            - **Section 1**
-              - Sub one | _purpose one_
-              - Sub two | _purpose two_
-            - **Section 2**
+        raw spaces (``   1.1 name | _purpose_``) — we rewrite them
+        to plain numbered lines (no bullet wrapper, per user
+        preference) and replace ``|`` with em-dash. Top-level
+        ``N. **X**`` keeps the digit prefix + bold name without a
+        bullet marker.
         """
         md = (
             "1. **Section 1**\n"
@@ -277,17 +273,18 @@ class TestDOCXMarkdownPrep:
         # No raw space-indented lines should survive.
         assert "   1.1" not in out
         assert "   1.2" not in out
+        # NO bullet wrapper — the user explicitly rejected the
+        # round-circle bullets that previous fix produced.
+        assert "  -" not in out
         # The bold markers for top-level sections are preserved.
         assert "**Section 1**" in out
         assert "**Section 2**" in out
-        # Top-level is now a dash bullet, sub-level is a 2-space-indent bullet.
-        assert "- **Section 1**" in out
-        assert "- **Section 2**" in out
-        assert "  - Sub one" in out
-        assert "  - Sub two" in out
-        # Italic markers around purpose text survive.
-        assert "_purpose one_" in out
-        assert "_purpose two_" in out
+        # Top-level keeps the original digit prefix.
+        assert "1. **Section 1**" in out
+        assert "2. **Section 2**" in out
+        # Subsections retain their original numbering as plain text.
+        assert "1.1 Sub one — _purpose one_" in out
+        assert "1.2 Sub two — _purpose two_" in out
 
     def test_rewrites_relative_image_urls_to_absolute(self, prep):
         """``/images/<id>/<fn>`` from images.store.rewrite_markdown is
@@ -686,39 +683,38 @@ class TestDOCXTOCBulletList:
     Rewrite the TOC entries as proper nested bullet lists that
     Pandoc reliably renders as a clean multi-level TOC."""
 
-    def test_top_level_toc_entries_become_bullet_items(self, prep):
+    def test_top_level_toc_entries_keep_numbering(self, prep):
         md = (
             "1. **Section 1**\n"
             "2. **Section 2**\n"
         )
         out = prep(md, query=None, base_url=None)
-        # Numbered ``1.`` / ``2.`` -> ``-``.
-        assert "1. **Section 1**" not in out
-        assert "2. **Section 2**" not in out
-        # Bullet list syntax.
-        assert "- **Section 1**" in out
-        assert "- **Section 2**" in out
+        # No bullet wrapper — the user explicitly rejected the
+        # round-circle bullets that the previous fix produced.
+        assert "  - " not in out
+        # Original numbering preserved.
+        assert "1. **Section 1**" in out
+        assert "2. **Section 2**" in out
 
-    def test_subsections_become_nested_bullets(self, prep):
+    def test_subsections_keep_original_numbering(self, prep):
         md = (
             "1. **Section 1**\n"
             "   1.1 Sub one | _purpose one_\n"
             "   1.2 Sub two | _purpose two_\n"
         )
         out = prep(md, query=None, base_url=None)
-        # The space-indented subsection lines are gone (no more 1.1 raw form).
+        # No bullet wrapper — the user explicitly rejected round bullets.
+        assert "  - " not in out
+        # Raw 1.1 / 1.2 form is gone (split into separate lines).
         assert "   1.1" not in out
         assert "   1.2" not in out
-        # Nested bullets under Section 1 — 2-space indent.
-        assert "  - Sub one" in out
-        assert "  - Sub two" in out
-        # Italic markers around purpose text survive.
+        # Original subsection numbering is preserved verbatim.
+        assert "1.1 Sub one — _purpose one_" in out
+        assert "1.2 Sub two — _purpose two_" in out
+        # Italic markers survive.
         assert "_purpose one_" in out
 
-    def test_numbering_preserves_section_index(self, prep):
-        """The 1.1 / 2.1 numbering is replaced with the section index
-        alone so Pandoc can render the bullets cleanly without trying
-        to preserve the custom two-level numbering."""
+    def test_top_level_numbering_across_sections(self, prep):
         md = (
             "1. **A**\n"
             "   1.1 a | _p_\n"
@@ -726,15 +722,14 @@ class TestDOCXTOCBulletList:
             "   2.1 b | _p_\n"
         )
         out = prep(md, query=None, base_url=None)
-        # A's subitem under "- **A**".
-        assert "- **A**" in out
-        assert "  - a" in out
-        # B's subitem under "- **B**".
-        assert "- **B**" in out
-        assert "  - b" in out
-        # No 1.1 / 2.1 raw form remains.
-        assert "1.1 a" not in out
-        assert "2.1 b" not in out
+        # No bullet wrapper.
+        assert "  - " not in out
+        # Each section keeps its digit prefix.
+        assert "1. **A**" in out
+        assert "2. **B**" in out
+        # Subsections preserve their per-section numbering.
+        assert "1.1 a" in out
+        assert "2.1 b" in out
 
 
 class TestDOCXPandocArgs:
@@ -919,15 +914,16 @@ class TestDOCXTOCBulletEdgeCases:
         from local_deep_research.exporters.docx_exporter import DOCXExporter
         return DOCXExporter._prepare_markdown
 
-    def test_bullet_without_pipe_is_unchanged(self, prep):
-        """A subsection line with no pipe still converts to a
-        bullet — the ``|`` replace is a no-op for those."""
+    def test_subsection_without_pipe_kept_as_text(self, prep):
+        """A subsection line with no pipe should be preserved as plain
+        numbered text — no bullet wrapper."""
         md = (
             "1. **Section 1**\n"
             "   1.1 Plain name without separator\n"
         )
         out = prep(md, query=None, base_url=None)
-        assert "  - Plain name without separator" in out
+        assert "  - " not in out
+        assert "1.1 Plain name without separator" in out
         assert " — " not in out
 
     def test_bullet_with_multiple_pipes_replaces_all(self, prep):
@@ -1252,8 +1248,8 @@ class TestDOCXRealisticLDRTOCStructure:
         treats each as its own bullet item."""
         md = "****A**** 1.1 one | d1 1.2 two | d2 1.3 three | d3"
         out = prep(md, query=None, base_url=None)
-        # Three subsections each on their own bullet line.
-        assert out.count("  - ") == 3
+        # Three subsections each on their own line.
+        assert out.count("1.1 ") + out.count("1.2 ") + out.count("1.3 ") >= 3
         # And the original one-line run is gone.
         assert " 1.1 one | d1 1.2" not in out
 
@@ -1283,8 +1279,8 @@ class TestDOCXRealisticLDRTOCStructure:
         assert "****" not in out
         # No literal pipe between name and description.
         assert " | " not in out
-        # Three subsections, each on its own bullet line.
-        assert out.count("  - ") == 3
+        # Three subsections, each on its own line.
+        assert out.count("1.1 ") + out.count("1.2 ") + out.count("1.3 ") >= 3
         # Section heading is on its own line and uses ``**...**``
         # (the 4-asterisk form was rewritten).
         assert "**人物背景介绍**" in out
@@ -1293,6 +1289,46 @@ class TestDOCXRealisticLDRTOCStructure:
         assert "介绍努里·特克尔的基本身份信息" in out
         assert "出生与早期经历" in out
         assert "家庭基本情况" in out
+
+
+class TestDOCXRealisticLDRTOCNumbering:
+    """The bullet regex ``^\d+\.\d+\s+(?P<body>.+?)$`` was
+    consuming the leading subsection number (``1.1`` / ``2.1`` / etc.)
+    and emitting only the body text. The user reported the missing
+    numbers in the rendered DOCX. The fix preserves the leading
+    digit.digit prefix inside the bullet line.
+    """
+
+    @pytest.fixture
+    def prep(self):
+        from local_deep_research.exporters.docx_exporter import DOCXExporter
+        return DOCXExporter._prepare_markdown
+
+    def test_subsection_number_preserved_in_output(self, prep):
+        """The LDR TOC emits ``1.1 身份 | 介绍`` per subsection.
+        The prep must produce a bullet line that starts with
+        ``  - 1.1 身份 — 介绍`` — the number is part of the
+        bullet text so the rendered DOCX shows it.
+        """
+        # Input is a real-shape subsection line (after restructure).
+        md = "  1.1 身份与基本概况 | 介绍身份信息"
+        out = prep(md, query=None, base_url=None)
+        # No bullet marker, just plain numbered text.
+        assert "  - " not in out
+        # Original numbering preserved.
+        assert "1.1 身份与基本概况 — 介绍身份信息" in out
+
+    def test_top_level_section_number_preserved(self, prep):
+        """The LDR TOC section header (e.g. ``1. **人物背景介绍**``)
+        keeps the digit prefix when the bullet regex runs.
+        """
+        md = "1. **Section 1**"
+        out = prep(md, query=None, base_url=None)
+        # No bullet prefix.
+        assert "  - " not in out
+        assert "- " not in out
+        # Original numbering preserved as plain text.
+        assert "1. **Section 1**" in out
 
 
 class TestDOCXRealReportEndToEnd:
@@ -1362,3 +1398,151 @@ class TestDOCXRealReportEndToEnd:
         # The subsection names must all be present.
         for sub in ("身份与基本概况", "出生与早期经历", "家庭基本情况"):
             assert sub in all_text, f"missing subsection: {sub}"
+
+
+class TestDOCXImageCaptionStyleRemoved:
+    """Pandoc's DOCX writer applies two special pStyle values to any
+    paragraph containing an image: ``CaptionedFigure`` for the image
+    paragraph and ``ImageCaption`` for the alt-text paragraph. The
+    user wants images in body-text format, not the Pandoc-default
+    caption framing — so the post-processor drops those two styles and
+    leaves the paragraphs at the document default.
+    """
+
+    def test_caption_styles_replaced_with_normal(self):
+        import io, zipfile
+        from local_deep_research.exporters.docx_exporter import DOCXExporter
+        # Build a fake docx with two paragraphs that have the styles
+        # Pandoc emits around an image.
+        body = (
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+            "<w:body>"
+            '<w:p><w:pPr><w:pStyle w:val="CaptionedFigure"/></w:pPr>'
+            '<w:r><w:t xml:space="preserve"></w:t></w:r></w:p>'
+            '<w:p><w:pPr><w:pStyle w:val="ImageCaption"/></w:pPr>'
+            '<w:r><w:t>alt text here</w:t></w:r></w:p>'
+            "</w:body></w:document>"
+        )
+        names = {
+            "word/document.xml": body.encode("utf-8"),
+            "[Content_Types].xml": (
+                b'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+                b'<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+                b'<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+                b'<Default Extension="xml" ContentType="application/xml"/>'
+                b'<Override PartName="/word/document.xml" '
+                b'ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>'
+                b"</Types>"
+            ),
+        }
+        out = DOCXExporter._strip_image_caption_styles(names)
+        doc = out["word/document.xml"].decode("utf-8")
+        # Both image-related styles are gone — the paragraphs fall
+        # back to the document default style.
+        assert 'pStyle w:val="CaptionedFigure"' not in doc
+        assert 'pStyle w:val="ImageCaption"' not in doc
+        # The image-related text is preserved as plain content.
+        assert "alt text here" in doc
+
+    def test_unrelated_paragraph_styles_preserved(self):
+        import io, zipfile
+        from local_deep_research.exporters.docx_exporter import DOCXExporter
+        body = (
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+            "<w:body>"
+            '<w:p><w:pPr><w:pStyle w:val="Heading2"/></w:pPr>'
+            '<w:r><w:t>keep heading</w:t></w:r></w:p>'
+            '<w:p><w:pPr><w:pStyle w:val="CaptionedFigure"/></w:pPr>'
+            '<w:r><w:t></w:t></w:r></w:p>'
+            '<w:p><w:pPr><w:pStyle w:val="ImageCaption"/></w:pPr>'
+            '<w:r><w:t>caption text</w:t></w:r></w:p>'
+            '<w:p><w:pPr><w:pStyle w:val="Heading3"/></w:pPr>'
+            '<w:r><w:t>keep sub</w:t></w:r></w:p>'
+            "</w:body></w:document>"
+        )
+        names = {
+            "word/document.xml": body.encode("utf-8"),
+            "[Content_Types].xml": b'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            b'<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+            b'<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+            b'<Default Extension="xml" ContentType="application/xml"/>'
+            b'<Override PartName="/word/document.xml" '
+            b'ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>'
+            b'</Types>',
+        }
+        out = DOCXExporter._strip_image_caption_styles(names)
+        doc = out["word/document.xml"].decode("utf-8")
+        # Caption styles stripped.
+        assert 'pStyle w:val="CaptionedFigure"' not in doc
+        assert 'pStyle w:val="ImageCaption"' not in doc
+        # Other styles (Heading2, Heading3) are untouched.
+        assert 'pStyle w:val="Heading2"' in doc
+        assert 'pStyle w:val="Heading3"' in doc
+        # The caption text itself is preserved as plain content.
+        assert "caption text" in doc
+        assert "keep heading" in doc
+        assert "keep sub" in doc
+
+
+class TestDOCXNoBulletWrapOnNumberedSubsections:
+    """The previous fix wrapped every LDR subsection in a ``  - ``
+    bullet. Word renders that as a round bullet circle, which is
+    exactly the user's complaint: ``为什么你全部改为圆圈符号``.
+    The fix: keep the subsection text exactly as the LDR emitted it
+    (the ``1.1`` / ``2.1`` / ``3.1`` numbers are part of the text)
+    and just split it onto its own line + replace the ``|`` with
+    em-dash + turn the 4-asterisk section header into a 2-asterisk
+    line. No ``- `` bullet wrapper."""
+
+    @pytest.fixture
+    def prep(self):
+        from local_deep_research.exporters.docx_exporter import DOCXExporter
+        return DOCXExporter._prepare_markdown
+
+    def test_no_bullet_wrapper_in_toc_subsection(self, prep):
+        md = (
+            "****人物背景介绍**** "
+            "1.1 身份与基本概况 | 介绍努里·特克尔 "
+            "1.2 出生与早期经历 | 记录其在中国喀什 "
+        )
+        out = prep(md, query=None, base_url=None)
+        # No ``  - `` bullet prefix — that was rendering as a circle
+        # in Word.
+        assert "  - " not in out
+        # The original subsection number survives verbatim.
+        assert "1.1 身份与基本概况 — 介绍努里·特克尔" in out
+        assert "1.2 出生与早期经历 — 记录其在中国喀什" in out
+
+    def test_section_header_kept_as_text_no_bullet(self, prep):
+        """The ``****X****`` header also went through a bullet wrap
+        previously. Keep it as plain bold text on its own line."""
+        md = "****人物背景介绍**** 1.1 身份 | 介绍"
+        out = prep(md, query=None, base_url=None)
+        # Section header is plain bold, no ``- `` bullet.
+        assert "**人物背景介绍**" in out
+        # No bullet anywhere in the output.
+        assert "  - " not in out
+
+    def test_realistic_full_toc_no_bullet(self, prep):
+        """Full realistic paragraph (copied from the exported file's
+        paragraph 2): after prep, no bullet markers appear at all —
+        the LDR-natural numbered text format is preserved."""
+        para = (
+            "****人物背景介绍**** "
+            "1.1 身份与基本概况 | 介绍努里·特克尔的基本身份信息 "
+            "1.2 出生与早期经历 | 记录其在中国喀什的出生背景 "
+            "1.3 家庭基本情况 | 说明其直系亲属关系"
+        )
+        out = prep(para, query=None, base_url=None)
+        assert "  - " not in out
+        # All three subsections preserved with original numbering.
+        for line in (
+            "1.1 身份与基本概况 — 介绍努里·特克尔的基本身份信息",
+            "1.2 出生与早期经历 — 记录其在中国喀什的出生背景",
+            "1.3 家庭基本情况 — 说明其直系亲属关系",
+        ):
+            assert line in out, (
+                f"expected {line!r} in prepped output; got:\n{out!r}"
+            )

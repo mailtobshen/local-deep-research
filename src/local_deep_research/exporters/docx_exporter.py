@@ -260,24 +260,28 @@ class DOCXExporter(BaseExporter):
         #    multi-level TOC.
         md = re.sub(
             r"(?m)^(?P<num>\d+)\.\s+(?P<body>\*\*.+\*\*)\s*$",
-            lambda m: f"- {m.group('body')}",
+            # KEEP the digit prefix and the body as-is. We do NOT
+            # wrap in a ``- `` bullet here — Word renders that as a
+            # round bullet circle, which the user explicitly did not
+            # want. The number stays as plain text in front of the
+            # bold section name.
+            lambda m: f"{m.group('num')}. {m.group('body')}",
             md,
         )
         md = re.sub(
-            r"(?m)^(?P<indent>[ ]{0,3})\d+\.\d+\s+(?P<body>.+?)\r?$",
-            # Match 0 to 3 leading spaces — the LDR report_generator
-            # emits the entire TOC as ONE paragraph per section, so
-            # after the restructure step the subsection lines start
-            # at column 0. Capture the leading spaces only as part of
-            # the match group (we ignore it in the replacement) so the
-            # 2-space indent we add is consistent regardless of what
-            # was there originally.
+            r"(?m)^(?P<indent>[ ]{0,3})(?P<num>\d+\.\d+)\s+(?P<body>.+?)\r?$",
+            # Match 0 to 3 leading spaces + the subsection number
+            # (e.g. ``1.1`` / ``2.1``) + whitespace + body. We do NOT
+            # wrap in a ``- `` bullet here — that rendered as a round
+            # bullet circle in Word, which the user explicitly did not
+            # want. Keep the original LDR numbering as plain text
+            # (the number stays in front of the description text, no
+            # bullet marker) and only rewrite the ``|`` separator.
             #
-            # Also strip a trailing ``\r`` first — Windows CRLF
-            # reports would otherwise carry it through into the bullet
-            # body and break Pandoc's parser. The ``(?P<body>.+?)``
-            # is non-greedy so we don't accidentally eat the whole file.
-            lambda m: f"  - {m.group('body').rstrip(chr(13)).replace('|', ' — ')}",
+            # Strip a trailing ``\r`` first — Windows CRLF reports
+            # would otherwise carry it through into the body and
+            # break Pandoc's parser.
+            lambda m: re.sub(r'  +', ' ', f"{m.group('num')} {m.group('body').rstrip(chr(13)).replace('|', ' — ')}"),
             md,
         )
 
@@ -478,6 +482,42 @@ class DOCXExporter(BaseExporter):
                     count=1,
                 )
         names_to_data[styles_path] = styles_xml.encode("utf-8")
+        return names_to_data
+
+
+    @staticmethod
+    def _strip_image_caption_styles(names_to_data: dict) -> dict:
+        """Drop the Pandoc-default image-caption pStyle references.
+
+        Pandoc's DOCX writer applies two special paragraph styles to
+        any image it embeds:
+
+          * ``CaptionedFigure`` on the image paragraph (the one
+            that contains the ``<w:drawing>``).
+          * ``ImageCaption`` on the paragraph that holds the image's
+            alt-text.
+
+        Both render in Word with the caption treatment (centered,
+        italic, smaller text, often inside a light-grey border). The
+        user asked for "images in body-text format, not caption
+        format" — so we drop those two pStyle references and let the
+        paragraphs fall back to the document default. The image and
+        its alt text remain visible; they just no longer carry the
+        caption styling.
+
+        Heading/Body/Quote/etc. paragraph styles are not touched.
+        """
+        doc_path = "word/document.xml"
+        if doc_path not in names_to_data:
+            return names_to_data
+        doc_xml = names_to_data[doc_path].decode("utf-8")
+        for style_id in ("CaptionedFigure", "ImageCaption"):
+            doc_xml = re.sub(
+                rf'<w:pStyle\s+w:val="{style_id}"\s*/>',
+                "",
+                doc_xml,
+            )
+        names_to_data[doc_path] = doc_xml.encode("utf-8")
         return names_to_data
 
     @staticmethod
@@ -946,6 +986,9 @@ class DOCXExporter(BaseExporter):
         #    because each touches a disjoint rPr block.
         names_to_data = cls._set_default_body_font(names_to_data)
         names_to_data = cls._patch_styles_xml_kaiti_headings(names_to_data)
+
+        # 7.5) Drop the Pandoc image-caption pStyle references.
+        names_to_data = cls._strip_image_caption_styles(names_to_data)
 
         # 8) Strip the heading style from any body paragraph that
         #    contains the query text. LLM chapters often open with
