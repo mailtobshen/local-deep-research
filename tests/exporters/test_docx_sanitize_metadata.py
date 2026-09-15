@@ -876,3 +876,118 @@ class TestDOCXHeadingColorBlack:
         assert 'w:color w:val="000000"' in styles or "<w:color" not in styles
         # And the 楷体 font is still there.
         assert "KaiTi" in styles
+
+
+class TestDOCXTOCBulletPipeReplaced:
+    @pytest.fixture
+    def prep(self):
+        from local_deep_research.exporters.docx_exporter import DOCXExporter
+        return DOCXExporter._prepare_markdown
+
+    """The report generator emits TOC subsection lines as
+    ``1.1 name | _purpose_``. When my prep converted these to bullet
+    items (``  - name | _purpose_``), Pandoc split the run at the
+    ``|`` and rendered the pipe as a literal character between two
+    text runs, which the user reported as "换行乱" (line-break
+    mess) in the TOC. Replace ``|`` with the typographic em-dash so
+    Pandoc treats the bullet as a single text run."""
+
+    def test_bullet_pipe_replaced_with_emdash(self, prep):
+        md = (
+            "1. **Section 1**\n"
+            "   1.1 Sub one | _purpose one_\n"
+            "   1.2 Sub two | _purpose two_\n"
+        )
+        out = prep(md, query=None, base_url=None)
+        # No literal pipe between name and purpose.
+        assert " | " not in out
+        # Em-dash separator is present.
+        assert " — " in out
+        # Italic markers survive.
+        assert "_purpose one_" in out
+        assert "_purpose two_" in out
+
+
+class TestDOCXRemoveQueryHeading:
+    """LLM-generated report content sometimes starts a chapter with
+    ``# <query>`` (the LLM reuses the research question as the
+    chapter heading). After my H1→H2 demote this is still rendered
+    as a prominent heading in Word, which the user reads as a
+    "second title" alongside the injected ``关于X的研究报告``.
+
+    The post-processor scans every paragraph in the body for a
+    heading style whose text contains the query and strips the
+    heading style so it renders as plain body text. The body
+    content of the paragraph is preserved.
+    """
+
+    def _fake_doc_with_heading(self, style_id, heading_text, body_text):
+        import io, zipfile
+        safe = heading_text.replace("&", "&amp;").replace("<", "&lt;")
+        safe_body = body_text.replace("&", "&amp;").replace("<", "&lt;")
+        body = (
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+            "<w:body>"
+            f'<w:p><w:pPr><w:pStyle w:val="{style_id}"/></w:pPr>'
+            f'<w:r><w:t xml:space="preserve">{safe}</w:t></w:r></w:p>'
+            f'<w:p><w:r><w:t xml:space="preserve">{safe_body}</w:t></w:r></w:p>'
+            "</w:body></w:document>"
+        )
+        return {
+            "word/document.xml": body.encode("utf-8"),
+            "[Content_Types].xml": (
+                b'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+                b'<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+                b'<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+                b'<Default Extension="xml" ContentType="application/xml"/>'
+                b'<Override PartName="/word/document.xml" '
+                b'ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>'
+                b"</Types>"
+            ),
+        }
+
+    def test_h2_paragraph_containing_query_loses_its_heading_style(self):
+        from local_deep_research.exporters.docx_exporter import DOCXExporter
+        names = self._fake_doc_with_heading(
+            "Heading2", "量子计算基础", "这是章节内容。"
+        )
+        out = DOCXExporter._strip_query_heading_style(
+            names, query="量子计算基础"
+        )
+        doc = out["word/document.xml"].decode("utf-8")
+        # The heading paragraph no longer carries pStyle=Heading2.
+        import re
+        h_blocks = re.findall(
+            r'<w:p>(?:(?!</w:p>).)*量子计算基础(?:(?!</w:p>).)*</w:p>',
+            doc,
+        )
+        assert len(h_blocks) >= 1
+        for block in h_blocks:
+            assert 'pStyle w:val="Heading2"' not in block
+        # The body paragraph is untouched.
+        assert "这是章节内容。" in doc
+
+    def test_h2_paragraph_without_query_keeps_its_heading_style(self):
+        """Headings that do NOT contain the query stay as headings —
+        only the duplicate-title paragraph is demoted."""
+        from local_deep_research.exporters.docx_exporter import DOCXExporter
+        names = self._fake_doc_with_heading(
+            "Heading2", "应用案例", "应用内容。"
+        )
+        out = DOCXExporter._strip_query_heading_style(
+            names, query="量子计算基础"
+        )
+        doc = out["word/document.xml"].decode("utf-8")
+        # The 应用案例 paragraph keeps its Heading2 style.
+        assert 'pStyle w:val="Heading2"/>' in doc
+
+    def test_no_query_means_no_demotion(self):
+        from local_deep_research.exporters.docx_exporter import DOCXExporter
+        names = self._fake_doc_with_heading(
+            "Heading1", "任何标题", "内容。"
+        )
+        out = DOCXExporter._strip_query_heading_style(names, query=None)
+        doc = out["word/document.xml"].decode("utf-8")
+        # All headings stay put when query is None.
+        assert 'pStyle w:val="Heading1"/>' in doc

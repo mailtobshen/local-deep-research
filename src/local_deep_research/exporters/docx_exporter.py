@@ -238,7 +238,7 @@ class DOCXExporter(BaseExporter):
         )
         md = re.sub(
             r"(?m)^(?P<indent>[ ]{3,3})\d+\.\d+\s+(?P<body>.+)$",
-            lambda m: f"  - {m.group('body')}",
+            lambda m: f"  - {m.group('body').replace('|', ' — ')}",
             md,
         )
 
@@ -401,6 +401,86 @@ class DOCXExporter(BaseExporter):
                     count=1,
                 )
         names_to_data[styles_path] = styles_xml.encode("utf-8")
+        return names_to_data
+
+    @staticmethod
+    def _strip_query_heading_style(
+        names_to_data: dict, query: Optional[str]
+    ) -> dict:
+        """Remove the heading style from any body paragraph whose text
+        contains the query.
+
+        LLM-generated report content sometimes opens a chapter with
+        ``# <query>`` (the LLM reuses the research question as the
+        chapter heading). After the H1→H2 demote in
+        ``_prepare_markdown`` this lands in the body as an H2, which
+        Word still renders as a prominent heading — the user sees
+        it as a "second title" alongside the injected
+        ``关于X的研究报告``.
+
+        The fix: for every ``<w:p>`` in ``word/document.xml`` that has
+        a ``<w:pStyle>`` referencing a heading style (``Heading1``
+        through ``Heading9``, ``Title``), check if the visible text
+        contains the query. If so, strip the ``<w:pStyle>`` element
+        so the paragraph falls back to the default ``Normal`` style
+        and reads as ordinary body text.
+
+        Only the heading style is removed — the heading text is
+        kept in place so the LLM's wording still appears in the
+        document, just without the title-size visual prominence.
+        """
+        if not query:
+            return names_to_data
+        doc_path = "word/document.xml"
+        if doc_path not in names_to_data:
+            return names_to_data
+        doc_xml = names_to_data[doc_path].decode("utf-8")
+        # Heading style IDs Pandoc emits. Match any of these as the
+        # paragraph's pStyle.
+        heading_styles = (
+            "Heading1", "Heading2", "Heading3", "Heading4",
+            "Heading5", "Heading6", "Heading7", "Heading8",
+            "Heading9", "Title",
+        )
+        # Build a regex that matches a single <w:p>...</w:p> block.
+        # Inside, check: (a) has a pStyle whose val is one of
+        # heading_styles, AND (b) the visible text contains the query.
+        # If both, drop the pStyle child of pPr.
+        heading_alt = "|".join(heading_styles)
+
+        def patch_para(match: "re.Match[str]") -> str:
+            block = match.group(0)
+            # Only touch paragraphs that carry a heading pStyle.
+            style_m = re.search(
+                rf'<w:pStyle\s+w:val="({heading_alt})"\s*/>',
+                block,
+            )
+            if not style_m:
+                return block
+            # The visible text of a <w:p> is the concatenation of its
+            # <w:t> children. Concatenate them and check for the query.
+            texts = re.findall(r"<w:t[^>]*>([^<]*)</w:t>", block)
+            visible = "".join(texts)
+            if query not in visible:
+                return block
+            # Drop the heading pStyle so the paragraph renders as
+            # the default Normal style. Remove the pStyle line
+            # entirely; pPr may end up empty but that's harmless.
+            new_block = re.sub(
+                rf'\s*<w:pStyle\s+w:val="({heading_alt})"\s*/>',
+                "",
+                block,
+                count=1,
+            )
+            return new_block
+
+        doc_xml = re.sub(
+            r"<w:p\b[^>]*>.*?</w:p>",
+            patch_para,
+            doc_xml,
+            flags=re.DOTALL,
+        )
+        names_to_data[doc_path] = doc_xml.encode("utf-8")
         return names_to_data
 
     @staticmethod
@@ -786,6 +866,17 @@ class DOCXExporter(BaseExporter):
         #    because each touches a disjoint rPr block.
         names_to_data = cls._set_default_body_font(names_to_data)
         names_to_data = cls._patch_styles_xml_kaiti_headings(names_to_data)
+
+        # 8) Strip the heading style from any body paragraph that
+        #    contains the query text. LLM chapters often open with
+        #    ``# <query>`` which would otherwise render as a second
+        #    "title" next to the user-requested title injected in
+        #    step 6. We drop just the pStyle so the heading text
+        #    stays in the document but renders as ordinary body text.
+        if query:
+            names_to_data = cls._strip_query_heading_style(
+                names_to_data, query
+            )
 
         # Write the new zip back out.
         out_buf = io.BytesIO()
