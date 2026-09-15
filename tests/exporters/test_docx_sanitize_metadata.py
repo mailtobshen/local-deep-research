@@ -1623,19 +1623,28 @@ class TestDOCXSubsectionsMergeIntoSectionHeading:
         assert "  - " not in out
         assert " | " not in out
 
-    def test_no_blank_line_between_section_and_merged_subs(self, prep):
-        """The merge must not leave a blank line where the standalone
-        section heading used to be — Pandoc would otherwise render it
-        as an empty paragraph between heading and body."""
+    def test_blank_line_between_each_merged_subsubsection(self, prep):
+        """Merged bold subsections MUST be separated by a blank line —
+        otherwise Pandoc collapses consecutive bold paragraphs into one
+        soft-break line in the rendered DOCX, which was the user's
+        '换行乱' complaint."""
         md = (
             "**人物背景介绍**\n"
             "1.1 身份 | 介绍\n"
             "1.2 出生 | 记录\n"
+            "1.3 家庭 | 情况\n"
         )
         out = prep(md, query=None, base_url=None)
-        # The merged lines should be consecutive — no empty paragraph
-        # between them.
-        assert "\n\n" not in out, f"unexpected blank line in:\n{out!r}"
+        # Three merged subsections must be separated by blank lines so
+        # Pandoc renders them as three distinct paragraphs.
+        assert out.count(chr(10) + chr(10)) >= 2, (
+            f"need ≥2 blank lines between the three merged subsections; "
+            f"got:\n{out!r}"
+        )
+        # And the merged bold lines themselves are present.
+        assert "**人物背景介绍 1.1 身份 — 介绍**" in out
+        assert "**人物背景介绍 1.2 出生 — 记录**" in out
+        assert "**人物背景介绍 1.3 家庭 — 情况**" in out
 
     def test_preserves_latin_section_name_too(self, prep):
         """The merge is not CJK-specific — works for any section name

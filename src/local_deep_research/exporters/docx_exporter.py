@@ -351,23 +351,35 @@ class DOCXExporter(BaseExporter):
         lines = md.split("\n")
         merged: list[str] = []
         current_title: str | None = None
-        section_sub: str | None = None  # inner regex group capture
+        section_sub: str | None = None
+        saw_merged: bool = False  # any merged subsection emitted yet?
         for line in lines:
-            # Standalone bold title line: ``**X**`` (no other content).
+            # Standalone bold title line: ``**X**``.
             stripped = line.strip()
             sec_m = re.match(r"^\*\*([^\*\n]+)\*\*$", stripped)
             if sec_m and not re.match(r"^\d+\.\d+", stripped):
-                # Capture the title text; don't emit the line itself.
                 section_sub = sec_m.group(1).strip()
                 current_title = section_sub
                 continue
-            # Reset on blank lines.
+            # Blank line = section boundary. Drop the standalone
+            # title group, reset.
             if not stripped:
                 current_title = None
                 section_sub = None
-            # Numbered subsection line: prepend the current title.
+                if merged:
+                    merged.append("")
+                continue
+            # Numbered subsection line — merge with current title.
             sub_m = re.match(r"^(\d+\.\d+)\s+(.*)$", stripped)
             if sub_m and current_title is not None:
+                # Insert a BLANK LINE before each merged subsection
+                # AFTER the first one. Without it, Pandoc joins
+                # consecutive bold paragraphs with a soft break —
+                # they all collapse into one line in the rendered
+                # DOCX, which is exactly the user's "换行乱" bug.
+                if saw_merged:
+                    merged.append("")
+                saw_merged = True
                 merged.append(
                     f"**{current_title} {sub_m.group(1)} {sub_m.group(2).strip()}**"
                 )
