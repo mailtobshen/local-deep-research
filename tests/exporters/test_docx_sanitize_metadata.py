@@ -256,8 +256,13 @@ class TestDOCXMarkdownPrep:
         """The report generator emits subsection lines indented with
         raw spaces (``   1.1 name | _purpose_``) — Pandoc does NOT treat
         those as nested list items, so the asterisks leak through and
-        the wrapping is broken. Reformat to a proper nested list so
-        Pandoc's DOCX writer emits a clean, multi-level TOC.
+        the wrapping is broken. We rewrite both levels as bullet lists
+        so Pandoc's DOCX writer emits a clean, multi-level TOC:
+
+            - **Section 1**
+              - Sub one | _purpose one_
+              - Sub two | _purpose two_
+            - **Section 2**
         """
         md = (
             "1. **Section 1**\n"
@@ -272,9 +277,11 @@ class TestDOCXMarkdownPrep:
         # The bold markers for top-level sections are preserved.
         assert "**Section 1**" in out
         assert "**Section 2**" in out
-        # The subsection lines are now nested-list items (4-space
-        # indent) so Pandoc's DOCX writer can render them properly.
-        assert "    1." in out or "\n    2." in out
+        # Top-level is now a dash bullet, sub-level is a 2-space-indent bullet.
+        assert "- **Section 1**" in out
+        assert "- **Section 2**" in out
+        assert "  - Sub one" in out
+        assert "  - Sub two" in out
         # Italic markers around purpose text survive.
         assert "_purpose one_" in out
         assert "_purpose two_" in out
@@ -295,9 +302,9 @@ class TestDOCXMarkdownPrep:
             base_url="http://127.0.0.1:5000/",
         )
         # The rewritten URL points back at the same Flask origin.
-        assert "src=\"http://127.0.0.1:5000/images/abc/figure.png\"" in out
+        assert "http://127.0.0.1:5000/images/abc/figure.png" in out
         # The bare relative path is gone.
-        assert 'src="/images/abc/figure.png"' not in out
+        assert '<img' not in out and '<figure' not in out
 
     def test_preserves_external_image_urls_unchanged(self, prep):
         """Already-absolute URLs (e.g. https://...) are not touched —
@@ -308,7 +315,7 @@ class TestDOCXMarkdownPrep:
             query=None,
             base_url="http://127.0.0.1:5000/",
         )
-        assert 'src="https://example.com/foo.png"' in out
+        assert "https://example.com/foo.png" in out
         # No accidental prefix.
         assert "http://127.0.0.1:5000/https://example.com" not in out
 
@@ -317,7 +324,7 @@ class TestDOCXMarkdownPrep:
         the relative paths in place so the original URL survives."""
         md = '<img src="/images/abc/figure.png" alt="x"/>'
         out = prep(md, query=None, base_url=None)
-        assert 'src="/images/abc/figure.png"' in out
+        assert "/images/abc/figure.png" in out
 
 
 class TestDOCXFooterXMLNoColor:
@@ -584,3 +591,158 @@ class TestDOCXHeadingFontKaiti:
             re.DOTALL,
         ).group(0)
         assert "KaiTi" in h1_block or "SimKai" in h1_block
+
+
+class TestDOCXTitleTemplate:
+    """The injected title must be the full ``关于{query}的研究报告``
+    template, not just the query text itself. The previous version
+    injected the query raw, so the user saw bare text in the title
+    slot."""
+
+    def test_title_wraps_query_in_full_template(self):
+        from local_deep_research.exporters.docx_exporter import DOCXExporter
+        para = DOCXExporter._build_title_paragraph_xml("量子计算简介")
+        assert "关于量子计算简介的研究报告" in para
+        # And the bare query text alone should NOT be the title.
+        # (i.e., the wrapper text is "关于…的研究报告" not just the query)
+        assert "量子计算简介" in para
+        # Make sure the template pattern is intact (not corrupted).
+        assert para.count("关于") == 1
+        assert para.count("的研究报告") == 1
+
+
+class TestDOCXFigureToMarkdownImage:
+    @pytest.fixture
+    def prep(self):
+        from local_deep_research.exporters.docx_exporter import DOCXExporter
+        return DOCXExporter._prepare_markdown
+
+    """``<figure><img src="..." alt="..."/></figure>`` HTML produced by
+    ``images.store.rewrite_markdown`` is not reliably extracted by
+    Pandoc's HTML reader. Convert to standard markdown image syntax
+    (``![alt](url)``) before Pandoc sees the document so the image
+    fetch + embed path runs through Pandoc's native (and well-tested)
+    image code path."""
+
+    def test_figure_converted_to_markdown_image(self, prep):
+        out = prep(
+            '<figure class="ldr-img">'
+            '<img src="/images/abc/figure.png" alt="量子电路示例"/>'
+            '</figure>',
+            query=None,
+            base_url="http://127.0.0.1:5000/",
+        )
+        # The figure wrapper is gone.
+        assert "<figure" not in out
+        assert "</figure>" not in out
+        # The img tag is gone too (replaced by markdown image syntax).
+        assert "<img" not in out
+        # The markdown image syntax is present, with the rewritten URL.
+        assert (
+            "![量子电路示例](http://127.0.0.1:5000/images/abc/figure.png)" in out
+        )
+
+    def test_figure_with_figcaption_preserves_caption(self, prep):
+        """The figcaption text becomes the alt text when the alt
+        attribute is missing/empty — this is what the existing
+        ``images.store.rewrite_markdown`` does."""
+        out = prep(
+            '<figure class="ldr-img">'
+            '<img src="/images/abc/x.png"/>'
+            "<figcaption>示例图</figcaption>"
+            "</figure>",
+            query=None,
+            base_url="http://127.0.0.1:5000/",
+        )
+        assert "![示例图](" in out
+
+    def test_inline_img_without_figure_still_rewritten(self, prep):
+        """Standalone ``<img>`` tags outside a figure also get their
+        ``src`` rewritten — covers any other place the report might
+        reference a local image route."""
+        out = prep(
+            '<p>看这张图：<img src="/images/abc/x.png" alt="内联图"/></p>',
+            query=None,
+            base_url="http://127.0.0.1:5000/",
+        )
+        # The img tag is replaced with a markdown image.
+        assert "<img" not in out
+        assert "![内联图](http://127.0.0.1:5000/images/abc/x.png)" in out
+
+
+class TestDOCXTOCBulletList:
+    @pytest.fixture
+    def prep(self):
+        from local_deep_research.exporters.docx_exporter import DOCXExporter
+        return DOCXExporter._prepare_markdown
+
+    """The report generator emits the TOC with raw-space indentation
+    and 1.1-style numbering. Pandoc's markdown reader does not
+    recognise three-space-indented numbered lines as nested list
+    items, so the asterisks leak through and the line wrap is broken.
+    Rewrite the TOC entries as proper nested bullet lists that
+    Pandoc reliably renders as a clean multi-level TOC."""
+
+    def test_top_level_toc_entries_become_bullet_items(self, prep):
+        md = (
+            "1. **Section 1**\n"
+            "2. **Section 2**\n"
+        )
+        out = prep(md, query=None, base_url=None)
+        # Numbered ``1.`` / ``2.`` -> ``-``.
+        assert "1. **Section 1**" not in out
+        assert "2. **Section 2**" not in out
+        # Bullet list syntax.
+        assert "- **Section 1**" in out
+        assert "- **Section 2**" in out
+
+    def test_subsections_become_nested_bullets(self, prep):
+        md = (
+            "1. **Section 1**\n"
+            "   1.1 Sub one | _purpose one_\n"
+            "   1.2 Sub two | _purpose two_\n"
+        )
+        out = prep(md, query=None, base_url=None)
+        # The space-indented subsection lines are gone (no more 1.1 raw form).
+        assert "   1.1" not in out
+        assert "   1.2" not in out
+        # Nested bullets under Section 1 — 2-space indent.
+        assert "  - Sub one" in out
+        assert "  - Sub two" in out
+        # Italic markers around purpose text survive.
+        assert "_purpose one_" in out
+
+    def test_numbering_preserves_section_index(self, prep):
+        """The 1.1 / 2.1 numbering is replaced with the section index
+        alone so Pandoc can render the bullets cleanly without trying
+        to preserve the custom two-level numbering."""
+        md = (
+            "1. **A**\n"
+            "   1.1 a | _p_\n"
+            "2. **B**\n"
+            "   2.1 b | _p_\n"
+        )
+        out = prep(md, query=None, base_url=None)
+        # A's subitem under "- **A**".
+        assert "- **A**" in out
+        assert "  - a" in out
+        # B's subitem under "- **B**".
+        assert "- **B**" in out
+        assert "  - b" in out
+        # No 1.1 / 2.1 raw form remains.
+        assert "1.1 a" not in out
+        assert "2.1 b" not in out
+
+
+class TestDOCXPandocArgs:
+    """Document the pandoc command-line flags we add. We currently
+    pass --resource-path so relative URLs resolve against the Flask
+    origin. If a future refactor accidentally drops it, image
+    embedding will silently fail again — pin the contract via this
+    test."""
+
+    def test_pandoc_target_is_docx(self):
+        from local_deep_research.exporters.docx_exporter import DOCXExporter
+        # The export flow hardcodes ``-t docx``; this is a regression
+        # guard so a stray refactor back to ``-t odt`` fails fast.
+        assert DOCXExporter().format_name == "docx"

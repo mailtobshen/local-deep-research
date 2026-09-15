@@ -128,37 +128,101 @@ class DOCXExporter(BaseExporter):
         """
         md = markdown_content
 
-        # 1) Strip standalone ``---`` rules. A horizontal rule in
-        #    CommonMark is a line containing only ``---`` (optionally
-        #    with up to 3 spaces of indent). Table separator rows
-        #    start with ``|`` so they are unaffected.
-        md = re.sub(r"(?m)^[ \t]{0,3}---[ \t]*\n", "", md)
+        # 1) Convert <figure><img ...>[<figcaption>caption</figcaption>]</figure>
+        #    HTML blocks into standard markdown image syntax. The
+        #    ``images.store.rewrite_markdown`` produces this HTML
+        #    wrapper, but Pandoc's HTML reader does not reliably
+        #    extract images from inside <figure> tags — converting
+        #    to the bare markdown form routes the image through
+        #    Pandoc's well-tested image code path, which then
+        #    fetches the (rewritten) URL and embeds the bytes.
+        #
+        #    The figcaption text is used as the alt-text fallback
+        #    when the <img> has no alt attribute (the existing
+        #    rewrite_markdown emits the figure+caption this way).
+        def _figure_to_md(match):
+            block = match.group(0)
+            img_m = re.search(r"<img[^>]*?/?>", block)
+            if not img_m:
+                return block
+            tag = img_m.group(0)
+            src_m = re.search(r'src="([^"]+)"', tag)
+            alt_m = re.search(r'alt="([^"]*)"', tag)
+            cap_m = re.search(r"<figcaption[^>]*>(.*?)</figcaption>", block, re.DOTALL)
+            if not src_m:
+                return block
+            alt = (alt_m.group(1) if alt_m and alt_m.group(1) else "")
+            if not alt and cap_m:
+                # Strip any nested HTML inside the caption for clean
+                # alt text.
+                alt = re.sub(r"<[^>]+>", "", cap_m.group(1)).strip()
+            return f"![{alt}]({src_m.group(1)})"
 
-        # 2) Reformat the space-indented TOC subsection lines into
-        #    proper nested list items. The report generator emits
-        #    lines like ``   1.1 name | _purpose_`` (3-space indent
-        #    + 1.1 numbering) under each top-level ``1. **Section**``
-        #    entry. We detect these (digit-dot-digit prefix + non-empty
-        #    indent of 3 spaces) and convert to a 4-space nested list
-        #    item while keeping the bold/italic markers intact.
         md = re.sub(
-            r"(?m)^(?P<indent>[ ]{3,3})(?P<num>\d+\.\d+)\s+(?P<body>.+)$",
-            lambda m: f"    {m.group('num').split('.', 1)[0]}. {m.group('body')}",
+            r"<figure[^>]*>.*?</figure>",
+            _figure_to_md,
             md,
+            flags=re.DOTALL,
         )
+        # Also handle standalone <img> tags outside any figure wrapper.
+        def _standalone_img_to_md(match):
+            tag = match.group(0)
+            src_m = re.search(r'src="([^"]+)"', tag)
+            alt_m = re.search(r'alt="([^"]*)"', tag)
+            if not src_m:
+                return tag
+            return f"![{alt_m.group(1) if alt_m else ''}]({src_m.group(1)})"
+        md = re.sub(r"<img[^>]*?/?>", _standalone_img_to_md, md)
 
-        # 3) Rewrite relative ``/images/...`` to absolute under
-        #    ``base_url``. Only touch ``src="..."`` attributes that
-        #    start with a single leading ``/`` (relative-to-host);
-        #    already-absolute ``http://``/``https://``/``data:`` URLs
-        #    pass through unchanged.
+        # 2) Rewrite relative ``/images/...`` URLs in markdown image
+        #    syntax (``(.../images/foo.png)``) to absolute under
+        #    ``base_url``. Done after step 1 so we catch the markdown
+        #    form too, not just raw HTML attributes. Already-absolute
+        #    ``http://``/``https://``/``data:`` URLs pass through
+        #    unchanged.
         if base_url:
             abs_base = base_url.rstrip("/") + "/"
+            md = re.sub(
+                r"\((/images/[^)\s]+)\)",
+                lambda m: f"({abs_base}{m.group(1).lstrip('/')})",
+                md,
+            )
+            # Also rewrite HTML attribute form (covers any leftover
+            # <img src="..."> that the previous step missed).
             md = re.sub(
                 r'src="/(images/[^"]+)"',
                 lambda m: f'src="{abs_base}{m.group(1)}"',
                 md,
             )
+
+        # 3) Strip standalone ``---`` rules. A horizontal rule in
+        #    CommonMark is a line containing only ``---`` (optionally
+        #    with up to 3 spaces of indent). Table separator rows
+        #    start with ``|`` so they are unaffected.
+        md = re.sub(r"(?m)^[ \t]{0,3}---[ \t]*\n", "", md)
+
+        # 4) Reformat the TOC into a proper nested bullet list. The
+        #    report generator emits:
+        #        1. **Section 1**
+        #           1.1 Sub one | _purpose one_
+        #        2. **Section 2**
+        #    Pandoc's markdown reader does NOT treat the three-space
+        #    indent on the subsection line as a nested list item, so
+        #    the asterisks leak through and the line wrap is broken.
+        #    We rewrite the top-level numbered items to bare bullets
+        #    (``-``) and the subsection lines to two-space-indented
+        #    nested bullets so Pandoc's DOCX writer renders a clean
+        #    multi-level TOC.
+        md = re.sub(
+            r"(?m)^(?P<num>\d+)\.\s+(?P<body>\*\*.+\*\*)\s*$",
+            lambda m: f"- {m.group('body')}",
+            md,
+        )
+        md = re.sub(
+            r"(?m)^(?P<indent>[ ]{3,3})\d+\.\d+\s+(?P<body>.+)$",
+            lambda m: f"  - {m.group('body')}",
+            md,
+        )
 
         return md
 
@@ -175,11 +239,13 @@ class DOCXExporter(BaseExporter):
         * 对齐: 居中 (centered)
         * 颜色: 黑色 (default — no ``w:color`` override)
 
-        The query string is HTML-escaped so a malformed query
-        (e.g. containing ``<``) cannot break the XML.
+        The text is the full ``关于{query}的研究报告`` template — not
+        just the raw query. The query string is HTML-escaped so a
+        malformed query (e.g. containing ``<``) cannot break the XML.
         """
+        title_text = f"关于{query}的研究报告"
         safe_text = (
-            query
+            title_text
             .replace("&", "&amp;")
             .replace("<", "&lt;")
             .replace(">", "&gt;")
