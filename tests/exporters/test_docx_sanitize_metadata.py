@@ -908,7 +908,68 @@ class TestDOCXTOCBulletPipeReplaced:
         assert "_purpose two_" in out
 
 
-class TestDOCXRemoveQueryHeading:
+class TestDOCXTOCBulletEdgeCases:
+    """Edge cases the original ``test_bullet_pipe_replaced_with_emdash``
+    didn't cover: body without a pipe, multiple pipes in one body,
+    embedded ``**bold**`` markers the user expects to survive, and
+    CRLF line endings."""
+
+    @pytest.fixture
+    def prep(self):
+        from local_deep_research.exporters.docx_exporter import DOCXExporter
+        return DOCXExporter._prepare_markdown
+
+    def test_bullet_without_pipe_is_unchanged(self, prep):
+        """A subsection line with no pipe still converts to a
+        bullet — the ``|`` replace is a no-op for those."""
+        md = (
+            "1. **Section 1**\n"
+            "   1.1 Plain name without separator\n"
+        )
+        out = prep(md, query=None, base_url=None)
+        assert "  - Plain name without separator" in out
+        assert " — " not in out
+
+    def test_bullet_with_multiple_pipes_replaces_all(self, prep):
+        """``name | a | b`` gets every ``|`` swapped — gives
+        ``name  —  a  —  b``. Ugly but semantically fine; the key
+        contract is that the literal pipe character never reaches
+        Pandoc."""
+        md = (
+            "1. **Section**\n"
+            "   1.1 three | pipes | here\n"
+        )
+        out = prep(md, query=None, base_url=None)
+        assert "|" not in out
+        assert out.count(" — ") == 2  # 3 items separated by 2 pipes
+
+    def test_bullet_preserves_embedded_bold_markers(self, prep):
+        """``**emphasis**`` inside a bullet body must survive so
+        Pandoc can still render it as bold text."""
+        md = (
+            "1. **Section**\n"
+            "   1.1 Sub **bold** name | _purpose_\n"
+        )
+        out = prep(md, query=None, base_url=None)
+        assert "**bold**" in out
+        assert "_purpose_" in out
+        assert " — " in out
+
+    def test_bullet_with_crlf_line_endings_does_not_keep_trailing_cr(self, prep):
+        """Windows reports carry CRLF. In multiline mode the regex's
+        ``$`` matches before ``\n``, so the ``\r`` would land in
+        the captured body without explicit stripping. A trailing
+        ``\r`` in the bullet line would survive into Pandoc and
+        could break rendering."""
+        md_crlf = (
+            "1. **Section**\r\n"
+            "   1.1 Sub name | _purpose_\r\n"
+        )
+        out = prep(md_crlf, query=None, base_url=None)
+        assert "\r" not in out
+        assert " — " in out
+
+
     """LLM-generated report content sometimes starts a chapter with
     ``# <query>`` (the LLM reuses the research question as the
     chapter heading). After my H1→H2 demote this is still rendered
@@ -1017,3 +1078,79 @@ class TestDOCXRemoveQueryHeading:
         assert "量子计算的发展历程" in doc
         # And it still has its Heading2 style (it is a real heading).
         assert 'pStyle w:val="Heading2"/>' in doc
+
+
+class TestDOCXTOCBulletEndToEndPandoc:
+    """End-to-end: take a realistic TOC + body through ``_prepare_markdown``
+    and a real Pandoc run, then assert that the rendered DOCX body has
+    no literal ``****`` characters and no text runs split at the
+    ``|`` separator. This is what the user actually saw in Word —
+    the unit tests above check the markdown prep output, but only a
+    full Pandoc round-trip can prove the user's symptom is gone."""
+
+    @staticmethod
+    def _run_pandoc(markdown: str):
+        """Helper: run _prepare_markdown → pypandoc → bytes."""
+        import sys, io, tempfile, os
+        sys.path.insert(0, "src")
+        import pypandoc  # type: ignore[import-untyped]
+
+        from local_deep_research.exporters.docx_exporter import DOCXExporter
+
+        prepped = DOCXExporter._prepare_markdown(
+            markdown, query=None, base_url=None
+        )
+        with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as f:
+            out_path = f.name
+        pypandoc.convert_text(prepped, "docx", format="md", outputfile=out_path)
+        with open(out_path, "rb") as f:
+            docx_bytes = f.read()
+        os.unlink(out_path)
+        return docx_bytes, prepped
+
+    def test_rendered_toc_has_no_literal_asterisks(self):
+        """The user's report was the TOC showed ``****`` literally —
+        asterisks not being processed as bold by Pandoc. After the
+        pipe→em-dash fix the rendered TOC must not contain any
+        standalone ``*`` runs. Bold text would still appear as
+        ``<w:r><w:rPr>...<w:b/>...</w:rPr><w:t>text</w:t></w:r>`` so
+        we look for an asterisk inside a ``<w:t>`` body."""
+        import re, zipfile
+        realistic_toc = (
+            "# 目录\n\n"
+            "1. **研究背景**\n"
+            "   1.1 量子计算基础 | _介绍量子计算的基本概念_\n"
+            "   1.2 发展历程 | _回顾历史_\n"
+            "2. **核心方法**\n"
+            "   2.1 算法分析 | _Shor算法_\n"
+        )
+        docx_bytes, _prepped = self._run_pandoc(realistic_toc)
+        z = zipfile.ZipFile(__import__("io").BytesIO(docx_bytes))
+        doc = z.read("word/document.xml").decode()
+        # Every <w:t> text — bold or not — must be free of literal *.
+        for text in re.findall(r"<w:t[^>]*>([^<]*)</w:t>", doc):
+            assert "*" not in text, (
+                f"Pandoc left literal '*' in text run {text!r} — "
+                f"the TOC bullet fix did not take effect end-to-end."
+            )
+
+    def test_rendered_toc_has_no_pipe_split_text_runs(self):
+        """The original symptom was Pandoc splitting the run at the
+        ``|`` so the bullet rendered as ``name`` + ``|`` + ``purpose``
+        with the pipe character sitting awkwardly between two runs.
+        After the fix the pipe should not appear in the rendered
+        text at all — only the em-dash separator should."""
+        import re, zipfile
+        toc = (
+            "1. **S**\n"
+            "   1.1 Sub one | _purpose one_\n"
+        )
+        docx_bytes, _prepped = self._run_pandoc(toc)
+        z = zipfile.ZipFile(__import__("io").BytesIO(docx_bytes))
+        doc = z.read("word/document.xml").decode()
+        # No literal pipe character anywhere in the body text runs.
+        for text in re.findall(r"<w:t[^>]*>([^<]*)</w:t>", doc):
+            assert "|" not in text, (
+                f"Pandoc left literal '|' in text run {text!r} — "
+                f"the pipe-split bug is not actually fixed."
+            )

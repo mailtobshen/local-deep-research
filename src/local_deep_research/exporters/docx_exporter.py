@@ -237,8 +237,12 @@ class DOCXExporter(BaseExporter):
             md,
         )
         md = re.sub(
-            r"(?m)^(?P<indent>[ ]{3,3})\d+\.\d+\s+(?P<body>.+)$",
-            lambda m: f"  - {m.group('body').replace('|', ' — ')}",
+            r"(?m)^(?P<indent>[ ]{3,3})\d+\.\d+\s+(?P<body>.+?)\r?$",
+            # Strip a trailing ``\r`` first — Windows CRLF reports
+            # would otherwise carry it through into the bullet body
+            # and break Pandoc's parser. The ``(?P<body>.+?)`` is
+            # non-greedy so we don't accidentally eat the whole file.
+            lambda m: f"  - {m.group('body').rstrip(chr(13)).replace('|', ' — ')}",
             md,
         )
 
