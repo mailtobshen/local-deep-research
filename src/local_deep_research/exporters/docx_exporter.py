@@ -79,6 +79,49 @@ class DOCXExporter(BaseExporter):
     # markdown body (it would produce a duplicate title in Word).
 
 
+
+    @staticmethod
+    def _rewrite_toc_paragraph(m):
+        """Convert one LDR TOC entry into a hierarchy of plain-text
+        lines (returned as a single string with embedded newlines).
+        Contract — see step 4 in ``_prepare_markdown``.
+        """
+        DOCXExporter._TOC_SECTION_COUNTER[0] += 1
+        section_num = DOCXExporter._TOC_SECTION_COUNTER[0]
+        sec = m.group("sec").strip()
+        lines = [f"**{section_num}.{sec}**", ""]
+        for part in re.split(
+            r"(?<=\S)\s+(?=\d+\.\d+\s+\S)",
+            m.group("subs"),
+        ):
+            sub_m = re.match(r"^(\d+)\.(\d+)\s+(.+)$", part.strip())
+            if sub_m:
+                # Collapse multi-space and replace ``|`` with em-dash.
+                body = re.sub(
+                    r"\s+",
+                    " ",
+                    sub_m.group(3).replace("|", " — ").strip(),
+                )
+                # 4-space indent shows the hierarchy under the
+                # section header line above.
+                # Use the auto-incremented section_num (NOT
+                # sub_m.group(1), which is the LDR's per-section
+                # subsection prefix — that's the M part). The output
+                # is N.M, where N comes from the counter and M comes
+                # from the LDR subsection suffix.
+                lines.append(f"#### {section_num}.{sub_m.group(2)}{body}")
+            lines.append("")  # blank line between subsections
+        # Trailing newline ensures the next section's body starts
+        # on its own line (otherwise the previous subsection's last
+        # token glues onto ``**N.Section**``).
+        # Blank line between sections so Pandoc produces separate
+        # paragraphs instead of one merged soft-break blob.
+        joined = "\n".join(lines) + "\n"
+        joined = joined + "\n"
+        return joined
+
+    _TOC_SECTION_COUNTER = [0]
+
     @staticmethod
     def _prepare_markdown(
         markdown_content: str,
@@ -246,42 +289,30 @@ class DOCXExporter(BaseExporter):
         #    start with ``|`` so they are unaffected.
         md = re.sub(r"(?m)^[ \t]{0,3}---[ \t]*\n", "", md)
 
-        # 4) Reformat the TOC into a proper nested bullet list. The
-        #    report generator emits:
-        #        1. **Section 1**
-        #           1.1 Sub one | _purpose one_
-        #        2. **Section 2**
-        #    Pandoc's markdown reader does NOT treat the three-space
-        #    indent on the subsection line as a nested list item, so
-        #    the asterisks leak through and the line wrap is broken.
-        #    We rewrite the top-level numbered items to bare bullets
-        #    (``-``) and the subsection lines to two-space-indented
-        #    nested bullets so Pandoc's DOCX writer renders a clean
-        #    multi-level TOC.
+        # 4) Rewrite each LDR-generated TOC paragraph as a small
+        #    hierarchy of plain-text lines:
+        #
+        #        ****<SectionName>**** N.1 sub | desc N.2 sub | desc
+        #
+        #    becomes:
+        #
+        #        **N.SectionName**            ← bold, unindented
+        #            N.1sub — desc               ← plain text, 4-space indent
+        #            N.2sub — desc               ← plain text, 4-space indent
+        #
+        #    Three contract points:
+        #    • No markdown bullet markers (``- ``) — Word renders them
+        #      as round circles, which the user rejected.
+        #    • No section-name prefix on the subsection lines (the old
+        #      ``**Title N.M content**`` format duplicated ``Title``
+        #      on every line and was rejected).
+        #    • Section header uses standard 2-asterisk ``**...**`` bold
+        #      form which Pandoc consumes cleanly (the user's earlier
+        #      "**** 没转义" complaint was about LDR's 4-asterisk
+        #      ``****X****`` form which is unhandled).
         md = re.sub(
-            r"(?m)^(?P<num>\d+)\.\s+(?P<body>\*\*.+\*\*)\s*$",
-            # KEEP the digit prefix and the body as-is. We do NOT
-            # wrap in a ``- `` bullet here — Word renders that as a
-            # round bullet circle, which the user explicitly did not
-            # want. The number stays as plain text in front of the
-            # bold section name.
-            lambda m: f"{m.group('num')}. {m.group('body')}",
-            md,
-        )
-        md = re.sub(
-            r"(?m)^(?P<indent>[ ]{0,3})(?P<num>\d+\.\d+)\s+(?P<body>.+?)\r?$",
-            # Match 0 to 3 leading spaces + the subsection number
-            # (e.g. ``1.1`` / ``2.1``) + whitespace + body. We do NOT
-            # wrap in a ``- `` bullet here — that rendered as a round
-            # bullet circle in Word, which the user explicitly did not
-            # want. Keep the original LDR numbering as plain text
-            # (the number stays in front of the description text, no
-            # bullet marker) and only rewrite the ``|`` separator.
-            #
-            # Strip a trailing ``\r`` first — Windows CRLF reports
-            # would otherwise carry it through into the body and
-            # break Pandoc's parser.
-            lambda m: re.sub(r'  +', ' ', f"{m.group('num')} {m.group('body').rstrip(chr(13)).replace('|', ' — ')}"),
+            r"(?ms)^\*{2,}(?P<sec>[^*\n]+?)\*{2,}(?:\s*\n(?P<subs>(?:\d+\.\d+\s+[^\n]+(?:\s*\n|$))+))(?=^\*{2,}|\Z)",
+            lambda m: DOCXExporter._rewrite_toc_paragraph(m),
             md,
         )
 
@@ -333,59 +364,6 @@ class DOCXExporter(BaseExporter):
             md,
         )
 
-
-        # 4c) Merge each LDR subsection with the preceding section
-        #     title into a single bold line ``**Title N.X content**``.
-        #     Without this, the restructure step produced one long
-        #     paragraph where Pandoc collapsed the single-newline
-        #     separators into soft breaks; the user saw everything on
-        #     one line and called it ``没有正确换行`` plus asked for
-        #     subsections to merge into the section title.
-        #
-        #     Process line by line: track the most recent standalone
-        #     section title (``**X**``) and prepend ``X `` to each
-        #     subsequent numbered subsection line, dropping the
-        #     standalone title row entirely (its content is now folded
-        #     into each subsection). On a blank line or another title
-        #     we reset the tracker.
-        lines = md.split("\n")
-        merged: list[str] = []
-        current_title: str | None = None
-        section_sub: str | None = None
-        saw_merged: bool = False  # any merged subsection emitted yet?
-        for line in lines:
-            # Standalone bold title line: ``**X**``.
-            stripped = line.strip()
-            sec_m = re.match(r"^\*\*([^\*\n]+)\*\*$", stripped)
-            if sec_m and not re.match(r"^\d+\.\d+", stripped):
-                section_sub = sec_m.group(1).strip()
-                current_title = section_sub
-                continue
-            # Blank line = section boundary. Drop the standalone
-            # title group, reset.
-            if not stripped:
-                current_title = None
-                section_sub = None
-                if merged:
-                    merged.append("")
-                continue
-            # Numbered subsection line — merge with current title.
-            sub_m = re.match(r"^(\d+\.\d+)\s+(.*)$", stripped)
-            if sub_m and current_title is not None:
-                # Insert a BLANK LINE before each merged subsection
-                # AFTER the first one. Without it, Pandoc joins
-                # consecutive bold paragraphs with a soft break —
-                # they all collapse into one line in the rendered
-                # DOCX, which is exactly the user's "换行乱" bug.
-                if saw_merged:
-                    merged.append("")
-                saw_merged = True
-                merged.append(
-                    f"**{current_title} {sub_m.group(1)} {sub_m.group(2).strip()}**"
-                )
-                continue
-            merged.append(line)
-        md = "\n".join(merged)
 
         # 5) Demote every body H1 to H2 (and every H2 to H3) so the
         #    only H1 in the rendered document is the user-requested

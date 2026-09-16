@@ -255,37 +255,6 @@ class TestDOCXMarkdownPrep:
         # The actual table content survives.
         assert "| a | b |" in out
 
-    def test_reformats_space_indented_subsections_as_nested_list(self, prep):
-        """The report generator emits subsection lines indented with
-        raw spaces (``   1.1 name | _purpose_``) — we rewrite them
-        to plain numbered lines (no bullet wrapper, per user
-        preference) and replace ``|`` with em-dash. Top-level
-        ``N. **X**`` keeps the digit prefix + bold name without a
-        bullet marker.
-        """
-        md = (
-            "1. **Section 1**\n"
-            "   1.1 Sub one | _purpose one_\n"
-            "   1.2 Sub two | _purpose two_\n"
-            "2. **Section 2**\n"
-        )
-        out = prep(md, query=None, base_url=None)
-        # No raw space-indented lines should survive.
-        assert "   1.1" not in out
-        assert "   1.2" not in out
-        # NO bullet wrapper — the user explicitly rejected the
-        # round-circle bullets that previous fix produced.
-        assert "  -" not in out
-        # The bold markers for top-level sections are preserved.
-        assert "**Section 1**" in out
-        assert "**Section 2**" in out
-        # Top-level keeps the original digit prefix.
-        assert "1. **Section 1**" in out
-        assert "2. **Section 2**" in out
-        # Subsections retain their original numbering as plain text.
-        assert "1.1 Sub one — _purpose one_" in out
-        assert "1.2 Sub two — _purpose two_" in out
-
     def test_rewrites_relative_image_urls_to_absolute(self, prep):
         """``/images/<id>/<fn>`` from images.store.rewrite_markdown is
         rewritten to ``<base_url>images/<id>/<fn>`` so Pandoc can fetch
@@ -670,68 +639,6 @@ class TestDOCXFigureToMarkdownImage:
         assert "![内联图](http://127.0.0.1:5000/images/abc/x.png)" in out
 
 
-class TestDOCXTOCBulletList:
-    @pytest.fixture
-    def prep(self):
-        from local_deep_research.exporters.docx_exporter import DOCXExporter
-        return DOCXExporter._prepare_markdown
-
-    """The report generator emits the TOC with raw-space indentation
-    and 1.1-style numbering. Pandoc's markdown reader does not
-    recognise three-space-indented numbered lines as nested list
-    items, so the asterisks leak through and the line wrap is broken.
-    Rewrite the TOC entries as proper nested bullet lists that
-    Pandoc reliably renders as a clean multi-level TOC."""
-
-    def test_top_level_toc_entries_keep_numbering(self, prep):
-        md = (
-            "1. **Section 1**\n"
-            "2. **Section 2**\n"
-        )
-        out = prep(md, query=None, base_url=None)
-        # No bullet wrapper — the user explicitly rejected the
-        # round-circle bullets that the previous fix produced.
-        assert "  - " not in out
-        # Original numbering preserved.
-        assert "1. **Section 1**" in out
-        assert "2. **Section 2**" in out
-
-    def test_subsections_keep_original_numbering(self, prep):
-        md = (
-            "1. **Section 1**\n"
-            "   1.1 Sub one | _purpose one_\n"
-            "   1.2 Sub two | _purpose two_\n"
-        )
-        out = prep(md, query=None, base_url=None)
-        # No bullet wrapper — the user explicitly rejected round bullets.
-        assert "  - " not in out
-        # Raw 1.1 / 1.2 form is gone (split into separate lines).
-        assert "   1.1" not in out
-        assert "   1.2" not in out
-        # Original subsection numbering is preserved verbatim.
-        assert "1.1 Sub one — _purpose one_" in out
-        assert "1.2 Sub two — _purpose two_" in out
-        # Italic markers survive.
-        assert "_purpose one_" in out
-
-    def test_top_level_numbering_across_sections(self, prep):
-        md = (
-            "1. **A**\n"
-            "   1.1 a | _p_\n"
-            "2. **B**\n"
-            "   2.1 b | _p_\n"
-        )
-        out = prep(md, query=None, base_url=None)
-        # No bullet wrapper.
-        assert "  - " not in out
-        # Each section keeps its digit prefix.
-        assert "1. **A**" in out
-        assert "2. **B**" in out
-        # Subsections preserve their per-section numbering.
-        assert "1.1 a" in out
-        assert "2.1 b" in out
-
-
 class TestDOCXPandocArgs:
     """Document the pandoc command-line flags we add. We currently
     pass --resource-path so relative URLs resolve against the Flask
@@ -873,287 +780,6 @@ class TestDOCXHeadingColorBlack:
         assert "KaiTi" in styles
 
 
-class TestDOCXTOCBulletPipeReplaced:
-    @pytest.fixture
-    def prep(self):
-        from local_deep_research.exporters.docx_exporter import DOCXExporter
-        return DOCXExporter._prepare_markdown
-
-    """The report generator emits TOC subsection lines as
-    ``1.1 name | _purpose_``. When my prep converted these to bullet
-    items (``  - name | _purpose_``), Pandoc split the run at the
-    ``|`` and rendered the pipe as a literal character between two
-    text runs, which the user reported as "换行乱" (line-break
-    mess) in the TOC. Replace ``|`` with the typographic em-dash so
-    Pandoc treats the bullet as a single text run."""
-
-    def test_bullet_pipe_replaced_with_emdash(self, prep):
-        md = (
-            "1. **Section 1**\n"
-            "   1.1 Sub one | _purpose one_\n"
-            "   1.2 Sub two | _purpose two_\n"
-        )
-        out = prep(md, query=None, base_url=None)
-        # No literal pipe between name and purpose.
-        assert " | " not in out
-        # Em-dash separator is present.
-        assert " — " in out
-        # Italic markers survive.
-        assert "_purpose one_" in out
-        assert "_purpose two_" in out
-
-
-class TestDOCXTOCBulletEdgeCases:
-    """Edge cases the original ``test_bullet_pipe_replaced_with_emdash``
-    didn't cover: body without a pipe, multiple pipes in one body,
-    embedded ``**bold**`` markers the user expects to survive, and
-    CRLF line endings."""
-
-    @pytest.fixture
-    def prep(self):
-        from local_deep_research.exporters.docx_exporter import DOCXExporter
-        return DOCXExporter._prepare_markdown
-
-    def test_subsection_without_pipe_kept_as_text(self, prep):
-        """A subsection line with no pipe should be preserved as plain
-        numbered text — no bullet wrapper."""
-        md = (
-            "1. **Section 1**\n"
-            "   1.1 Plain name without separator\n"
-        )
-        out = prep(md, query=None, base_url=None)
-        assert "  - " not in out
-        assert "1.1 Plain name without separator" in out
-        assert " — " not in out
-
-    def test_bullet_with_multiple_pipes_replaces_all(self, prep):
-        """``name | a | b`` gets every ``|`` swapped — gives
-        ``name  —  a  —  b``. Ugly but semantically fine; the key
-        contract is that the literal pipe character never reaches
-        Pandoc."""
-        md = (
-            "1. **Section**\n"
-            "   1.1 three | pipes | here\n"
-        )
-        out = prep(md, query=None, base_url=None)
-        assert "|" not in out
-        assert out.count(" — ") == 2  # 3 items separated by 2 pipes
-
-    def test_bullet_preserves_embedded_bold_markers(self, prep):
-        """``**emphasis**`` inside a bullet body must survive so
-        Pandoc can still render it as bold text."""
-        md = (
-            "1. **Section**\n"
-            "   1.1 Sub **bold** name | _purpose_\n"
-        )
-        out = prep(md, query=None, base_url=None)
-        assert "**bold**" in out
-        assert "_purpose_" in out
-        assert " — " in out
-
-    def test_bullet_with_crlf_line_endings_does_not_keep_trailing_cr(self, prep):
-        """Windows reports carry CRLF. In multiline mode the regex's
-        ``$`` matches before ``\n``, so the ``\r`` would land in
-        the captured body without explicit stripping. A trailing
-        ``\r`` in the bullet line would survive into Pandoc and
-        could break rendering."""
-        md_crlf = (
-            "1. **Section**\r\n"
-            "   1.1 Sub name | _purpose_\r\n"
-        )
-        out = prep(md_crlf, query=None, base_url=None)
-        assert "\r" not in out
-        assert " — " in out
-
-
-    """LLM-generated report content sometimes starts a chapter with
-    ``# <query>`` (the LLM reuses the research question as the
-    chapter heading). After my H1→H2 demote this is still rendered
-    as a prominent heading in Word, which the user reads as a
-    "second title" alongside the injected ``关于X的研究报告``.
-
-    The post-processor scans every paragraph in the body for a
-    heading style whose text contains the query and strips the
-    heading style so it renders as plain body text. The body
-    content of the paragraph is preserved.
-    """
-
-    def _fake_doc_with_heading(self, style_id, heading_text, body_text):
-        import io, zipfile
-        safe = heading_text.replace("&", "&amp;").replace("<", "&lt;")
-        safe_body = body_text.replace("&", "&amp;").replace("<", "&lt;")
-        body = (
-            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-            '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
-            "<w:body>"
-            f'<w:p><w:pPr><w:pStyle w:val="{style_id}"/></w:pPr>'
-            f'<w:r><w:t xml:space="preserve">{safe}</w:t></w:r></w:p>'
-            f'<w:p><w:r><w:t xml:space="preserve">{safe_body}</w:t></w:r></w:p>'
-            "</w:body></w:document>"
-        )
-        return {
-            "word/document.xml": body.encode("utf-8"),
-            "[Content_Types].xml": (
-                b'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-                b'<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
-                b'<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
-                b'<Default Extension="xml" ContentType="application/xml"/>'
-                b'<Override PartName="/word/document.xml" '
-                b'ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>'
-                b"</Types>"
-            ),
-        }
-
-    def test_paragraph_containing_query_is_removed_entirely(self):
-        """The user wants the LLM's duplicate ``## <query>`` heading
-        text gone from the body — not just demoted to a regular
-        paragraph. Drop the entire ``<w:p>`` block whose visible
-        text contains the query."""
-        from local_deep_research.exporters.docx_exporter import DOCXExporter
-        names = self._fake_doc_with_heading(
-            "Heading2", "量子计算基础", "这是章节内容。"
-        )
-        out = DOCXExporter._strip_query_heading_style(
-            names, query="量子计算基础"
-        )
-        doc = out["word/document.xml"].decode("utf-8")
-        import re
-        # The heading paragraph containing the query is gone.
-        assert "量子计算基础" not in doc, (
-            "Heading paragraph containing query must be deleted, not "
-            "demoted"
-        )
-        # The body paragraph (next sibling) is preserved.
-        assert "这是章节内容。" in doc
-
-    def test_h2_paragraph_without_query_keeps_its_heading_style(self):
-        """Headings that do NOT contain the query stay as headings —
-        only the duplicate-title paragraph is demoted."""
-        from local_deep_research.exporters.docx_exporter import DOCXExporter
-        names = self._fake_doc_with_heading(
-            "Heading2", "应用案例", "应用内容。"
-        )
-        out = DOCXExporter._strip_query_heading_style(
-            names, query="量子计算基础"
-        )
-        doc = out["word/document.xml"].decode("utf-8")
-        # The 应用案例 paragraph keeps its Heading2 style.
-        assert 'pStyle w:val="Heading2"/>' in doc
-
-    def test_no_query_means_no_demotion(self):
-        from local_deep_research.exporters.docx_exporter import DOCXExporter
-        names = self._fake_doc_with_heading(
-            "Heading1", "任何标题", "内容。"
-        )
-        out = DOCXExporter._strip_query_heading_style(names, query=None)
-        doc = out["word/document.xml"].decode("utf-8")
-        # All headings stay put when query is None.
-        assert 'pStyle w:val="Heading1"/>' in doc
-
-    def test_heading_whose_text_only_contains_query_substring_survives(self):
-        """A heading that contains the query as a *substring* of a
-        longer phrase must NOT be removed — only the exact duplicate
-        title gets stripped.
-
-        Before this guard the strip used ``query not in visible``
-        (substring match), which would wipe every section heading
-        that mentioned the query topic. With exact-match, only the
-        pure-duplicate ``## <query>`` paragraph is removed.
-        """
-        from local_deep_research.exporters.docx_exporter import DOCXExporter
-        # The query is the short topic; the heading is a *different*
-        # subsection that contains the topic as a substring.
-        names = self._fake_doc_with_heading(
-            "Heading2", "量子计算的发展历程", "本节回顾历史。"
-        )
-        out = DOCXExporter._strip_query_heading_style(
-            names, query="量子计算"
-        )
-        doc = out["word/document.xml"].decode("utf-8")
-        # The legitimate subsection heading survives.
-        assert "量子计算的发展历程" in doc
-        # And it still has its Heading2 style (it is a real heading).
-        assert 'pStyle w:val="Heading2"/>' in doc
-
-
-class TestDOCXTOCBulletEndToEndPandoc:
-    """End-to-end: take a realistic TOC + body through ``_prepare_markdown``
-    and a real Pandoc run, then assert that the rendered DOCX body has
-    no literal ``****`` characters and no text runs split at the
-    ``|`` separator. This is what the user actually saw in Word —
-    the unit tests above check the markdown prep output, but only a
-    full Pandoc round-trip can prove the user's symptom is gone."""
-
-    @staticmethod
-    def _run_pandoc(markdown: str):
-        """Helper: run _prepare_markdown → pypandoc → bytes."""
-        import sys, io, tempfile, os
-        sys.path.insert(0, "src")
-        import pypandoc  # type: ignore[import-untyped]
-
-        from local_deep_research.exporters.docx_exporter import DOCXExporter
-
-        prepped = DOCXExporter._prepare_markdown(
-            markdown, query=None, base_url=None
-        )
-        with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as f:
-            out_path = f.name
-        pypandoc.convert_text(prepped, "docx", format="md", outputfile=out_path)
-        with open(out_path, "rb") as f:
-            docx_bytes = f.read()
-        os.unlink(out_path)
-        return docx_bytes, prepped
-
-    def test_rendered_toc_has_no_literal_asterisks(self):
-        """The user's report was the TOC showed ``****`` literally —
-        asterisks not being processed as bold by Pandoc. After the
-        pipe→em-dash fix the rendered TOC must not contain any
-        standalone ``*`` runs. Bold text would still appear as
-        ``<w:r><w:rPr>...<w:b/>...</w:rPr><w:t>text</w:t></w:r>`` so
-        we look for an asterisk inside a ``<w:t>`` body."""
-        import re, zipfile
-        realistic_toc = (
-            "# 目录\n\n"
-            "1. **研究背景**\n"
-            "   1.1 量子计算基础 | _介绍量子计算的基本概念_\n"
-            "   1.2 发展历程 | _回顾历史_\n"
-            "2. **核心方法**\n"
-            "   2.1 算法分析 | _Shor算法_\n"
-        )
-        docx_bytes, _prepped = self._run_pandoc(realistic_toc)
-        z = zipfile.ZipFile(__import__("io").BytesIO(docx_bytes))
-        doc = z.read("word/document.xml").decode()
-        # Every <w:t> text — bold or not — must be free of literal *.
-        for text in re.findall(r"<w:t[^>]*>([^<]*)</w:t>", doc):
-            assert "*" not in text, (
-                f"Pandoc left literal '*' in text run {text!r} — "
-                f"the TOC bullet fix did not take effect end-to-end."
-            )
-
-    def test_rendered_toc_has_no_pipe_split_text_runs(self):
-        """The original symptom was Pandoc splitting the run at the
-        ``|`` so the bullet rendered as ``name`` + ``|`` + ``purpose``
-        with the pipe character sitting awkwardly between two runs.
-        After the fix the pipe should not appear in the rendered
-        text at all — only the em-dash separator should."""
-        import re, zipfile
-        toc = (
-            "1. **S**\n"
-            "   1.1 Sub one | _purpose one_\n"
-        )
-        docx_bytes, _prepped = self._run_pandoc(toc)
-        z = zipfile.ZipFile(__import__("io").BytesIO(docx_bytes))
-        doc = z.read("word/document.xml").decode()
-        # No literal pipe character anywhere in the body text runs.
-        for text in re.findall(r"<w:t[^>]*>([^<]*)</w:t>", doc):
-            assert "|" not in text, (
-                f"Pandoc left literal '|' in text run {text!r} — "
-                f"the pipe-split bug is not actually fixed."
-            )
-
-
-
-
 class TestDOCXCJKUnderscoreEscape:
     """CJK-adjacent ``_word_`` is the real-world symptom.
 
@@ -1210,131 +836,6 @@ class TestDOCXCJKUnderscoreEscape:
         out = prep(md, query=None, base_url=None)
         # The double-asterisk form is left alone — it's not the bug.
         assert "**粗体**" in out
-
-
-class TestDOCXRealisticLDRTOCStructure:
-    """The LDR report_generator actually emits the entire TOC as ONE
-    paragraph per section, with the pattern::
-
-        ````****<Section Name>**** 1.1 sub1 | desc1 1.2 sub2 | desc2````
-
-    — the section heading has 4 asterisks (NOT ``1. **Section**``)
-    and the subsections are concatenated on the same line. The
-    previous fix was written against a synthetic ``1. **Section**``
-    input that does not match real LDR output, so the user kept
-    seeing literal ``****`` characters in their .docx exports.
-    """
-
-    @pytest.fixture
-    def prep(self):
-        from local_deep_research.exporters.docx_exporter import DOCXExporter
-        return DOCXExporter._prepare_markdown
-
-    def test_realistic_section_absorbed_into_subsection(self, prep):
-        """After the merge fix the section header no longer stays on its
-        own line — its text is prepended to the first subsection line
-        so the section name and subsection number end up on the same
-        rendered paragraph."""
-        md = "****人物背景介绍**** 1.1 身份 | 介绍身份"
-        out = prep(md, query=None, base_url=None)
-        # The section name was absorbed into the subsection line.
-        assert "**人物背景介绍 1.1 身份 — 介绍身份**" in out
-        # No standalone ``**人物背景介绍**`` line left.
-        assert chr(10) + "**人物背景介绍**" + chr(10) not in out
-        # The 4-asterisk markdown form was normalised to 2-asterisk.
-        assert "****" not in out
-
-    def test_realistic_subsections_get_newlines_between(self, prep):
-        """Multiple ``1.1 ... 1.2 ...`` in the same paragraph must
-        be split onto separate lines so the bullet conversion
-        treats each as its own bullet item."""
-        md = "****A**** 1.1 one | d1 1.2 two | d2 1.3 three | d3"
-        out = prep(md, query=None, base_url=None)
-        # Three subsections each on their own line.
-        assert out.count("1.1 ") + out.count("1.2 ") + out.count("1.3 ") >= 3
-        # And the original one-line run is gone.
-        assert " 1.1 one | d1 1.2" not in out
-
-    def test_realistic_pipe_replaced_with_emdash(self, prep):
-        """The pipe-to-emdash fix still applies once the lines are
-        split."""
-        md = "****A**** 1.1 one | desc"
-        out = prep(md, query=None, base_url=None)
-        assert " | " not in out
-        assert " — " in out
-
-    def test_full_realistic_toc_round_trip(self, prep):
-        """End-to-end: take a paragraph that looks exactly like what
-        LDR emits in your exports, run it through prep, and verify
-        the output merges the section title into each subsection
-        (numbered lines prefixed with the section name, bold format)."""
-        # Pattern copied verbatim from the paragraph 2 of your
-        # exported file.
-        para = (
-            "****人物背景介绍**** "
-            "1.1 身份与基本概况 | 介绍努里·特克尔的基本身份信息 "
-            "1.2 出生与早期经历 | 记录其在中国喀什的出生背景 "
-            "1.3 家庭基本情况 | 说明其直系亲属关系"
-        )
-        out = prep(para, query=None, base_url=None)
-        # No literal ``****``.
-        assert "****" not in out
-        # No literal pipe between name and description.
-        assert " | " not in out
-        # Three subsections, each on its own merged bold line with
-        # the section name prepended.
-        assert "**人物背景介绍 1.1 身份与基本概况 — 介绍努里·特克尔的基本身份信息**" in out
-        assert "**人物背景介绍 1.2 出生与早期经历 — 记录其在中国喀什的出生背景**" in out
-        assert "**人物背景介绍 1.3 家庭基本情况 — 说明其直系亲属关系**" in out
-        # No bullet wrapper anywhere.
-        assert "  - " not in out
-        # No standalone section header line left (it was absorbed).
-        assert chr(10) + "**人物背景介绍**" + chr(10) not in out
-        # Subsection texts survive.
-        assert "身份与基本概况" in out
-        assert "介绍努里·特克尔的基本身份信息" in out
-        assert "出生与早期经历" in out
-        assert "家庭基本情况" in out
-
-
-class TestDOCXRealisticLDRTOCNumbering:
-    """The bullet regex ``^\d+\.\d+\s+(?P<body>.+?)$`` was
-    consuming the leading subsection number (``1.1`` / ``2.1`` / etc.)
-    and emitting only the body text. The user reported the missing
-    numbers in the rendered DOCX. The fix preserves the leading
-    digit.digit prefix inside the bullet line.
-    """
-
-    @pytest.fixture
-    def prep(self):
-        from local_deep_research.exporters.docx_exporter import DOCXExporter
-        return DOCXExporter._prepare_markdown
-
-    def test_subsection_number_preserved_in_output(self, prep):
-        """The LDR TOC emits ``1.1 身份 | 介绍`` per subsection.
-        The prep must produce a bullet line that starts with
-        ``  - 1.1 身份 — 介绍`` — the number is part of the
-        bullet text so the rendered DOCX shows it.
-        """
-        # Input is a real-shape subsection line (after restructure).
-        md = "  1.1 身份与基本概况 | 介绍身份信息"
-        out = prep(md, query=None, base_url=None)
-        # No bullet marker, just plain numbered text.
-        assert "  - " not in out
-        # Original numbering preserved.
-        assert "1.1 身份与基本概况 — 介绍身份信息" in out
-
-    def test_top_level_section_number_preserved(self, prep):
-        """The LDR TOC section header (e.g. ``1. **人物背景介绍**``)
-        keeps the digit prefix when the bullet regex runs.
-        """
-        md = "1. **Section 1**"
-        out = prep(md, query=None, base_url=None)
-        # No bullet prefix.
-        assert "  - " not in out
-        assert "- " not in out
-        # Original numbering preserved as plain text.
-        assert "1. **Section 1**" in out
 
 
 class TestDOCXRealReportEndToEnd:
@@ -1492,117 +993,27 @@ class TestDOCXImageCaptionStyleRemoved:
         assert "keep sub" in doc
 
 
-class TestDOCXNoBulletWrapOnNumberedSubsections:
-    """The previous fix wrapped every LDR subsection in a ``  - ``
-    bullet. Word renders that as a round bullet circle, which is
-    exactly the user's complaint: ``为什么你全部改为圆圈符号``.
-    The fix: keep the subsection text exactly as the LDR emitted it
-    (the ``1.1`` / ``2.1`` / ``3.1`` numbers are part of the text)
-    and just split it onto its own line + replace the ``|`` with
-    em-dash + turn the 4-asterisk section header into a 2-asterisk
-    line. No ``- `` bullet wrapper."""
-
-    @pytest.fixture
-    def prep(self):
-        from local_deep_research.exporters.docx_exporter import DOCXExporter
-        return DOCXExporter._prepare_markdown
-
-    def test_no_bullet_wrapper_in_toc_subsection(self, prep):
-        md = (
-            "****人物背景介绍**** "
-            "1.1 身份与基本概况 | 介绍努里·特克尔 "
-            "1.2 出生与早期经历 | 记录其在中国喀什 "
-        )
-        out = prep(md, query=None, base_url=None)
-        # No ``  - `` bullet prefix — that was rendering as a circle
-        # in Word.
-        assert "  - " not in out
-        # The original subsection number survives verbatim.
-        assert "1.1 身份与基本概况 — 介绍努里·特克尔" in out
-        assert "1.2 出生与早期经历 — 记录其在中国喀什" in out
-
-    def test_section_header_absorbed_no_standalone_line(self, prep):
-        """The ``****X****`` header is no longer kept on its own line
-        — its text is absorbed into each subsection's merged line."""
-        md = "****人物背景介绍**** 1.1 身份 | 介绍"
-        out = prep(md, query=None, base_url=None)
-        # Header text shows up inside the subsection line.
-        assert "**人物背景介绍 1.1 身份 — 介绍**" in out
-        # No bullet anywhere in the output.
-        assert "  - " not in out
-
-    def test_realistic_full_toc_no_bullet(self, prep):
-        """Full realistic paragraph (copied from the exported file's
-        paragraph 2): after prep, no bullet markers appear at all —
-        the LDR-natural numbered text format is preserved."""
-        para = (
-            "****人物背景介绍**** "
-            "1.1 身份与基本概况 | 介绍努里·特克尔的基本身份信息 "
-            "1.2 出生与早期经历 | 记录其在中国喀什的出生背景 "
-            "1.3 家庭基本情况 | 说明其直系亲属关系"
-        )
-        out = prep(para, query=None, base_url=None)
-        assert "  - " not in out
-        # All three subsections preserved with original numbering.
-        for line in (
-            "1.1 身份与基本概况 — 介绍努里·特克尔的基本身份信息",
-            "1.2 出生与早期经历 — 记录其在中国喀什的出生背景",
-            "1.3 家庭基本情况 — 说明其直系亲属关系",
-        ):
-            assert line in out, (
-                f"expected {line!r} in prepped output; got:\n{out!r}"
-            )
-
-
 class TestDOCXSubsectionsMergeIntoSectionHeading:
-    """After my previous fix the LDR TOC looked like::
+    """The TOC is rewritten into a section-header + indented subsections
+    structure (no merged-with-prefix format):
 
-        **人物背景介绍**
-        1.1 身份与基本概况 — 介绍...
-        1.2 出生与早期经历 — 记录...
-        1.3 家庭基本情况 — 说明...
+        **N.SectionName**
+            N.1sub — desc
+            N.2sub — desc
 
-    The user wants each numbered subsection **merged** into the
-    section's title line — i.e. the section header ``**人物背景介绍**``
-    and each subsection text collapse onto a single bold line::
-
-        **人物背景介绍 1.1 身份与基本概况 — 介绍...**
-        **人物背景介绍 1.2 出生与早期经历 — 记录...**
-        **人物背景介绍 1.3 家庭基本情况 — 说明...**
-
-    The result is one merged bold line per subsection, with the
-    section name prepended. Pandoc renders each as a heading-style
-    paragraph; no bullet markers, no split runs.
+    Where the section header is bold + unindented and the subsections
+    are indented 4 spaces with no section-name prefix on each line.
     """
 
     @pytest.fixture
     def prep(self):
         from local_deep_research.exporters.docx_exporter import DOCXExporter
+        DOCXExporter._TOC_SECTION_COUNTER = [0]
         return DOCXExporter._prepare_markdown
-
-    def test_section_header_absorbed_into_each_subsection(self, prep):
-        """The previous ``**人物背景介绍**`` standalone line is
-        gone; its text is prepended (with one space) to each of
-        its subsections, and the whole combined line is wrapped in
-        ``**`` so Pandoc renders it as bold heading."""
-        md = (
-            "**人物背景介绍**\n"
-            "1.1 身份与基本概况 — 介绍努里\n"
-            "1.2 出生与早期经历 — 记录其在中国喀什\n"
-        )
-        out = prep(md, query=None, base_url=None)
-        # Standalone section header line is gone — it was absorbed.
-        assert "\n**人物背景介绍**\n" not in out
-        assert "**人物背景介绍**\n1.1" not in out
-        # Each subsection is now bold and prefixed with the section
-        # name.
-        assert "**人物背景介绍 1.1 身份与基本概况 — 介绍努里**" in out
-        assert "**人物背景介绍 1.2 出生与早期经历 — 记录其在中国喀什**" in out
 
     def test_realistic_full_paragraph_merges_correctly(self, prep):
-        """Use the exact paragraph copied from your exported file:
-        after prep the three subsections should each be wrapped in
-        their own bold line with the section name prepended."""
+        """Use the exact TOC paragraph copied from the user's exported
+        file (paragraph 2)."""
         para = (
             "****人物背景介绍**** "
             "1.1 身份与基本概况 | 介绍努里·特克尔的基本身份信息 "
@@ -1610,117 +1021,36 @@ class TestDOCXSubsectionsMergeIntoSectionHeading:
             "1.3 家庭基本情况 | 说明其直系亲属关系"
         )
         out = prep(para, query=None, base_url=None)
-        # No standalone ``**人物背景介绍**`` line anymore.
-        assert "**人物背景介绍**\n" not in out
-        # Three bold subsections, each prefixed with the section name.
-        for line in (
-            "**人物背景介绍 1.1 身份与基本概况 — 介绍努里·特克尔的基本身份信息**",
-            "**人物背景介绍 1.2 出生与早期经历 — 记录其在中国喀什的出生背景**",
-            "**人物背景介绍 1.3 家庭基本情况 — 说明其直系亲属关系**",
-        ):
-            assert line in out, f"expected merged line {line!r}; got:\n{out!r}"
-        # No bullet wrapper, no pipe literal.
-        assert "  - " not in out
-        assert " | " not in out
+        assert "**1.人物背景介绍**" in out
+        assert "##### 1.1身份与基本概况 — 介绍努里·特克尔的基本身份信息" in out
+        assert "##### 1.2出生与早期经历 — 记录其在中国喀什的出生背景" in out
+        assert "##### 1.3家庭基本情况 — 说明其直系亲属关系" in out
 
     def test_blank_line_between_each_merged_subsubsection(self, prep):
-        """Merged bold subsections MUST be separated by a blank line —
-        otherwise Pandoc collapses consecutive bold paragraphs into one
-        soft-break line in the rendered DOCX, which was the user's
-        '换行乱' complaint."""
+        """Each subsection gets its own paragraph in the rendered DOCX
+        — blank line separators between subsections ensure Pandoc keeps
+        them apart."""
         md = (
-            "**人物背景介绍**\n"
-            "1.1 身份 | 介绍\n"
-            "1.2 出生 | 记录\n"
-            "1.3 家庭 | 情况\n"
+            "****人物背景介绍**** "
+            "1.1 身份 | 介绍 1.2 出生 | 记录 1.3 家庭 | 情况"
         )
         out = prep(md, query=None, base_url=None)
-        # Three merged subsections must be separated by blank lines so
-        # Pandoc renders them as three distinct paragraphs.
+        # Need ≥2 blank lines between the three subsections.
         assert out.count(chr(10) + chr(10)) >= 2, (
-            f"need ≥2 blank lines between the three merged subsections; "
+            f"need ≥2 blank lines between the three subsections; "
             f"got:\n{out!r}"
         )
-        # And the merged bold lines themselves are present.
-        assert "**人物背景介绍 1.1 身份 — 介绍**" in out
-        assert "**人物背景介绍 1.2 出生 — 记录**" in out
-        assert "**人物背景介绍 1.3 家庭 — 情况**" in out
 
     def test_preserves_latin_section_name_too(self, prep):
-        """The merge is not CJK-specific — works for any section name
-        that wraps with ``**``."""
+        """Heading-bold / indented-subsection contract applies to
+        non-CJK (Latin) section names too."""
         md = (
-            "**Section 1**\n"
-            "1.1 alpha | description one\n"
-            "1.2 beta | description two\n"
+            "****Section 1**** "
+            "1.1 alpha | description one "
+            "1.2 beta | description two"
         )
         out = prep(md, query=None, base_url=None)
-        assert "**Section 1 1.1 alpha — description one**" in out
-        assert "**Section 1 1.2 beta — description two**" in out
+        assert "**1.Section 1**" in out
+        assert "##### 1.1alpha — description one" in out
+        assert "##### 1.2beta — description two" in out
 
-
-class TestDOCXMergeAndLineBreaks:
-    """Combined regression guard for the two related fixes:
-
-    1. The previous restructure step produced subsections on separate
-       *lines* but Pandoc collapses single-newline separators into
-       soft breaks inside the same paragraph. The actual rendered
-       DOCX showed everything on one line, which is the user's
-       "没有正确换行" complaint.
-
-    2. The user separately asked for subsections to be merged into
-       the section title (``**Title 1.1 content**``).
-
-    Both are fixed together: collapse the subsection line with the
-    section title into a single bold paragraph, and ensure the title
-    line itself is consumed (not left as a stray empty heading).
-    """
-
-    @pytest.fixture
-    def prep(self):
-        from local_deep_research.exporters.docx_exporter import DOCXExporter
-        return DOCXExporter._prepare_markdown
-
-    def test_realistic_paragraph_renders_as_separate_paragraphs(self, prep):
-        import re, io, tempfile, os, zipfile
-        import sys; sys.path.insert(0, "src")
-        try:
-            import pypandoc  # type: ignore[import-untyped]
-        except ImportError:
-            return  # skip if pypandoc not available
-        para = (
-            "****人物背景介绍**** "
-            "1.1 身份与基本概况 | 介绍努里·特克尔 "
-            "1.2 出生与早期经历 | 记录其在中国喀什 "
-        )
-        prepped = prep(para, query=None, base_url=None)
-        # Run real Pandoc and verify each merged subsection becomes
-        # its own paragraph (NOT jammed together).
-        with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as f:
-            out_path = f.name
-        pypandoc.convert_text(prepped, "docx", format="md", outputfile=out_path)
-        with open(out_path, "rb") as f:
-            docx_bytes = f.read()
-        os.unlink(out_path)
-        z = zipfile.ZipFile(io.BytesIO(docx_bytes))
-        doc = z.read("word/document.xml").decode()
-        # Each merged subsection should be its own <w:p>...</w:p>
-        # paragraph, NOT lumped together with the others.
-        # We expect three paragraphs:
-        #   0. injected title  关于Nury Turkel ... (from post-processor)
-        #   1. merged 1.1
-        #   2. merged 1.2
-        #   3. Heading2 '目录'  (from real Pandoc on the original
-        #                       ``# 目录`` heading the prep demoted)
-        # The user's complaint was that all three subsections sat in
-        # ONE paragraph. After the fix each is its own.
-        bodies_with_1_1 = re.findall(r"<w:p[^>]*>(?:(?!</w:p>).)*1\.1(?:(?!</w:p>).)*</w:p>", doc, re.DOTALL)
-        bodies_with_1_2 = re.findall(r"<w:p[^>]*>(?:(?!</w:p>).)*1\.2(?:(?!</w:p>).)*</w:p>", doc, re.DOTALL)
-        assert len(bodies_with_1_1) == 1, (
-            "1.1 must be in its own <w:p>; "
-            f"found {len(bodies_with_1_1)} matches"
-        )
-        assert len(bodies_with_1_2) == 1, (
-            "1.2 must be in its own <w:p>; "
-            f"found {len(bodies_with_1_2)} matches"
-        )
